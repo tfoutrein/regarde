@@ -1,0 +1,42 @@
+# macOS
+.DS_Store
+._*
+.Spotlight-V100
+.Trashes
+
+# Xcode
+build/
+DerivedData/
+*.xcuserstate
+*.xcworkspace/xcuserdata/
+*.xcodeproj/xcuserdata/
+*.xcodeproj/project.xcworkspace/xcuserdata/
+*.moved-aside
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# Swift Package Manager
+.build/
+.swiftpm/
+Package.resolved
+
+# Signature et distribution — ne jamais versionner
+*.p12
+*.cer
+*.provisionprofile
+*.mobileprovision
+ExportOptions.plist
+notarization-*.json
+*.dmg
+
+# Artefacts de capture produits par l'outil lui-meme
+.regarde/
+*.mov
+*.png.tmp
+
+# Divers
+*.log
+.env
+.env.*
