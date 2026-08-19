@@ -29,6 +29,15 @@ fi
 TMP="$(mktemp -d)"
 trap 'rm -rf "${TMP}"' EXIT
 
+# Mot de passe NON VIDE, et c'est indispensable : avec `-passout pass:` puis `-P ""`,
+# `security import` echoue systematiquement sur macOS 26.1 —
+#   SecKeychainItemImport: MAC verification failed during PKCS12 import
+# Verifie avec OpenSSL 3.6.3 comme avec LibreSSL 3.3.6. Ni `-legacy`, ni `-macalg sha1`,
+# ni le choix du trousseau ne sont en cause : c'est le mot de passe vide.
+# Le p12 est detruit avec le repertoire temporaire quelques lignes plus bas ; ce mot de
+# passe ne protege rien qui survive au script.
+P12_PASS="regarde-dev"
+
 echo "→ Generation d'une paire de cles et d'un certificat auto-signe (10 ans)…"
 openssl req -x509 -newkey rsa:2048 -sha256 -days 3650 -nodes \
     -keyout "${TMP}/key.pem" -out "${TMP}/cert.pem" \
@@ -41,11 +50,11 @@ openssl req -x509 -newkey rsa:2048 -sha256 -days 3650 -nodes \
 openssl pkcs12 -export -legacy \
     -out "${TMP}/regarde-dev.p12" \
     -inkey "${TMP}/key.pem" -in "${TMP}/cert.pem" \
-    -name "${CERT_NAME}" -passout pass:
+    -name "${CERT_NAME}" -passout "pass:${P12_PASS}"
 
 echo "→ Import dans le trousseau de session…"
 security import "${TMP}/regarde-dev.p12" \
-    -k "${KEYCHAIN}" -P "" \
+    -k "${KEYCHAIN}" -P "${P12_PASS}" \
     -T /usr/bin/codesign -T /usr/bin/security
 
 # Sans cette ligne, codesign ouvre une invite de mot de passe a CHAQUE build.

@@ -30,20 +30,13 @@ final class InkView: NSView {
 
     private var link: CADisplayLink?
 
-    /// Appele a chaque cycle de rendu, apres le drainage. Le controleur s'en sert pour
-    /// retirer les panneaux des que le geste est fini (ADR-0010).
+    /// Appele a chaque cycle de rendu du display link de CETTE vue. Seule la vue
+    /// designee comme pilote par le controleur s'en sert pour declencher le drainage.
     var onFrame: (() -> Void)?
 
     /// Renseigne par le controleur : convertit un point `CGEvent.location` en
     /// coordonnees locales de cette vue.
     var eventToLocal: ((CGPoint) -> CGPoint)?
-
-    /// Debut d'un trait. Le banc C11 s'y accroche pour declencher sa capture.
-    ///
-    /// Notifie ici et non depuis le tap : la capture est une operation asynchrone
-    /// lourde, elle n'a rien a faire dans un callback dont le budget se compte en
-    /// microsecondes.
-    var onStrokeBegan: ((_ eventLocation: CGPoint, _ hostTicks: UInt64) -> Void)?
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -115,46 +108,30 @@ final class InkView: NSView {
     }
 
     @objc private func step(_ sender: CADisplayLink) {
-        var newPoints = 0
-        var latestEnqueued: UInt64 = 0
-
-        // Un seul drainage par frame, puis une seule transaction : c'est ce qui
-        // remplace les mille reveils par seconde qu'un async par point produirait.
-        InkRing.shared.drain { [weak self] event in
-            guard let self else { return }
-            self.consume(event)
-            newPoints += 1
-            latestEnqueued = max(latestEnqueued, event.enqueuedTicks)
-        }
-
-        if newPoints > 0 {
-            CATransaction.begin()
-            CATransaction.setDisableActions(true)
-            live.path = pathFromLivePoints()
-            CATransaction.commit()
-
-            // T0.7 : la latence se mesure de l'entree dans le callback du tap au commit
-            // de la transaction, pas au moment ou l'on recoit le point.
-            if latestEnqueued != 0 {
-                LatencyHistogram.shared.record(
-                    millis: SessionClock.millis(from: latestEnqueued, to: SessionClock.hostTicksNow())
-                )
-            }
-        }
-
+        // Le drainage n'a PAS lieu ici. `InkRing` est un ring a consommateur unique et
+        // `drain` avance la queue : avec un display link par ecran, le premier declenche
+        // emporterait tout et l'autre trouverait la file vide — un tracé sur deux ne
+        // dessinerait rien, et les points seraient convertis par le mauvais panneau.
+        // Le controleur draine une fois et diffuse a tous les panneaux.
         onFrame?()
     }
 
     // MARK: - Consommation
 
-    private func consume(_ event: InkEvent) {
+    /// Applique un evenement. Appelee par le controleur, sur le thread principal,
+    /// pour CHAQUE panneau — la conversion `eventToLocal` place le point hors des
+    /// bornes des panneaux qui ne sont pas concernes, et le WindowServer le clippe.
+    ///
+    /// La diffusion est preferable a un routage par ecran : un trait qui traverse la
+    /// frontiere entre deux ecrans resterait continu, la ou un routage le couperait en
+    /// deux sur le `guard !livePoints.isEmpty`.
+    func consume(_ event: InkEvent) {
         let local = eventToLocal?(event.point) ?? event.point
 
         switch event.eventKind {
         case .down:
             livePoints.removeAll(keepingCapacity: true)
             livePoints.append(local)
-            onStrokeBegan?(event.point, event.hostTicks)
 
         case .drag:
             // Un mouseMoved sans tracé en cours ne doit pas allonger le trait : il n'y a
@@ -172,6 +149,16 @@ final class InkView: NSView {
         }
     }
 
+    /// Publie le trait vivant. Une seule transaction par cycle, pour tout le lot
+    /// d'evenements draines — c'est ce qui remplace les mille reveils par seconde
+    /// qu'un `async` par point produirait.
+    func commitFrame() {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        live.path = pathFromLivePoints()
+        CATransaction.commit()
+    }
+
     private func pathFromLivePoints() -> CGPath? {
         guard livePoints.count > 1 else { return nil }
         let p = CGMutablePath()
@@ -179,7 +166,21 @@ final class InkView: NSView {
         return p
     }
 
+    /// Plus grand nombre de points atteint par un trait vivant.
+    ///
+    /// Le § 6.4 prevoit de figer la tete du trait et de borner la queue a ~200 points ;
+    /// ce prototype ne le fait pas, et reconstruit le chemin entier a chaque cycle. Le
+    /// cout client est negligeable, celui du render server ne l'est peut-etre pas — il
+    /// re-tesselise N segments a joints ronds par frame, dans le processus partage avec
+    /// l'application testee.
+    ///
+    /// On ne corrige pas a l'aveugle : ce compteur, croise avec la comparaison des cinq
+    /// premieres et des cinq dernieres secondes du relevé C3b, dira si la degradation
+    /// est un plateau (defaut cosmetique, ne pas y toucher) ou une rampe (a traiter).
+    private(set) var maxLivePoints = 0
+
     private func commitStroke() {
+        maxLivePoints = max(maxLivePoints, livePoints.count)
         // Decimation Ramer-Douglas-Peucker a la fin du trait, pas pendant : simplifier
         // en direct ferait sauter la tete du trait sous le curseur.
         let simplified = InkView.decimate(livePoints, epsilon: 0.6)

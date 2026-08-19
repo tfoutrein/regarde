@@ -20,6 +20,18 @@ import Synchronization
 //
 // Un seul point de decision d'entree : `leftMouseDown`. Partout ailleurs, on ne fait
 // que suivre l'etat etabli la.
+//
+// INVARIANT, et c'est le plus important du fichier :
+//
+//   Tant que le bouton physique n'est pas relache, l'application testee ne recoit RIEN
+//   de ce clic — elle n'en a pas vu le debut.
+//
+// Trois evenements peuvent interrompre un trace en cours : Échap, le desarmement du tap
+// par le systeme, et l'entree en passthrough. Aucun des trois ne doit rendre a
+// l'application le milieu d'un clic dont elle a manque le debut : elle se retrouverait
+// avec des `mouseMoved` porteurs de `buttons=1` puis un `mouseUp` sans `mouseDown`,
+// c'est-a-dire un drag fantome dans le Finder et des gestionnaires globaux declenches
+// dans une page web. D'ou le troisieme etat, `suppressUntilUp`.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Mode global de la porte. Ecrit depuis le thread principal, lu depuis le thread du tap.
@@ -82,6 +94,10 @@ final class OptionGate: @unchecked Sendable {
     // couterait le budget du callback.
     private var strokeActive = false
     private var mouseDownInApp = false
+    /// Le bouton est physiquement enfonce, mais le tracé a ete abandonne. L'application
+    /// testee n'a pas vu le `mouseDown` : elle ne doit voir ni les drags ni le `mouseUp`.
+    /// Retombe au relachement, seul instant ou le clic est reellement termine.
+    private var suppressUntilUp = false
 
     // ── Observabilite ────────────────────────────────────────────────────────
     private let capturedCount = Atomic<UInt64>(0)
@@ -107,6 +123,15 @@ final class OptionGate: @unchecked Sendable {
     /// pas a la pression du modificateur, et c'est ce qui permet d'ordonner le calque
     /// AVANT le premier `mouseDown`, sans aucun polling au repos.
     var onStateChanged: (@Sendable (_ armed: Bool, _ stroking: Bool) -> Void)?
+
+    /// Notifie que le verrou a ete remis a plat et que le rendu doit abandonner son
+    /// trait en cours.
+    ///
+    /// Sans cela, `livePoints` garde les points du tracé abandonne : le trait reapparait
+    /// a la pression suivante de ⌥⌘ et s'allonge jusqu'au curseur, sans qu'aucun bouton
+    /// ne soit enfonce. Transition rare — desarmement du tap, veille, verrouillage — et
+    /// jamais par point, ce que le § 6.4 est seul a interdire.
+    var onResetRequested: (@Sendable () -> Void)?
 
     // MARK: - Configuration (thread principal)
 
@@ -140,6 +165,28 @@ final class OptionGate: @unchecked Sendable {
 
         let required = CGEventFlags(rawValue: armingFlags.load(ordering: .relaxed))
         let armed = flags.isSuperset(of: required) && targetRect.read().contains(location)
+
+        // Clic en vol dont le tracé a ete abandonne : on avale tout jusqu'au relachement.
+        // Place APRES le calcul de `armed` pour que `publishState` et les compteurs
+        // restent coherents, et APRES le garde passthrough pour ne pas contredire le § 6.2.
+        if suppressUntilUp {
+            switch type {
+            case .leftMouseDragged, .mouseMoved:
+                publishState(armed: armed, stroking: false)
+                return .swallow
+            case .leftMouseUp:
+                suppressUntilUp = false
+                mouseDownInApp = false
+                publishState(armed: armed, stroking: false)
+                return .swallow
+            case .leftMouseDown:
+                // Filet : le `mouseUp` a ete perdu (tap desarme au mauvais moment).
+                // Un nouveau clic commence, la suppression n'a plus lieu d'etre.
+                suppressUntilUp = false
+            default:
+                break
+            }
+        }
 
         var capture = strokeActive
         var kind = InkEvent.Kind.drag
@@ -216,11 +263,12 @@ final class OptionGate: @unchecked Sendable {
 
     /// Annule le tracé en cours sans laisser l'application testee dans un etat incoherent.
     ///
-    /// Appele par `Échap` (§ 6.3). Le mouseUp qui suivra sera consomme puisque
-    /// `strokeActive` etait vrai jusqu'ici — c'est voulu : l'application n'a pas vu le
-    /// mouseDown, elle ne doit pas voir le mouseUp.
+    /// Appele par `Échap` (§ 6.3). Le bouton est encore enfonce : on passe en suppression
+    /// jusqu'au relachement, sans quoi les drags suivants et le `mouseUp` partiraient a
+    /// l'application, qui n'a jamais vu le `mouseDown` correspondant.
     @inline(__always)
     func cancelStroke() {
+        if strokeActive { suppressUntilUp = true }
         strokeActive = false
         strokeFlag.store(false, ordering: .releasing)
     }
@@ -233,6 +281,7 @@ final class OptionGate: @unchecked Sendable {
         pendingReset.store(true, ordering: .releasing)
         strokeFlag.store(false, ordering: .releasing)
         armedFlag.store(false, ordering: .releasing)
+        onResetRequested?()
     }
 
     /// Consomme une demande de remise a plat. Thread du tap uniquement.
@@ -241,6 +290,9 @@ final class OptionGate: @unchecked Sendable {
         // `exchange` plutot que load+store : deux demandes rapprochees ne peuvent pas
         // en perdre une, et le cas courant reste une seule lecture atomique.
         if pendingReset.exchange(false, ordering: .acquiring) {
+            // Meme invariant qu'a l'annulation par Échap : si un clic est en vol, il ne
+            // doit pas etre rendu a l'application au milieu de sa course.
+            if strokeActive { suppressUntilUp = true }
             strokeActive = false
             mouseDownInApp = false
         }

@@ -99,6 +99,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool { true }
 }
 
+// Auto-test de la porte, avant toute initialisation graphique : il ne demande ni
+// permission, ni ecran, et rend un code de sortie exploitable en ligne de commande.
+if CommandLine.arguments.contains("--selftest") {
+    exit(GateSelfTest.runAll() == 0 ? 0 : 1)
+}
+
 let app = NSApplication.shared
 let delegate = AppDelegate()
 app.delegate = delegate

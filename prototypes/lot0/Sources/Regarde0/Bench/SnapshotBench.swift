@@ -74,7 +74,10 @@ actor SnapshotBench {
             log.notice("contenu partageable en cache : \(content.displays.count) ecran(s)")
         } catch {
             // Echec attendu si Enregistrement de l'ecran n'est pas accorde. Ce n'est pas
-            // bloquant : le geste, lui, n'en a pas besoin.
+            // bloquant : le geste, lui, n'en a pas besoin. Le cache est vide pour que la
+            // capture echoue explicitement au lieu de servir un ecran perime.
+            cachedContent = nil
+            contentFetchedAt = nil
             log.notice("contenu partageable indisponible : \(error.localizedDescription, privacy: .public)")
         }
     }
@@ -96,14 +99,24 @@ actor SnapshotBench {
 
         do {
             let image = try await captureImage(displayID: displayID)
+            // Le stamp est pris AVANT l'encodage : la latence annoncee est celle du
+            // chemin de capture, pas celle du PNG.
             let done = SessionClock.hostTicksNow()
             let url = dir.appendingPathComponent(
                 String(format: "c11-%03d-t%.3f.png", index, sessionTime.seconds)
             )
-            try write(image, to: url)
             shots.append(Shot(index: index, sessionTime: sessionTime,
                               requestedAtTicks: requestedAtTicks, capturedAtTicks: done,
                               displayID: displayID, path: url, error: nil))
+
+            // Encodage hors de l'isolation de l'acteur : sinon deux traits espaces de
+            // 200 ms serialisent, et la latence du second inclut l'attente du premier.
+            let img = image
+            let target = url
+            Task.detached(priority: .utility) {
+                do { try SnapshotBench.write(img, to: target) }
+                catch { }
+            }
             log.info("C11 #\(index) — \(url.lastPathComponent, privacy: .public)")
         } catch {
             shots.append(Shot(index: index, sessionTime: sessionTime,
@@ -116,10 +129,12 @@ actor SnapshotBench {
     }
 
     private func captureImage(displayID: CGDirectDisplayID) async throws -> CGImage {
-        // Rafraichir le cache s'il est vieux : un ecran a pu etre branche entre-temps.
-        if cachedContent == nil || (contentFetchedAt.map { Date().timeIntervalSince($0) > 30 } ?? true) {
-            await warmUp()
-        }
+        // Aucun rafraichissement ici. Un TTL de 30 s revenait a rappeler
+        // `SCShareableContent` a presque chaque capture — l'inverse exact de ce que
+        // promet ce fichier — et son cout (dizaines a centaines de ms) etait compte
+        // dans la latence annoncee : mediane 34 ms, pire 486 ms, sans cause visible.
+        // Le cache est rafraichi au lancement, au reveil, a l'activation du banc et sur
+        // changement d'ecrans, jamais dans le chemin d'un geste.
         guard let content = cachedContent else { throw BenchError.noShareableContent }
         guard let display = content.displays.first(where: { $0.displayID == displayID })
                 ?? content.displays.first else { throw BenchError.displayNotFound(displayID) }
@@ -152,7 +167,7 @@ actor SnapshotBench {
         return try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: cfg)
     }
 
-    private func write(_ image: CGImage, to url: URL) throws {
+    nonisolated private static func write(_ image: CGImage, to url: URL) throws {
         guard let dest = CGImageDestinationCreateWithURL(
             url as CFURL, UTType.png.identifier as CFString, 1, nil
         ) else { throw BenchError.encodingFailed }

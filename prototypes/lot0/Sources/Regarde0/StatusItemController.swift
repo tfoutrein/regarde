@@ -45,8 +45,11 @@ final class StatusItemController {
         }
         menu.addItem(.separator())
 
-        addItem(to: menu, "Afficher / masquer le calque", key: "o") {
+        addItem(to: menu, "Épingler / libérer le calque", key: "o") {
             OverlayController.shared.debugToggle()
+            Self.emit(OverlayController.shared.isPinned
+                      ? "Calque épinglé — il reste à l'écran pour mesurer C8 et C9."
+                      : "Calque libéré — retour au comportement normal.")
         }
         addItem(to: menu, "Effacer les traits", key: "k") {
             OverlayController.shared.clearAll()
@@ -100,9 +103,12 @@ final class StatusItemController {
 
         healthItem.title = tap.healthLine()
         let s = LatencyHistogram.shared.summary()
+        // « ech. » et non « pts » : `count` compte des echantillons de latence, pas des
+        // points ajoutes au tracé. Le filtre des 0,75 px et le garde sur le trait vide
+        // rejettent des evenements qui produisent pourtant un echantillon.
         latencyItem.title = s.count == 0
             ? "latence : aucun echantillon"
-            : String(format: "latence p50 %.1f ms · p95 %.1f ms · %llu pts · %d traits",
+            : String(format: "latence p50 %.1f ms · p95 %.1f ms · %llu ech. · %d traits",
                      s.p50, s.p95, s.count, OverlayController.shared.totalStrokes)
     }
 

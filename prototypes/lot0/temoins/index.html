@@ -129,7 +129,7 @@
 
   <table id="results" hidden>
     <thead>
-      <tr><th>Relevé</th><th>méd.</th><th>p95</th><th>fps</th><th>vs réf.</th></tr>
+      <tr><th>Relevé</th><th>fps eff.</th><th>perdues %</th><th>charge</th><th>dégrad.</th></tr>
     </thead>
     <tbody></tbody>
   </table>
@@ -154,7 +154,15 @@
 
 const SETTLE_MS  = 2000;   // § 4.4 : jeter les deux premières secondes de chaque relevé
 const SAMPLE_MS  = 30000;  // § 4.4 : 30 s par état
-const TARGET_MS  = 15.0;   // charge visée : juste sous 60 fps, pour que toute couche se voie
+
+// Fenêtre de charge visée, exprimée en TAUX DE FRAMES PERDUES et non en millisecondes.
+// Viser une durée de frame est impossible : sur un écran verrouillé au vsync, le delta
+// de rAF ne prend que les valeurs 16,67 / 33,3 / 50… Une cible à 15 ms tombe dans le trou
+// de quantification, aucun état atteignable ne la satisfait, et la charge s'effondre au
+// plancher — le GPU se repose, une couche de composition supplémentaire ne coûte plus
+// rien de mesurable, et C3b est déclaré PASS sans avoir jamais été mesuré.
+const DROP_MIN = 0.02;
+const DROP_MAX = 0.08;
 
 const state = {
   mode: 'clock',
@@ -165,7 +173,11 @@ const state = {
   runs: [],            // relevés nommés, dans l'ordre de saisie
   counterLog: [],      // { frame, now } — journal C11
   clockAlign: null,    // { pageNow, wallMs } — pont performance.now() ↔ horloge hôte
-  glLoad: 60,          // itérations dans le fragment shader, auto-calibré
+  glLoad: 32,          // itérations dans le fragment shader
+  vsyncMs: null,       // période de rafraîchissement mesurée à vide
+  calWindow: [],       // deltas accumulés pour la mesure ou le calibrage
+  calibrated: false,   // la charge a convergé dans la fenêtre visée
+  glLoadLocked: null,  // charge gelée : tous les relevés doivent partager la même
 };
 
 const $ = (id) => document.getElementById(id);
@@ -260,15 +272,60 @@ function frame(now) {
     $('hand').setAttribute('transform', `rotate(${s * 6})`);
   } else if (state.mode === 'load') {
     resizeGL();
+
+    // Phase 1 — mesurer la période de rafraîchissement réelle, à charge minimale.
+    // Sans cette référence, « frame perdue » n'a pas de définition sur une machine
+    // dont on ignore si l'écran tourne à 60 ou à 120 Hz.
+    if (state.vsyncMs === null) {
+      if (glReady) {
+        gl.uniform1i(uLoad, 1);
+        gl.uniform1f(uTime, now * 0.001);
+        gl.drawArrays(gl.TRIANGLES, 0, 3);
+      }
+      if (dt > 0) state.calWindow.push(dt);
+      if (state.calWindow.length >= 60) {
+        const s = state.calWindow.slice().sort((a, b) => a - b);
+        state.vsyncMs = s[30];
+        state.calWindow = [];
+        setStatus(`Rafraîchissement mesuré : ${(1000 / state.vsyncMs).toFixed(0)} Hz ` +
+                  `(${state.vsyncMs.toFixed(2)} ms). Calibrage de la charge…`, true);
+      }
+      return;
+    }
+
     if (glReady) {
       gl.uniform1i(uLoad, state.glLoad);
       gl.uniform1f(uTime, now * 0.001);
       gl.drawArrays(gl.TRIANGLES, 0, 3);
     }
-    // Calibrage doux hors relevé : viser TARGET_MS sans jamais bouger pendant une mesure.
-    if (!state.sampling && dt > 0) {
-      if (dt < TARGET_MS - 1.5 && state.glLoad < 512) state.glLoad++;
-      else if (dt > TARGET_MS + 1.5 && state.glLoad > 4) state.glLoad--;
+
+    // Phase 2 — calibrer sur le taux de frames perdues, jamais pendant un relevé, et
+    // une seule fois : recalibrer entre deux relevés ferait varier la charge d'un état
+    // à l'autre, et la différence mesurée deviendrait la somme du coût de composition
+    // et de l'allègement du shader — deux effets de signes opposés.
+    if (!state.sampling && state.glLoadLocked === null && dt > 0) {
+      state.calWindow.push(dt);
+      if (state.calWindow.length >= 120) {
+        const dropped = state.calWindow.filter(d => d > state.vsyncMs * 1.5).length / 120;
+        const prev = state.glLoad;
+        if (dropped < DROP_MIN)      state.glLoad = Math.min(512, Math.ceil(state.glLoad * 1.35));
+        else if (dropped > DROP_MAX) state.glLoad = Math.max(8, Math.floor(state.glLoad / 1.20));
+        else {
+          state.calibrated = true;
+          state.glLoadLocked = state.glLoad;
+          setStatus(`Charge calibrée et gelée : ${state.glLoad} itérations, ` +
+                    `${(dropped * 100).toFixed(1)} % de frames perdues. Prêt pour les relevés.`);
+        }
+        // Butée atteinte sans convergence : la machine est trop rapide ou trop lente
+        // pour la plage. On gèle quand même, en le signalant.
+        if (!state.calibrated && state.glLoad === prev) {
+          state.calibrated = true;
+          state.glLoadLocked = state.glLoad;
+          setStatus(`Charge gelée en butée : ${state.glLoad} itérations, ` +
+                    `${(dropped * 100).toFixed(1)} % de frames perdues — hors plage visée.`, true);
+        }
+        state.calWindow = [];
+      }
     }
   } else if (state.mode === 'counter') {
     $('frameNo').textContent = state.frame;
@@ -297,6 +354,13 @@ const quantile = (sorted, q) => {
 
 function startRun() {
   if (state.mode !== 'load') { setStatus('Passe en mode charge (2) avant un relevé.', true); return; }
+  // Ce garde vaut plus que le contrôleur lui-même : sans lui, un relevé pris avant
+  // convergence est indiscernable d'un relevé valide, et C3b — critère bloquant —
+  // peut être déclaré PASS sur une charge nulle.
+  if (!state.calibrated) {
+    setStatus('Charge pas encore calibrée — laisse tourner quelques secondes en mode charge.', true);
+    return;
+  }
   const label = prompt(
     'Étiquette du relevé (§ 4.4) :\n' +
     '  1-reference        Regarde non lancé\n' +
@@ -324,48 +388,79 @@ function finishRun(now) {
   state.sampling = false;
   $('run').disabled = false;
   const d = state.deltas.slice().sort((a, b) => a - b);
+  const totalMs = state.deltas.reduce((s, x) => s + x, 0);
+
+  // LA métrique de comparaison est la cadence effective : nombre de frames rendues
+  // divisé par la durée réellement écoulée. Contrairement à la médiane des deltas,
+  // elle n'est pas quantifiée par le vsync — une dégradation de 5 % de la cadence se
+  // lit directement, là où la médiane resterait bloquée sur 16,67 ms et afficherait
+  // « +0,0 % » quel que soit le coût de composition.
   const run = {
     label: state.pendingLabel,
     frames: d.length,
+    effectiveFps: +(1000 * d.length / totalMs).toFixed(2),
+    droppedRate: +(state.deltas.filter(x => x > state.vsyncMs * 1.5).length / d.length).toFixed(4),
     medianMs: +quantile(d, 0.5).toFixed(3),
     p95Ms: +quantile(d, 0.95).toFixed(3),
-    fps: +(1000 / quantile(d, 0.5)).toFixed(1),
-    glLoad: state.glLoad,
+    glLoad: state.glLoadLocked ?? state.glLoad,
+    vsyncMs: +state.vsyncMs.toFixed(3),
+    refreshHz: +(1000 / state.vsyncMs).toFixed(1),
+    calibrated: state.calibrated,
     at: new Date().toISOString(),
   };
   state.runs.push(run);
   renderResults();
-  setStatus(`« ${run.label} » : méd. ${run.medianMs} ms · p95 ${run.p95Ms} ms · ${run.fps} fps`);
+  setStatus(`« ${run.label} » : ${run.effectiveFps} fps effectifs · ` +
+            `${(run.droppedRate * 100).toFixed(1)} % de frames perdues · méd. ${run.medianMs} ms`);
+}
+
+/// Un relevé n'est comparable à la référence que s'il partage sa charge et son écran.
+function comparable(run, ref) {
+  return run.glLoad === ref.glLoad && run.refreshHz === ref.refreshHz;
 }
 
 // Les relevés « -bis » sont la contre-mesure en ordre inverse : on les moyenne avec
 // leur homologue pour neutraliser la dérive thermique (§ 4.4).
 function baseLabel(l) { return l.replace(/-bis$/, ''); }
 
-function referenceMedian() {
-  const refs = state.runs.filter(r => baseLabel(r.label) === '1-reference');
+function referenceRuns() {
+  return state.runs.filter(r => baseLabel(r.label) === '1-reference');
+}
+
+/// Cadence effective de référence, moyennée sur le relevé et sa contre-mesure en ordre
+/// inverse — c'est ce qui neutralise la dérive thermique de la machine (§ 4.4).
+function referenceFps() {
+  const refs = referenceRuns();
   if (!refs.length) return null;
-  return refs.reduce((s, r) => s + r.medianMs, 0) / refs.length;
+  return refs.reduce((s, r) => s + r.effectiveFps, 0) / refs.length;
 }
 
 function renderResults() {
   const tb = $('results').querySelector('tbody');
   tb.innerHTML = '';
-  const ref = referenceMedian();
+  const refFps = referenceFps();
+  const ref = referenceRuns()[0];
+
   for (const r of state.runs) {
     const tr = document.createElement('tr');
     let cmp = '—', cls = '';
-    if (ref && baseLabel(r.label) !== '1-reference') {
-      const pct = (r.medianMs / ref - 1) * 100;
-      const limit = baseLabel(r.label) === '2-calque-non-ordonne' ? 1 : 5;
-      cmp = `${pct >= 0 ? '+' : ''}${pct.toFixed(1)} %`;
-      cls = pct < limit ? 'verdict-ok' : 'verdict-bad';
+    if (refFps && ref && baseLabel(r.label) !== '1-reference') {
+      if (!comparable(r, ref)) {
+        cmp = 'charge ≠';
+        cls = 'verdict-bad';
+      } else {
+        // Dégradation de cadence : positive quand on rend moins de frames.
+        const pct = (1 - r.effectiveFps / refFps) * 100;
+        const limit = baseLabel(r.label) === '2-calque-non-ordonne' ? 1 : 5;
+        cmp = `${pct >= 0 ? '+' : ''}${pct.toFixed(1)} %`;
+        cls = pct < limit ? 'verdict-ok' : 'verdict-bad';
+      }
     }
     tr.innerHTML =
       `<td>${r.label}</td>` +
-      `<td class="num">${r.medianMs}</td>` +
-      `<td class="num">${r.p95Ms}</td>` +
-      `<td class="num">${r.fps}</td>` +
+      `<td class="num">${r.effectiveFps}</td>` +
+      `<td class="num">${(r.droppedRate * 100).toFixed(1)}</td>` +
+      `<td class="num">${r.glLoad}</td>` +
       `<td class="num ${cls}">${cmp}</td>`;
     tb.appendChild(tr);
   }
@@ -394,7 +489,11 @@ function payload() {
     },
     c3b: {
       runs: state.runs,
-      referenceMedianMs: referenceMedian(),
+      referenceFps: referenceFps(),
+      vsyncMs: state.vsyncMs,
+      refreshHz: state.vsyncMs ? +(1000 / state.vsyncMs).toFixed(1) : null,
+      glLoadLocked: state.glLoadLocked,
+      calibrated: state.calibrated,
       verdicts: verdicts(),
     },
     c11: {
@@ -405,19 +504,43 @@ function payload() {
 }
 
 function verdicts() {
-  const ref = referenceMedian();
-  if (!ref) return null;
-  const avg = (base) => {
-    const rs = state.runs.filter(r => baseLabel(r.label) === base);
-    return rs.length ? rs.reduce((s, r) => s + r.medianMs, 0) / rs.length : null;
+  const refFps = referenceFps();
+  const ref = referenceRuns()[0];
+  if (!refFps || !ref) return { c3b: 'NON MESURÉ', motif: 'aucun relevé de référence' };
+
+  // Toute charge ou fréquence différente rend la comparaison caduque, et le dire est
+  // plus utile qu'un pourcentage qui aurait l'air d'un résultat.
+  const incomparable = state.runs.filter(r => baseLabel(r.label) !== '1-reference' && !comparable(r, ref));
+  const notCalibrated = state.runs.filter(r => !r.calibrated);
+
+  const avgFps = (base) => {
+    const rs = state.runs.filter(r => baseLabel(r.label) === base && comparable(r, ref));
+    return rs.length ? rs.reduce((s, r) => s + r.effectiveFps, 0) / rs.length : null;
   };
-  const idle = avg('2-calque-non-ordonne'), draw = avg('3-trace-continu');
+  const idle = avgFps('2-calque-non-ordonne'), draw = avgFps('3-trace-continu');
+  const deg = (fps) => fps === null ? null : +((1 - fps / refFps) * 100).toFixed(2);
+
+  let c3b = 'NON MESURÉ', motif = 'relevé « 3-trace-continu » manquant';
+  if (notCalibrated.length) {
+    motif = `${notCalibrated.length} relevé(s) pris avant calibrage de la charge`;
+  } else if (incomparable.length) {
+    motif = `${incomparable.length} relevé(s) sur une charge ou une fréquence différente`;
+  } else if (draw !== null) {
+    c3b = deg(draw) < 5 ? 'PASS' : 'FAIL';
+    motif = null;
+  }
+
   return {
-    calqueNonOrdonnePct: idle ? +((idle / ref - 1) * 100).toFixed(2) : null,
+    metrique: 'cadence effective (frames rendues / durée) — non quantifiée par le vsync',
+    referenceFps: +refFps.toFixed(2),
+    refreshHz: ref.refreshHz,
+    glLoad: ref.glLoad,
+    calqueNonOrdonnePct: deg(idle),
     calqueNonOrdonneSeuil: 1,
-    traceContinuPct: draw ? +((draw / ref - 1) * 100).toFixed(2) : null,
+    traceContinuPct: deg(draw),
     traceContinuSeuil: 5,
-    c3b: draw ? ((draw / ref - 1) * 100 < 5 ? 'PASS' : 'FAIL') : 'NON MESURÉ',
+    c3b,
+    motif,
   };
 }
 
@@ -434,7 +557,9 @@ function setMode(m) {
   if (m === 'load') { if (initGL()) resizeGL(); }
   if (m === 'counter') state.counterLog = [];
   setStatus(m === 'load'
-    ? `Mode charge — calibrage automatique vers ${TARGET_MS} ms/frame. Prêt pour un relevé.`
+    ? (state.calibrated
+        ? `Mode charge — charge gelée à ${state.glLoadLocked} itérations. Prêt pour un relevé.`
+        : 'Mode charge — mesure du rafraîchissement puis calibrage. Patiente quelques secondes.')
     : m === 'counter'
       ? 'Mode compteur — le numéro affiché doit se retrouver gravé dans la capture.'
       : 'Mode horloge — la trotteuse doit continuer de tourner pendant le tracé.');
@@ -457,7 +582,10 @@ $('align').onclick = alignClock;
 $('reset').onclick = () => {
   if (!confirm('Effacer tous les relevés ?')) return;
   state.runs = []; state.counterLog = []; state.clockAlign = null;
-  renderResults(); setStatus('Relevés effacés.');
+  // La charge reste gelée : la réarmer rendrait les relevés d'avant et d'après
+  // l'effacement incomparables entre eux.
+  renderResults();
+  setStatus(`Relevés effacés. Charge conservée à ${state.glLoadLocked ?? state.glLoad} itérations.`);
 };
 $('copy').onclick = async () => {
   const json = JSON.stringify(payload(), null, 2);

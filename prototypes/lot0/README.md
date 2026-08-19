@@ -49,6 +49,24 @@ Quand l'autorisation saute malgré tout : Réglages → Confidentialité et séc
 Surveillance de la saisie, retirer l'entrée, la remettre, relancer. Trente secondes, à
 condition de savoir que c'est ça.
 
+## Auto-test de la porte
+
+```bash
+swift build && ./.build/debug/Regarde0 --selftest
+```
+
+La logique de la porte à verrou est pure : elle ne dépend que du type d'événement, des
+modificateurs et de la position. Elle est donc vérifiable **sans permission, sans écran et
+sans les mains**. Dix séquences déroulent les cas de C1, C2, C6 et C6b, dont celles où le
+modificateur est relâché en plein tracé et où `Échap` interrompt un clic déjà commencé.
+
+À lancer après chaque modification de `OptionGate.swift`, et avant de repasser les douze
+critères. Le code de sortie est exploitable en ligne de commande.
+
+Ce n'est pas un substitut aux critères : il dit que le raisonnement de la porte est juste,
+pas que le système réel se comporte comme prévu. Ces dix séquences existent parce que la
+première version du prototype échouait sur deux d'entre elles.
+
 ## Utilisation
 
 | Geste | Effet |
@@ -94,9 +112,28 @@ Sources/Regarde0/
 │   ├── OverlayPanel.swift         T0.5 — NSPanel par écran, § 6.1
 │   ├── InkView.swift              rendu CAShapeLayer + display link, § 6.4
 │   └── OverlayController.swift    ordonnancement à la demande — ADR-0010
+├── Input/GateSelfTest.swift       auto-test des séquences de la porte
 ├── Metrics/LatencyHistogram.swift T0.7 — instrumentation
 └── Bench/SnapshotBench.swift      T0.9 — banc C11
+
+revue/
+└── 2026-08-19-revue-adversariale.md   ce qui a été trouvé et ce qui tient
 ```
+
+## Revue
+
+Le prototype a été soumis à une revue adversariale — cinq lentilles indépendantes, chaque
+constat passé à un réfutateur — avant toute exécution : 48 constats bruts, 18 confirmés,
+12 corrections appliquées. Elle est archivée dans [`revue/`](revue/).
+
+Trois défauts étaient bloquants et sont corrigés : `Échap` rendait à l'application testée
+le milieu d'un clic dont elle n'avait pas vu le début ; le ring lock-free avait autant de
+consommateurs que d'écrans branchés ; et le témoin déclarait C3b `PASS` sans jamais mesurer,
+sa charge GPU s'effondrant au plancher.
+
+Sa section « Ce qui a été vérifié et tient » vaut autant que la liste des corrections : elle
+dit où il n'est plus nécessaire de revenir, et pourquoi plusieurs constats sérieux en
+apparence ne tiennent pas.
 
 ## Ce que ce prototype ne fait pas
 

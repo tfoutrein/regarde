@@ -29,9 +29,23 @@ final class EventTap: @unchecked Sendable {
 
     private let log = Logger(subsystem: logSubsystem, category: "tap")
 
-    // ── Ressources du tap. Touchees uniquement sur le thread du tap. ──────────
+    // ── Ressources du tap. Touchees uniquement sur le thread du tap, sans exception.
+    //
+    // `machPort` est un `var CFMachPort?` : le lire depuis un autre thread emet un
+    // retain pendant que le thread du tap emet le release en le remplacant — course sur
+    // le compteur de references, avec un retain qui peut porter sur un objet deja libere.
+    // C'est pourquoi ni le watchdog ni la barre de menus ne les touchent : ils passent
+    // par `armedFlag`, et le watchdog s'execute sur la run loop du tap. ───────────────
     private var machPort: CFMachPort?
     private var source: CFRunLoopSource?
+    /// Source factice qui garde la run loop vivante meme sans tap installe.
+    ///
+    /// `CFRunLoopRun()` retourne des que la run loop n'a plus aucune source. Sans cette
+    /// source, une reinstallation ratee ferait sortir le thread definitivement : plus
+    /// aucun bloc poste ne s'executerait, et `start()` ne pourrait pas relancer puisque
+    /// `thread` n'est plus nil. Redonner la permission ne suffirait pas, il faudrait
+    /// relancer l'application — precisement le quotidien du lot 0.
+    private var keepAlive: CFRunLoopSource?
     private var tapRunLoop: CFRunLoop?
     private var thread: Thread?
 
@@ -41,7 +55,13 @@ final class EventTap: @unchecked Sendable {
     private let seenCount = Atomic<UInt64>(0)
     private let lastEventTicks = Atomic<UInt64>(0)
     private let reArmCount = Atomic<UInt64>(0)
+    /// Reconstructions completes du tap. Distinct des re-armements : C10 se mesurerait
+    /// sinon sur un tap qui a pu etre detruit et recree sans que rien ne le dise.
+    private let rebuildCount = Atomic<UInt64>(0)
     private let installed = Atomic<Bool>(false)
+    /// Etat d'armement, ecrit uniquement sur le thread du tap. C'est ce que lisent la
+    /// barre de menus et le rapport, a la place de `CGEvent.tapIsEnabled(tap: machPort)`.
+    private let armedFlag = Atomic<Bool>(false)
     /// Pire duree observee dans le callback, en unites mach. Sert a verifier qu'on
     /// reste trois ordres de grandeur sous le seuil de timeout du systeme.
     private let worstCallbackTicks = Atomic<UInt64>(0)
@@ -72,11 +92,18 @@ final class EventTap: @unchecked Sendable {
         let t = Thread { [weak self] in
             guard let self else { ready.signal(); return }
             self.tapRunLoop = CFRunLoopGetCurrent()
-            let ok = self.install()
+
+            // La source factice est ajoutee AVANT toute tentative d'installation : la
+            // run loop ne doit jamais etre vide, sinon le thread sort et ne revient pas.
+            var ctx = CFRunLoopSourceContext()
+            let alive = CFRunLoopSourceCreate(kCFAllocatorDefault, 0, &ctx)
+            CFRunLoopAddSource(CFRunLoopGetCurrent(), alive, .commonModes)
+            self.keepAlive = alive
+
+            _ = self.install()
             ready.signal()
-            guard ok else { return }
-            // La run loop tourne jusqu'a l'arret du processus. Sans source valide,
-            // CFRunLoopRun retourne immediatement — d'ou le garde ci-dessus.
+            // Tourne jusqu'a l'arret du processus, meme si l'installation a echoue :
+            // le watchdog pourra reessayer quand la permission sera accordee.
             CFRunLoopRun()
         }
         t.name = "dev.tfoutrein.regarde.lot0.tap"
@@ -91,36 +118,53 @@ final class EventTap: @unchecked Sendable {
         return installed.load(ordering: .acquiring)
     }
 
-    /// Cree le port, la source, et arme le tap. Thread du tap uniquement.
-    private func install() -> Bool {
-        let mask: CGEventMask =
-            (1 << CGEventType.leftMouseDown.rawValue) |
-            (1 << CGEventType.leftMouseUp.rawValue) |
-            (1 << CGEventType.leftMouseDragged.rawValue) |
-            (1 << CGEventType.mouseMoved.rawValue) |
-            (1 << CGEventType.flagsChanged.rawValue) |
-            (1 << CGEventType.keyDown.rawValue)
+    /// Masque des evenements ecoutes. Volontairement etroit : le `switch` normatif du
+    /// § 6.2 ne traite que le bouton gauche et `mouseMoved`. Ajouter le bouton droit ou
+    /// la molette produirait un evenement orphelin des que le modificateur est relache.
+    private static let eventMask: CGEventMask =
+        (1 << CGEventType.leftMouseDown.rawValue) |
+        (1 << CGEventType.leftMouseUp.rawValue) |
+        (1 << CGEventType.leftMouseDragged.rawValue) |
+        (1 << CGEventType.mouseMoved.rawValue) |
+        (1 << CGEventType.flagsChanged.rawValue) |
+        (1 << CGEventType.keyDown.rawValue)
 
+    /// Cree un port arme, sans toucher a l'etat de l'objet. Thread du tap uniquement.
+    private func makePort() -> (CFMachPort, CFRunLoopSource)? {
         guard let port = CGEvent.tapCreate(
             tap: .cghidEventTap,              // au niveau HID : avant toute application
             place: .headInsertEventTap,       // en tete de chaine
             options: .defaultTap,             // peut CONSOMMER — d'ou l'exigence d'Accessibilite
-            eventsOfInterest: mask,
+            eventsOfInterest: Self.eventMask,
             callback: tapCallback,
             userInfo: Unmanaged.passUnretained(self).toOpaque()
-        ) else {
-            log.error("CGEvent.tapCreate a renvoye nil — permission manquante, pas un bug de code")
-            installed.store(false, ordering: .releasing)
-            return false
-        }
+        ) else { return nil }
 
-        let src = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, port, 0)
+        guard let src = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, port, 0) else {
+            // Sans source, le port ne recevrait jamais rien : l'invalider plutot que
+            // de laisser un tap arme que personne ne draine — la souris de l'utilisateur
+            // pourrait y etre retenue.
+            CFMachPortInvalidate(port)
+            return nil
+        }
         CFRunLoopAddSource(CFRunLoopGetCurrent(), src, .commonModes)
         CGEvent.tapEnable(tap: port, enable: true)
+        return (port, src)
+    }
+
+    /// Cree le port, la source, et arme le tap. Thread du tap uniquement.
+    private func install() -> Bool {
+        guard let (port, src) = makePort() else {
+            log.error("CGEvent.tapCreate a renvoye nil — permission manquante, pas un bug de code")
+            installed.store(false, ordering: .releasing)
+            armedFlag.store(false, ordering: .releasing)
+            return false
+        }
 
         machPort = port
         source = src
         installed.store(true, ordering: .releasing)
+        armedFlag.store(true, ordering: .releasing)
         lastEventTicks.store(SessionClock.hostTicksNow(), ordering: .relaxed)
         log.notice("tap installe")
         return true
@@ -137,6 +181,7 @@ final class EventTap: @unchecked Sendable {
         source = nil
         machPort = nil
         installed.store(false, ordering: .releasing)
+        armedFlag.store(false, ordering: .releasing)
     }
 
     // MARK: - Le callback
@@ -156,10 +201,15 @@ final class EventTap: @unchecked Sendable {
         // seul endroit ou l'on apprend que c'est arrive.
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
             if let port = machPort { CGEvent.tapEnable(tap: port, enable: true) }
+            armedFlag.store(true, ordering: .releasing)
             reArmCount.wrappingAdd(1, ordering: .relaxed)
-            // Un tracé en cours au moment du desarmement n'a plus de mouseUp garanti :
-            // remettre le verrou a plat evite de rester bloque en capture.
-            OptionGate.shared.requestReset()
+            // Le verrou n'est PAS remis a plat : il doit tenir jusqu'au `mouseUp`, sinon
+            // le milieu d'un clic dont l'application n'a pas vu le debut lui serait rendu
+            // — c'est C6. Rester « bloque en capture » ne dure de toute facon que jusqu'au
+            // prochain `leftMouseDown`, seul point de decision d'entree (§ 6.2).
+            //
+            // Le depassement de budget est le scenario NOMINAL de T0.8, provoque expres :
+            // ce chemin est emprunte a chaque passage du test.
             return nil
         }
 
@@ -241,54 +291,111 @@ final class EventTap: @unchecked Sendable {
         watchdog = timer
     }
 
+    /// Inactivite reelle de la session, tous peripheriques confondus.
+    ///
+    /// Sans ce croisement, le watchdog confond « l'utilisateur ne bouge pas » et « le tap
+    /// est mort » : le masque ne contient que des entrees utilisateur, il n'existe aucune
+    /// source periodique. Lire son ecran trente secondes — ou executer le protocole C10,
+    /// qui demande justement de laisser tourner — declencherait une reconstruction, et
+    /// chaque reconstruction ouvre une fenetre de quelques millisecondes sans tap pendant
+    /// laquelle un ⌥⌘-glisser passe integralement a l'application testee. Le mecanisme
+    /// cense proteger de la panne la provoquerait, et ferait echouer C2 au passage.
+    private func systemIdleSeconds() -> Double {
+        let types: [CGEventType] = [.mouseMoved, .leftMouseDown, .leftMouseDragged,
+                                    .keyDown, .flagsChanged, .scrollWheel]
+        return types.map {
+            CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: $0)
+        }.min() ?? .infinity
+    }
+
+    /// Nombre de detections consecutives de silence anormal. Thread du tap uniquement.
+    private var silentStreak = 0
+
+    /// Toute la verification s'execute sur la run loop du tap : `machPort` et `source`
+    /// lui appartiennent, et les lire depuis le thread principal etait une course sur
+    /// leur compteur de references.
     private func checkHealth() {
+        guard let rl = tapRunLoop else { return }
+        CFRunLoopPerformBlock(rl, CFRunLoopMode.commonModes.rawValue) { [weak self] in
+            self?.checkHealthOnTapThread()
+        }
+        CFRunLoopWakeUp(rl)
+    }
+
+    private func checkHealthOnTapThread() {
         guard let port = machPort else {
             log.error("watchdog : aucun port — tentative de reinstallation")
-            reinstallOnTapThread()
+            reinstallHere()
             return
         }
 
         let enabled = CGEvent.tapIsEnabled(tap: port)
-        let idleMs = SessionClock.millis(from: lastEventTicks.load(ordering: .relaxed),
-                                         to: SessionClock.hostTicksNow())
+        armedFlag.store(enabled, ordering: .releasing)
 
         if !enabled {
             log.error("watchdog : tap desarme — re-armement")
+            CGEvent.tapEnable(tap: port, enable: true)
+            armedFlag.store(true, ordering: .releasing)
+            reArmCount.wrappingAdd(1, ordering: .relaxed)
+            silentStreak = 0
+            return
+        }
+
+        let idleMs = SessionClock.millis(from: lastEventTicks.load(ordering: .relaxed),
+                                         to: SessionClock.hostTicksNow())
+
+        // Le silence du tap n'est un symptome que si le systeme, lui, voit du trafic.
+        guard idleMs > 30_000, systemIdleSeconds() < 5.0 else {
+            silentStreak = 0
+            return
+        }
+
+        silentStreak += 1
+        if silentStreak == 1 {
+            // Geste non destructif d'abord : la reconstruction est le dernier recours.
+            log.error("watchdog : muet alors que le systeme voit du trafic — re-armement simple")
             CGEvent.tapEnable(tap: port, enable: true)
             reArmCount.wrappingAdd(1, ordering: .relaxed)
             return
         }
 
-        // Trente secondes sans le moindre evenement, souris comprise, alors que le
-        // port se declare actif : c'est la panne silencieuse. On reconstruit tout.
-        if idleMs > 30_000 {
-            log.error("watchdog : actif mais muet depuis \(Int(idleMs / 1000)) s — reinstallation complete")
-            reinstallOnTapThread()
-        }
+        silentStreak = 0
+        log.error("watchdog : toujours muet a la seconde detection — reinstallation complete")
+        reinstallHere()
     }
 
-    /// Reconstruit le tap depuis son propre thread : toucher `machPort` depuis le
-    /// thread principal serait une course avec le callback.
-    private func reinstallOnTapThread() {
-        guard let rl = tapRunLoop else { return }
-        CFRunLoopPerformBlock(rl, CFRunLoopMode.commonModes.rawValue) { [weak self] in
-            guard let self else { return }
-            self.uninstall()
-            if self.install() {
-                self.log.notice("tap reinstalle par le watchdog")
-            } else {
-                self.log.error("reinstallation impossible — verifier Surveillance de la saisie")
-            }
+    /// Reconstruit le tap. Thread du tap uniquement.
+    ///
+    /// L'ordre compte : on cree le NOUVEAU port avant de retirer l'ancien. Detruire
+    /// d'abord viderait la run loop si la creation echoue — permission revoquee en cours
+    /// de session, autorisation perdue apres une re-signature — et `CFRunLoopRun()`
+    /// retournerait, tuant le thread definitivement. La source factice couvre deja ce
+    /// cas, mais un tap conserve vaut mieux qu'un tap absent : sur echec, on garde
+    /// l'existant plutot que de se retrouver sans rien.
+    private func reinstallHere() {
+        guard let (newPort, newSrc) = makePort() else {
+            log.error("reinstallation impossible — l'ancien tap est conserve, verifier Surveillance de la saisie")
+            return
         }
-        CFRunLoopWakeUp(rl)
+        uninstall()                                   // apres l'ajout de la nouvelle source
+        machPort = newPort
+        source = newSrc
+        installed.store(true, ordering: .releasing)
+        armedFlag.store(true, ordering: .releasing)
+        lastEventTicks.store(SessionClock.hostTicksNow(), ordering: .relaxed)
+        rebuildCount.wrappingAdd(1, ordering: .relaxed)
+        log.notice("tap reinstalle par le watchdog")
     }
 
     // MARK: - Diagnostic
 
     var isInstalled: Bool { installed.load(ordering: .acquiring) }
-    var isEnabled: Bool { machPort.map { CGEvent.tapIsEnabled(tap: $0) } ?? false }
+    /// Lu depuis le drapeau atomique, jamais depuis `machPort` : ce dernier appartient
+    /// au thread du tap et le lire ailleurs etait une course sur son compteur de references.
+    var isEnabled: Bool { armedFlag.load(ordering: .acquiring) }
     var eventsSeen: UInt64 { seenCount.load(ordering: .relaxed) }
     var reArms: UInt64 { reArmCount.load(ordering: .relaxed) }
+    var rebuilds: UInt64 { rebuildCount.load(ordering: .relaxed) }
     var idleSeconds: Double {
         SessionClock.millis(from: lastEventTicks.load(ordering: .relaxed),
                             to: SessionClock.hostTicksNow()) / 1000.0
@@ -299,9 +406,9 @@ final class EventTap: @unchecked Sendable {
 
     /// Le temoin permanent du § 4.2, en une ligne.
     func healthLine() -> String {
-        String(format: "tap %@ · %llu evts · inactif %.1fs · re-armements %llu · pire callback %.3f ms · perdus %llu",
+        String(format: "tap %@ · %llu evts · inactif %.1fs · re-arm %llu · reconstr %llu · pire callback %.3f ms · perdus %llu",
                isEnabled ? "actif" : "INACTIF",
-               eventsSeen, idleSeconds, reArms, worstCallbackMs, InkRing.shared.droppedCount)
+               eventsSeen, idleSeconds, reArms, rebuilds, worstCallbackMs, InkRing.shared.droppedCount)
     }
 }
 

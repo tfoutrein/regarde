@@ -96,25 +96,32 @@ final class LatencyHistogram: @unchecked Sendable {
     }
 
     /// Rapport lisible, avec le verdict C7 explicite.
+    ///
+    /// Pas de cadre ASCII : aligner une bordure droite sur des `%6.2f` et des `%llu` de
+    /// largeur variable demande de recompter les colonnes a chaque modification, et le
+    /// cadre finit toujours par etre faux. Un titre souligne ne peut pas se desaligner.
     func report() -> String {
         let s = summary()
         guard s.count > 0 else {
-            return "Latence : aucun echantillon. Trace au moins un trait avant de mesurer."
+            return "\nLatence tap → commit (T0.7)\n"
+                 + "  aucun echantillon — trace au moins un trait avant de mesurer.\n"
         }
 
         var lines = [
-            "┌─ Latence tap → commit (T0.7) ────────────────────────────────────┐",
-            String(format: "│ echantillons %-8llu                                        │", s.count),
-            String(format: "│ p50 %6.2f ms   p95 %6.2f ms   p99 %6.2f ms              │", s.p50, s.p95, s.p99),
-            String(format: "│ moyenne %6.2f ms   max %6.2f ms                          │", s.mean, s.max),
+            "",
+            "Latence tap → commit (T0.7)",
+            "───────────────────────────",
+            String(format: "  echantillons  %llu", s.count),
+            String(format: "  p50 %.2f ms   p95 %.2f ms   p99 %.2f ms", s.p50, s.p95, s.p99),
+            String(format: "  moyenne %.2f ms   max %.2f ms", s.mean, s.max),
         ]
         if s.overflow > 0 {
-            lines.append(String(format: "│ ⚠ %llu echantillon(s) au-dela de 200 ms                    │", s.overflow))
+            lines.append(String(format: "  ⚠ %llu echantillon(s) au-dela de 200 ms", s.overflow))
         }
-        lines.append(String(format: "│ C7 (p95 < 33 ms) : %-10@  objectif < 16 ms : %-8@ │",
-                            (s.passesC7 ? "PASS" : "FAIL") as NSString,
-                            (s.meetsTarget ? "atteint" : "non") as NSString))
-        lines.append("└──────────────────────────────────────────────────────────────────┘")
+        lines.append(String(format: "  C7 (p95 < 33 ms) : %@   objectif < 16 ms : %@",
+                            s.passesC7 ? "PASS" : "FAIL",
+                            s.meetsTarget ? "atteint" : "non"))
+        lines.append("")
         return lines.joined(separator: "\n")
     }
 

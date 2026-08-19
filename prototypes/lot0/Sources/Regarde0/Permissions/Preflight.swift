@@ -129,24 +129,23 @@ enum Preflight {
     }
 
     /// Rapport lisible, imprime au lancement et rejouable a la demande.
+    ///
+    /// Sans cadre ASCII : `%-28@` n'applique pas de largeur a une `NSString` de facon
+    /// fiable, et une bordure droite fausse est pire qu'une absence de bordure.
     static func report() -> String {
         let checks = runAll()
-        var out = ["", "┌─ Permissions ────────────────────────────────────────────────────┐"]
+        var out = ["", "Permissions", "───────────"]
 
         for c in checks {
-            let tag = c.required ? "requis " : "option."
-            out.append(String(format: "│ %@ %-28@ %-16@ %@ │",
-                              c.state.symbol, c.name as NSString,
-                              c.state.rawValue as NSString, tag))
+            let tag = c.required ? "requis" : "option"
+            let name = c.name.padding(toLength: 28, withPad: " ", startingAt: 0)
+            let state = c.state.rawValue.padding(toLength: 16, withPad: " ", startingAt: 0)
+            out.append("  \(c.state.symbol) \(name)\(state)\(tag)")
         }
 
         let tapOK = canActuallyCreateTap()
-        out.append("│                                                                  │")
-        out.append(String(format: "│ %@ %-28@ %-24@ │",
-                          tapOK ? "✓" : "✗",
-                          "Creation effective du tap" as NSString,
-                          (tapOK ? "possible" : "IMPOSSIBLE") as NSString))
-        out.append("└──────────────────────────────────────────────────────────────────┘")
+        out.append("")
+        out.append("  \(tapOK ? "✓" : "✗") \("Creation effective du tap".padding(toLength: 28, withPad: " ", startingAt: 0))\(tapOK ? "possible" : "IMPOSSIBLE")")
 
         // Le detail ne s'affiche que pour ce qui manque : un rapport toujours verbeux
         // finit par ne plus etre lu.

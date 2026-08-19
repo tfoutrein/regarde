@@ -27,6 +27,7 @@ Manipulations détaillées au § 4.6 du plan de développement. Statuts : `PASS`
 | C4 | Focus jamais perdu | | |
 | C5 | Premier point jamais perdu | | *(20 tracés)* |
 | C6 | Pas d'événement orphelin au relâchement | | |
+| C6b | Idem après `Échap` en plein tracé, bouton toujours enfoncé | | |
 | C7 | Latence p95 < 33 ms, objectif < 16 ms | | voir ci-dessous |
 | C8 | Survie plein écran et changement de Space | | |
 | C9 | Non happé par Stage Manager | | |
@@ -34,8 +35,16 @@ Manipulations détaillées au § 4.6 du plan de développement. Statuts : `PASS`
 | C11 | Appariement marque ↔ frame — étalonnage seulement au lot 0 | | |
 | C12 | Événements synthétiques (Karabiner) | | |
 
-**Bloquants pour le GO** : C1, C2, C3, C3b, C4, C5, C6. Les autres sont mesurés et consignés,
-leur parade appartient à un lot ultérieur.
+**Bloquants pour le GO** : C1, C2, C3, C3b, C4, C5, C6, C6b. Les autres sont mesurés et
+consignés, leur parade appartient à un lot ultérieur.
+
+**C6b, ajouté après la revue adversariale.** Manipulation : ⌥⌘-glisser sur le champ de texte
+du témoin 1, presser `Échap` **sans relâcher le bouton**, continuer à bouger la souris, puis
+relâcher. Attendu : aucune sélection de texte, et la console ne montre ni `mousemove` porteur
+de `buttons=1`, ni `mouseup`. Ce critère existe parce que la première version du prototype
+échouait dessus — l'invariant « tant que le bouton n'est pas relâché, l'application ne reçoit
+rien de ce clic » n'était pas tenu sur le chemin `Échap`. Même manipulation à refaire dans le
+Finder, en glissant un fichier : aucun drag fantôme.
 
 ---
 
@@ -48,14 +57,29 @@ Témoin 1 en mode charge (touche `2`), **plein écran**, sur l'écran de référ
 La page doit garder le focus pendant toute la mesure — Chrome bride `requestAnimationFrame`
 sur un onglet inactif, et si elle le perd, c'est C4 qui a échoué, pas C3b.
 
-| État | méd. (ms) | p95 (ms) | fps | vs référence | Seuil |
-|---|---|---|---|---|---|
-| 1 · référence — Regarde non lancé | | | | — | — |
-| 2 · Regarde lancé, calque non ordonné | | | | | **< 1 %** |
-| 3 · calque ordonné, tracé continu | | | | | **< 5 %** |
-| 3 bis · tracé continu (ordre inverse) | | | | | |
-| 2 bis · calque non ordonné (ordre inverse) | | | | | |
-| 1 bis · référence (ordre inverse) | | | | — | — |
+**Attendre le calibrage avant le premier relevé.** Le témoin mesure d'abord la période de
+rafraîchissement réelle, puis règle la charge du shader jusqu'à obtenir entre 2 % et 8 % de
+frames perdues, et **gèle** cette charge. Le bouton de relevé refuse de démarrer tant que ce
+n'est pas fait : un relevé pris sur une charge nulle donnerait un `PASS` sans mesure.
+
+**La métrique est la cadence effective** — frames rendues divisées par la durée écoulée —
+et non la médiane des deltas. Cette dernière est quantifiée par le vsync : elle ne prend que
+les valeurs 16,67 / 33,3 / 50 ms et ne peut donc pas résoudre une dégradation de 5 %.
+
+| Rafraîchissement mesuré | | Charge gelée (itérations) | |
+|---|---|---|---|
+
+| État | fps effectifs | frames perdues % | dégradation | Seuil |
+|---|---|---|---|---|
+| 1 · référence — Regarde non lancé | | | — | — |
+| 2 · Regarde lancé, calque non ordonné | | | | **< 1 %** |
+| 3 · calque ordonné, tracé continu | | | | **< 5 %** |
+| 3 bis · tracé continu (ordre inverse) | | | | |
+| 2 bis · calque non ordonné (ordre inverse) | | | | |
+| 1 bis · référence (ordre inverse) | | | — | — |
+
+Un relevé marqué « charge ≠ » n'est pas comparable et invalide le verdict : c'est le
+garde-fou contre une charge qui aurait dérivé entre deux états.
 
 **Lecture.** L'état 2 doit coûter zéro : c'est l'état majoritaire d'une session. Au-delà de 1 %,
 l'ordonnancement à la demande de l'[ADR-0010](../../docs/adr/0010-calque-ordonne-pendant-le-trace-seulement.md)
@@ -117,11 +141,17 @@ Menu ◎ → « Tout exporter (JSON) », ou `~/Regarde-lot0/mesures.json`.
 | Indicateur | Valeur | Attendu |
 |---|---|---|
 | Événements vus par le tap | | monte en continu |
-| Ré-armements | | 0 en usage normal |
+| Ré-armements | | 0 en usage normal ; > 0 après le test T0.8 |
+| **Reconstructions du tap** | | **0** — une reconstruction non provoquée est un défaut |
 | Événements perdus (ring) | | **0** |
 | Horodatages en repli | | 0 sans pilote tiers, > 0 avec (C12) |
+| Origines de latence en repli | | proportion à connaître pour interpréter le p95 |
 | Pire durée dans le callback | | très loin sous le seuil de timeout |
 | Capturés / laissés passer | | |
+
+**Le p95 de latence est mesuré par événement, pas par frame.** Un p95 autour de 16 ms est
+la quantification normale d'un rendu à 60 Hz, pas une régression : c'est la valeur de
+référence à laquelle le lot 2 se comparera.
 
 ---
 

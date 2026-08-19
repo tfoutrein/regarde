@@ -37,8 +37,12 @@ enum RunReport {
             }.joined(separator: ",\n")
         }
 
-        let strokes = await MainActor.run { OverlayController.shared.totalStrokes }
-        let panels = await MainActor.run { OverlayController.shared.panelCount }
+        let (strokes, panels, latencyFallbacks, maxLive) = await MainActor.run {
+            (OverlayController.shared.totalStrokes,
+             OverlayController.shared.panelCount,
+             OverlayController.shared.latencyFallbacks,
+             OverlayController.shared.maxLivePoints)
+        }
 
         let text = """
         {
@@ -50,6 +54,7 @@ enum RunReport {
             "actif": \(tap.isEnabled),
             "evenementsVus": \(tap.eventsSeen),
             "reArmements": \(tap.reArms),
+            "reconstructions": \(tap.rebuilds),
             "pireCallbackMs": \(String(format: "%.4f", tap.worstCallbackMs)),
             "evenementsPerdus": \(InkRing.shared.droppedCount),
             "horodatagesEnRepli": \(SessionClock.shared.fallbackCount)
@@ -58,7 +63,8 @@ enum RunReport {
             "capturés": \(OptionGate.shared.captured),
             "laissesPasser": \(OptionGate.shared.passed)
           },
-          "rendu": { "traits": \(strokes), "panneaux": \(panels) },
+          "rendu": { "traits": \(strokes), "panneaux": \(panels), "maxPointsTraitVivant": \(maxLive) },
+          "latenceOrigineEnRepli": \(latencyFallbacks),
           "ecrans": [
         \(screens)
           ],
