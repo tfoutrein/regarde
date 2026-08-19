@@ -69,13 +69,13 @@ pendant l'annotation. Aucun mode à mémoriser : on maintient une touche, on tra
 ## État du projet
 
 Conception terminée, aucune ligne de code applicatif n'est encore écrite. La spécification du
-MVP, les vingt décisions d'architecture et le plan de développement sont rédigés et cohérents
+MVP, les vingt-et-une décisions d'architecture et le plan de développement sont rédigés et cohérents
 entre eux.
 
 | Document | Contenu | État |
 |---|---|---|
 | [`docs/SPECIFICATION.md`](docs/SPECIFICATION.md) | Spécification technique du MVP — parcours, architecture, format des artefacts, risques | Version 1.0 |
-| [`docs/adr/`](docs/adr/README.md) | Vingt décisions d'architecture, une par fichier, toutes au statut `accepté` | Complet |
+| [`docs/adr/`](docs/adr/README.md) | Vingt-et-une décisions d'architecture, une par fichier, toutes au statut `accepté` | Complet |
 | [`docs/PLAN-DE-DEVELOPPEMENT.md`](docs/PLAN-DE-DEVELOPPEMENT.md) | Découpage en neuf lots, deux GO/NO-GO, calibrage en travail fractionné | Complet |
 | `prototypes/` | Prototypes de réduction de risque | Vide |
 
