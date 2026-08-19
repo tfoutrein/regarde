@@ -7,8 +7,8 @@
 | | |
 |---|---|
 | Machine | *(modèle, puce, RAM)* |
-| macOS | *(version, build)* |
-| Écrans | *(nombre, résolutions, échelles, disposition — noter si un écran est à gauche)* |
+| macOS | 26.1 (build 25B78) |
+| Écrans | **2 · display 1 interne 1728×1117 @2× à l'origine ; display 3 externe 3440×1440 @1× en cocoa (−971, 1117)** — origine x négative ET écran au-dessus. Configuration idéale pour ce lot : elle exerce les deux pièges de coordonnées du § 3.3. |
 | Date de passage | *(à remplir)* |
 | Version du prototype | `git rev-parse --short HEAD` → *(à remplir)* |
 
@@ -162,7 +162,11 @@ vrai produit du lot 0 : le code, lui, sera jeté.
 
 | Constat | Conséquence pour la suite |
 |---|---|
-| | |
+| **Le budget du callback est tenu avec une marge de trois ordres de grandeur.** Pire passage mesuré : **5 µs**, contre un seuil de timeout de l'ordre de la milliseconde. | Referme un angle mort de la revue : le raisonnement sur le coût des allocations dans le callback reposait sur des ordres de grandeur, pas sur une mesure. À re-mesurer sous une souris à 1000 Hz, mais la marge rend le risque R9 peu probable côté budget. |
+| **Les événements postés par `CGEventPost` portent un timestamp valide** — 0 horodatage en repli sur 25 événements synthétiques. | Contredit l'hypothèse que « synthétique » implique `timestamp == 0`. Le chemin de repli du § 3.1 ne s'exerce donc PAS avec des événements postés : **C12 exige réellement d'installer Karabiner** ou un pilote tiers, on ne peut pas le simuler. |
+| **`SCContentFilter.pointPixelScale` est un `Float`**, pas un `CGFloat`. | Lot 3 : ne jamais supposer un facteur entier de 2. Sur le display 3 de cette machine il vaut 1,0. |
+| **`NSScreen` n'est pas `Sendable`.** | Aucun `NSScreen` ne peut franchir une frontière d'isolation : seul l'identifiant d'écran circule. |
+| **`os_log` n'est pas remonté par `log show` pour ce bundle**, malgré des `notice` et des `error`. | D'où le mode `--doctor` : quand l'application est lancée par `open`, sa sortie standard n'est visible nulle part. Un diagnostic en ligne de commande n'est pas un confort, c'est la seule voie. |
 
 ---
 
