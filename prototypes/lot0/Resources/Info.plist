@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleName</key>
+    <string>Regarde0</string>
+    <key>CFBundleDisplayName</key>
+    <string>Regarde (lot 0)</string>
+    <key>CFBundleIdentifier</key>
+    <string>dev.tfoutrein.regarde.lot0</string>
+    <key>CFBundleExecutable</key>
+    <string>Regarde0</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>0.0.1</string>
+    <key>CFBundleVersion</key>
+    <string>1</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>26.0</string>
+
+    <!-- T0.2 : aucune icone dans le Dock, ignore par Stage Manager, structurellement
+         incapable de voler le focus a l'application testee. Voir ADR-0010. -->
+    <key>LSUIElement</key>
+    <true/>
+
+    <!-- Le micro n'est pas utilise au lot 0, mais la cle est presente pour que le
+         preflight T0.3 puisse interroger le statut sans faire planter le processus. -->
+    <key>NSMicrophoneUsageDescription</key>
+    <string>Regarde transcrit vos commentaires localement, sans jamais les envoyer sur le reseau.</string>
+</dict>
+</plist>

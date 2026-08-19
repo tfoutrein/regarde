@@ -1,0 +1,151 @@
+# Lot 0 — résultats
+
+> **Un critère non mesuré est un critère échoué.** (plan § 4.6)
+> Les lignes non bloquantes se remplissent quand même : elles sont la ligne de base
+> contre laquelle les lots 2, 3 et 7 se compareront.
+
+| | |
+|---|---|
+| Machine | *(modèle, puce, RAM)* |
+| macOS | *(version, build)* |
+| Écrans | *(nombre, résolutions, échelles, disposition — noter si un écran est à gauche)* |
+| Date de passage | *(à remplir)* |
+| Version du prototype | `git rev-parse --short HEAD` → *(à remplir)* |
+
+---
+
+## Les douze critères
+
+Manipulations détaillées au § 4.6 du plan de développement. Statuts : `PASS`, `FAIL`, `NON MESURÉ`.
+
+| # | Critère | Statut | Mesure / observation |
+|---|---|---|---|
+| C1 | Clics normaux hors modificateur | | |
+| C2 | Aucun événement souris ne passe sous ⌥⌘ — **fatal** | | |
+| C3 | L'application testée continue de s'animer | | |
+| C3b | Cadence quantifiée, trois états | | voir ci-dessous |
+| C4 | Focus jamais perdu | | |
+| C5 | Premier point jamais perdu | | *(20 tracés)* |
+| C6 | Pas d'événement orphelin au relâchement | | |
+| C7 | Latence p95 < 33 ms, objectif < 16 ms | | voir ci-dessous |
+| C8 | Survie plein écran et changement de Space | | |
+| C9 | Non happé par Stage Manager | | |
+| C10 | Tap actif après 30 min | | |
+| C11 | Appariement marque ↔ frame — étalonnage seulement au lot 0 | | |
+| C12 | Événements synthétiques (Karabiner) | | |
+
+**Bloquants pour le GO** : C1, C2, C3, C3b, C4, C5, C6. Les autres sont mesurés et consignés,
+leur parade appartient à un lot ultérieur.
+
+---
+
+## C3b — coût de composition
+
+Protocole au § 4.4 : trois états, 30 s chacun, deux premières secondes jetées, puis les
+trois mêmes états **dans l'ordre inverse** pour neutraliser la dérive thermique.
+
+Témoin 1 en mode charge (touche `2`), **plein écran**, sur l'écran de référence.
+La page doit garder le focus pendant toute la mesure — Chrome bride `requestAnimationFrame`
+sur un onglet inactif, et si elle le perd, c'est C4 qui a échoué, pas C3b.
+
+| État | méd. (ms) | p95 (ms) | fps | vs référence | Seuil |
+|---|---|---|---|---|---|
+| 1 · référence — Regarde non lancé | | | | — | — |
+| 2 · Regarde lancé, calque non ordonné | | | | | **< 1 %** |
+| 3 · calque ordonné, tracé continu | | | | | **< 5 %** |
+| 3 bis · tracé continu (ordre inverse) | | | | | |
+| 2 bis · calque non ordonné (ordre inverse) | | | | | |
+| 1 bis · référence (ordre inverse) | | | | — | — |
+
+**Lecture.** L'état 2 doit coûter zéro : c'est l'état majoritaire d'une session. Au-delà de 1 %,
+l'ordonnancement à la demande de l'[ADR-0010](../../docs/adr/0010-calque-ordonne-pendant-le-trace-seulement.md)
+ne suffit pas et quelque chose reste composité en permanence — c'est un défaut d'implémentation,
+pas un arbitrage.
+
+**Si C3b échoue à l'état 3**, la parade est déjà écrite : vérifier l'ordonnancement à la demande
+avant d'aller plus loin. Si elle échoue à l'état 2, chercher ce qui reste à l'écran.
+
+JSON du témoin (bouton « Copier le JSON ») :
+
+```json
+```
+
+---
+
+## C7 — latence tap → commit
+
+Menu ◎ → « Rapport de latence ». Au moins 500 points tracés avant de lire le résultat.
+
+| Mesure | Valeur |
+|---|---|
+| Échantillons | |
+| p50 | |
+| p95 | |
+| p99 | |
+| Maximum | |
+| Pire durée dans le callback | |
+
+Seuil C7 : p95 < 33 ms. Objectif : < 16 ms.
+
+---
+
+## C11 — étalonnage du banc
+
+**Le verdict de C11 ne se rend pas au lot 0** (plan § 4.5) : il n'y a pas encore de flux
+continu, donc pas d'appariement à valider. Ce qu'on mesure ici est la latence propre du
+chemin `SCScreenshotManager.captureImage`, utile pour le mode éclair du lot 2, et le fait
+que le banc soit rodé avant que C11 compte vraiment, au lot 3.
+
+Procédure : menu ◎ → « Activer le banc C11 », témoin 1 en mode compteur (touche `3`),
+aligner l'horloge (touche `A` ou clic dans la scène) en notant le `SessionTime` affiché
+par Regarde au même instant, puis tracer plusieurs marques.
+
+| Mesure | Valeur |
+|---|---|
+| Captures réussies / tentées | |
+| Latence `mouseDown` → image, médiane | |
+| Latence, pire cas | |
+| Décalage `performance.now()` ↔ horloge hôte | |
+| Écart numéro gravé ↔ numéro journalisé | *(tolérance 16 ms)* |
+
+---
+
+## Diagnostic de l'exécution
+
+Menu ◎ → « Tout exporter (JSON) », ou `~/Regarde-lot0/mesures.json`.
+
+| Indicateur | Valeur | Attendu |
+|---|---|---|
+| Événements vus par le tap | | monte en continu |
+| Ré-armements | | 0 en usage normal |
+| Événements perdus (ring) | | **0** |
+| Horodatages en repli | | 0 sans pilote tiers, > 0 avec (C12) |
+| Pire durée dans le callback | | très loin sous le seuil de timeout |
+| Capturés / laissés passer | | |
+
+---
+
+## Journal des surprises
+
+Ce que le prototype a appris et qui n'était pas dans la spécification. Cette section est le
+vrai produit du lot 0 : le code, lui, sera jeté.
+
+| Constat | Conséquence pour la suite |
+|---|---|
+| | |
+
+---
+
+## GO / NO-GO n°1
+
+Question posée (plan § 3.1) : **le geste fonctionne-t-il, et à quel coût de composition ?**
+
+- [ ] C1, C2, C3, C3b, C4, C5, C6 sont tous `PASS`
+- [ ] Aucun événement perdu dans le ring
+- [ ] Le tap survit à 30 minutes sans ré-armement anormal
+
+**Décision** : *(GO / NO-GO / GO conditionnel)*
+
+**Motif** :
+
+**Si NO-GO** — ce qui est remis en cause, et quelle option de repli est étudiée.

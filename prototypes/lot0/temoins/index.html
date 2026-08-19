@@ -1,0 +1,495 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Témoin 1 — Regarde lot 0</title>
+<style>
+  :root {
+    --bg: #0b0b0d;
+    --fg: #f2f2f4;
+    --dim: #8a8a92;
+    --line: #26262c;
+    --ok: #30d158;
+    --warn: #ffd60a;
+    --bad: #ff453a;
+    --ink: #ff3b30;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--bg); color: var(--fg);
+    font: 14px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+    overflow: hidden;
+  }
+
+  /* La scène occupe tout l'écran : c'est elle qui est mesurée. */
+  #scene { position: fixed; inset: 0; display: grid; place-items: center; }
+  canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: none; }
+
+  /* Mode horloge — contrôle visuel de C3, doit rester lisible de loin. */
+  #clock { display: none; text-align: center; }
+  #clock svg { width: min(46vmin, 420px); height: min(46vmin, 420px); }
+  #clockLabel { margin-top: 1.2rem; color: var(--dim); letter-spacing: .18em; font-size: 12px; }
+
+  /* Mode compteur — instrument de C11, chiffres gravés dans les pixels. */
+  #counter { display: none; text-align: center; }
+  #frameNo {
+    font-size: min(34vw, 30rem); font-weight: 800; line-height: .85;
+    font-variant-numeric: tabular-nums; letter-spacing: -.04em;
+    color: var(--fg); text-shadow: 0 0 60px rgba(255,255,255,.09);
+  }
+  #counterMeta { margin-top: .6rem; color: var(--dim); font-size: 13px; }
+
+  /* Contrôles : volontairement légers. Un panneau lourd fausserait la mesure. */
+  #hud {
+    position: fixed; top: 14px; left: 14px; z-index: 10;
+    background: rgba(18,18,22,.9); border: 1px solid var(--line); border-radius: 10px;
+    padding: 12px 14px; min-width: 330px; max-width: 380px;
+    backdrop-filter: none; /* surtout pas de flou : ce serait une couche de composition en plus */
+  }
+  #hud.hidden { display: none; }
+  #hud h1 { margin: 0 0 8px; font-size: 12px; letter-spacing: .16em; color: var(--dim); font-weight: 600; }
+  .row { display: flex; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; }
+  button {
+    font: inherit; font-size: 12px; color: var(--fg); background: #1c1c22;
+    border: 1px solid var(--line); border-radius: 6px; padding: 5px 9px; cursor: pointer;
+  }
+  button:hover { background: #26262e; }
+  button[aria-pressed="true"] { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+  button:disabled { opacity: .4; cursor: default; }
+  kbd {
+    font: inherit; font-size: 10px; background: #000; border: 1px solid var(--line);
+    border-radius: 3px; padding: 0 4px; color: var(--dim);
+  }
+
+  /* Champ de saisie : la preuve de C2 (⌥⌘-glisser ne sélectionne rien)
+     et de C4 (le caret continue de clignoter). Présent dans TOUS les modes. */
+  #probe {
+    width: 100%; font: inherit; font-size: 13px; color: var(--fg);
+    background: #000; border: 1px solid var(--line); border-radius: 6px;
+    padding: 7px 9px; margin-bottom: 8px;
+  }
+  #probe:focus { outline: 2px solid #0a84ff; outline-offset: -1px; }
+
+  #status { font-size: 12px; color: var(--dim); min-height: 1.5em; }
+  #status.live { color: var(--warn); }
+
+  table { border-collapse: collapse; width: 100%; font-size: 11px; margin-top: 8px; }
+  th, td { text-align: right; padding: 3px 5px; border-top: 1px solid var(--line); }
+  th:first-child, td:first-child { text-align: left; }
+  th { color: var(--dim); font-weight: 500; }
+  td.verdict-ok { color: var(--ok); }
+  td.verdict-bad { color: var(--bad); }
+  .num { font-variant-numeric: tabular-nums; }
+  #hint { margin-top: 8px; font-size: 11px; color: var(--dim); }
+</style>
+</head>
+<body>
+
+<div id="scene">
+  <canvas id="gl"></canvas>
+
+  <div id="clock">
+    <svg viewBox="-110 -110 220 220" aria-hidden="true">
+      <circle r="104" fill="none" stroke="#26262c" stroke-width="2"/>
+      <g id="ticks"></g>
+      <line id="hand" x1="0" y1="14" x2="0" y2="-92" stroke="#ff3b30" stroke-width="3" stroke-linecap="round"/>
+      <circle r="5" fill="#ff3b30"/>
+    </svg>
+    <div id="clockLabel">C3 — la trotteuse doit tourner pendant le tracé</div>
+  </div>
+
+  <div id="counter">
+    <div id="frameNo">0</div>
+    <div id="counterMeta">C11 — lire le numéro gravé dans l'image, le comparer au journal</div>
+  </div>
+</div>
+
+<div id="hud">
+  <h1>TÉMOIN 1 · REGARDE LOT 0</h1>
+
+  <input id="probe" type="text" spellcheck="false"
+         value="Sélectionne ce texte à la souris — puis réessaie avec ⌥⌘ enfoncé.">
+
+  <div class="row">
+    <button id="m1" aria-pressed="false">1 · Horloge</button>
+    <button id="m2" aria-pressed="false">2 · Charge</button>
+    <button id="m3" aria-pressed="false">3 · Compteur</button>
+  </div>
+
+  <div class="row">
+    <button id="run" disabled>Relevé 30 s</button>
+    <button id="align">Aligner l'horloge</button>
+    <button id="copy">Copier le JSON</button>
+    <button id="reset">Effacer</button>
+  </div>
+
+  <div id="status">Mode charge requis pour un relevé C3b.</div>
+
+  <table id="results" hidden>
+    <thead>
+      <tr><th>Relevé</th><th>méd.</th><th>p95</th><th>fps</th><th>vs réf.</th></tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+
+  <div id="hint">
+    <kbd>H</kbd> masque ce panneau · <kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> mode ·
+    <kbd>R</kbd> relevé · <kbd>A</kbd> aligner
+  </div>
+</div>
+
+<script>
+'use strict';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Témoin 1 du lot 0 — voir docs/PLAN-DE-DEVELOPPEMENT.md § 4.3, 4.4, 4.5
+//
+// Trois modes, trois rôles :
+//   horloge  → C3, contrôle visuel que l'app testée continue de s'animer
+//   charge   → C3b, mesure quantifiée de la dégradation de cadence
+//   compteur → C11, étalonnage de l'appariement marque ↔ frame
+// ─────────────────────────────────────────────────────────────────────────────
+
+const SETTLE_MS  = 2000;   // § 4.4 : jeter les deux premières secondes de chaque relevé
+const SAMPLE_MS  = 30000;  // § 4.4 : 30 s par état
+const TARGET_MS  = 15.0;   // charge visée : juste sous 60 fps, pour que toute couche se voie
+
+const state = {
+  mode: 'clock',
+  frame: 0,
+  deltas: [],          // deltas de rAF du relevé en cours
+  sampling: false,
+  sampleStart: 0,
+  runs: [],            // relevés nommés, dans l'ordre de saisie
+  counterLog: [],      // { frame, now } — journal C11
+  clockAlign: null,    // { pageNow, wallMs } — pont performance.now() ↔ horloge hôte
+  glLoad: 60,          // itérations dans le fragment shader, auto-calibré
+};
+
+const $ = (id) => document.getElementById(id);
+
+// ── Mode horloge ─────────────────────────────────────────────────────────────
+(function buildTicks() {
+  const g = $('ticks');
+  for (let i = 0; i < 60; i++) {
+    const long = i % 5 === 0;
+    const el = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    el.setAttribute('x1', 0); el.setAttribute('y1', long ? -104 : -104);
+    el.setAttribute('x2', 0); el.setAttribute('y2', long ? -92 : -98);
+    el.setAttribute('stroke', long ? '#4a4a54' : '#2c2c34');
+    el.setAttribute('stroke-width', long ? 2 : 1);
+    el.setAttribute('transform', `rotate(${i * 6})`);
+    g.appendChild(el);
+  }
+})();
+
+// ── Mode charge : WebGL, charge fragment auto-calibrée ───────────────────────
+let gl = null, prog = null, uLoad = null, uTime = null, glReady = false;
+
+function initGL() {
+  if (glReady) return true;
+  const cv = $('gl');
+  gl = cv.getContext('webgl2', { antialias: false, powerPreference: 'high-performance' });
+  if (!gl) { setStatus('WebGL2 indisponible — mode charge inutilisable.', true); return false; }
+
+  const vs = `#version 300 es
+  void main() {
+    // Un seul triangle couvrant tout l'écran, sans buffer.
+    vec2 p = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2);
+    gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
+  }`;
+
+  // La boucle est volontairement dépendante des données pour que le pilote ne
+  // puisse pas la supprimer : sans ça, la charge mesurée serait nulle.
+  const fs = `#version 300 es
+  precision highp float;
+  uniform int  uLoad;
+  uniform float uTime;
+  out vec4 fragColor;
+  void main() {
+    vec2 uv = gl_FragCoord.xy * 0.002;
+    float a = 0.0;
+    for (int i = 0; i < 512; i++) {
+      if (i >= uLoad) break;
+      a += sin(uv.x * 3.1 + a + uTime) * cos(uv.y * 2.7 - a);
+      a = fract(a * 1.0001);
+    }
+    float v = 0.03 + 0.10 * a;
+    fragColor = vec4(v, v * 0.9, v * 1.2, 1.0);
+  }`;
+
+  const mk = (type, src) => {
+    const s = gl.createShader(type);
+    gl.shaderSource(s, src); gl.compileShader(s);
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
+    return s;
+  };
+  prog = gl.createProgram();
+  gl.attachShader(prog, mk(gl.VERTEX_SHADER, vs));
+  gl.attachShader(prog, mk(gl.FRAGMENT_SHADER, fs));
+  gl.linkProgram(prog);
+  if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog));
+  gl.useProgram(prog);
+  uLoad = gl.getUniformLocation(prog, 'uLoad');
+  uTime = gl.getUniformLocation(prog, 'uTime');
+  glReady = true;
+  return true;
+}
+
+function resizeGL() {
+  const cv = $('gl');
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const w = Math.floor(innerWidth * dpr), h = Math.floor(innerHeight * dpr);
+  if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; if (gl) gl.viewport(0, 0, w, h); }
+}
+addEventListener('resize', resizeGL);
+
+// ── Boucle unique ────────────────────────────────────────────────────────────
+let last = 0;
+
+function frame(now) {
+  requestAnimationFrame(frame);
+  const dt = last ? now - last : 0;
+  last = now;
+  state.frame++;
+
+  if (state.mode === 'clock') {
+    const s = (now / 1000) % 60;
+    $('hand').setAttribute('transform', `rotate(${s * 6})`);
+  } else if (state.mode === 'load') {
+    resizeGL();
+    if (glReady) {
+      gl.uniform1i(uLoad, state.glLoad);
+      gl.uniform1f(uTime, now * 0.001);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+    }
+    // Calibrage doux hors relevé : viser TARGET_MS sans jamais bouger pendant une mesure.
+    if (!state.sampling && dt > 0) {
+      if (dt < TARGET_MS - 1.5 && state.glLoad < 512) state.glLoad++;
+      else if (dt > TARGET_MS + 1.5 && state.glLoad > 4) state.glLoad--;
+    }
+  } else if (state.mode === 'counter') {
+    $('frameNo').textContent = state.frame;
+    state.counterLog.push({ frame: state.frame, now: +now.toFixed(3) });
+    if (state.counterLog.length > 20000) state.counterLog.splice(0, 10000);
+  }
+
+  if (state.sampling) {
+    const elapsed = now - state.sampleStart;
+    if (elapsed > SETTLE_MS && dt > 0) state.deltas.push(dt);
+    if (elapsed >= SETTLE_MS + SAMPLE_MS) finishRun(now);
+    else if ((state.frame & 15) === 0) {
+      const left = Math.max(0, Math.ceil((SETTLE_MS + SAMPLE_MS - elapsed) / 1000));
+      setStatus(`Relevé en cours — ${left} s · ${state.deltas.length} frames`, true);
+    }
+  }
+}
+requestAnimationFrame(frame);
+
+// ── Relevés et statistiques ──────────────────────────────────────────────────
+const quantile = (sorted, q) => {
+  if (!sorted.length) return NaN;
+  const i = (sorted.length - 1) * q, lo = Math.floor(i), hi = Math.ceil(i);
+  return lo === hi ? sorted[lo] : sorted[lo] + (sorted[hi] - sorted[lo]) * (i - lo);
+};
+
+function startRun() {
+  if (state.mode !== 'load') { setStatus('Passe en mode charge (2) avant un relevé.', true); return; }
+  const label = prompt(
+    'Étiquette du relevé (§ 4.4) :\n' +
+    '  1-reference        Regarde non lancé\n' +
+    '  2-calque-non-ordonne  Regarde lancé, rien à l\'écran\n' +
+    '  3-trace-continu    ⌥⌘ maintenu, tracé sans discontinuer\n\n' +
+    'Refaire ensuite dans l\'ordre inverse (dérive thermique).',
+    suggestLabel()
+  );
+  if (!label) return;
+  state.deltas = [];
+  state.sampling = true;
+  state.sampleStart = performance.now();
+  state.pendingLabel = label.trim();
+  $('run').disabled = true;
+  setStatus(`Relevé « ${state.pendingLabel} » — stabilisation 2 s…`, true);
+}
+
+function suggestLabel() {
+  const n = state.runs.length;
+  return ['1-reference', '2-calque-non-ordonne', '3-trace-continu',
+          '3-trace-continu-bis', '2-calque-non-ordonne-bis', '1-reference-bis'][n] || `releve-${n + 1}`;
+}
+
+function finishRun(now) {
+  state.sampling = false;
+  $('run').disabled = false;
+  const d = state.deltas.slice().sort((a, b) => a - b);
+  const run = {
+    label: state.pendingLabel,
+    frames: d.length,
+    medianMs: +quantile(d, 0.5).toFixed(3),
+    p95Ms: +quantile(d, 0.95).toFixed(3),
+    fps: +(1000 / quantile(d, 0.5)).toFixed(1),
+    glLoad: state.glLoad,
+    at: new Date().toISOString(),
+  };
+  state.runs.push(run);
+  renderResults();
+  setStatus(`« ${run.label} » : méd. ${run.medianMs} ms · p95 ${run.p95Ms} ms · ${run.fps} fps`);
+}
+
+// Les relevés « -bis » sont la contre-mesure en ordre inverse : on les moyenne avec
+// leur homologue pour neutraliser la dérive thermique (§ 4.4).
+function baseLabel(l) { return l.replace(/-bis$/, ''); }
+
+function referenceMedian() {
+  const refs = state.runs.filter(r => baseLabel(r.label) === '1-reference');
+  if (!refs.length) return null;
+  return refs.reduce((s, r) => s + r.medianMs, 0) / refs.length;
+}
+
+function renderResults() {
+  const tb = $('results').querySelector('tbody');
+  tb.innerHTML = '';
+  const ref = referenceMedian();
+  for (const r of state.runs) {
+    const tr = document.createElement('tr');
+    let cmp = '—', cls = '';
+    if (ref && baseLabel(r.label) !== '1-reference') {
+      const pct = (r.medianMs / ref - 1) * 100;
+      const limit = baseLabel(r.label) === '2-calque-non-ordonne' ? 1 : 5;
+      cmp = `${pct >= 0 ? '+' : ''}${pct.toFixed(1)} %`;
+      cls = pct < limit ? 'verdict-ok' : 'verdict-bad';
+    }
+    tr.innerHTML =
+      `<td>${r.label}</td>` +
+      `<td class="num">${r.medianMs}</td>` +
+      `<td class="num">${r.p95Ms}</td>` +
+      `<td class="num">${r.fps}</td>` +
+      `<td class="num ${cls}">${cmp}</td>`;
+    tb.appendChild(tr);
+  }
+  $('results').hidden = state.runs.length === 0;
+}
+
+// ── C11 : pont entre performance.now() et l'horloge hôte ─────────────────────
+// Un clic (ou « A ») journalise l'instant côté page. Au même instant, l'utilisateur
+// déclenche le marqueur applicatif côté Regarde. Le décalage entre les deux donne
+// l'offset performance.now() ↔ CMClockGetHostTimeClock() (ADR-0007).
+function alignClock() {
+  const pageNow = performance.now();
+  state.clockAlign = { pageNow: +pageNow.toFixed(3), wallMs: Date.now(), frame: state.frame };
+  setStatus(`Alignement : performance.now()=${state.clockAlign.pageNow} ms · frame ${state.frame} · ` +
+            `wall=${state.clockAlign.wallMs}. Note le SessionTime affiché par Regarde au même instant.`);
+}
+
+function payload() {
+  return {
+    tool: 'regarde-lot0-temoin1',
+    capturedAt: new Date().toISOString(),
+    screen: {
+      cssPx: [innerWidth, innerHeight],
+      dpr: window.devicePixelRatio,
+      devicePx: [Math.round(innerWidth * devicePixelRatio), Math.round(innerHeight * devicePixelRatio)],
+    },
+    c3b: {
+      runs: state.runs,
+      referenceMedianMs: referenceMedian(),
+      verdicts: verdicts(),
+    },
+    c11: {
+      clockAlign: state.clockAlign,
+      counterLogTail: state.counterLog.slice(-4000),
+    },
+  };
+}
+
+function verdicts() {
+  const ref = referenceMedian();
+  if (!ref) return null;
+  const avg = (base) => {
+    const rs = state.runs.filter(r => baseLabel(r.label) === base);
+    return rs.length ? rs.reduce((s, r) => s + r.medianMs, 0) / rs.length : null;
+  };
+  const idle = avg('2-calque-non-ordonne'), draw = avg('3-trace-continu');
+  return {
+    calqueNonOrdonnePct: idle ? +((idle / ref - 1) * 100).toFixed(2) : null,
+    calqueNonOrdonneSeuil: 1,
+    traceContinuPct: draw ? +((draw / ref - 1) * 100).toFixed(2) : null,
+    traceContinuSeuil: 5,
+    c3b: draw ? ((draw / ref - 1) * 100 < 5 ? 'PASS' : 'FAIL') : 'NON MESURÉ',
+  };
+}
+
+// ── Interface ────────────────────────────────────────────────────────────────
+function setMode(m) {
+  state.mode = m;
+  $('clock').style.display   = m === 'clock'   ? 'block' : 'none';
+  $('counter').style.display = m === 'counter' ? 'block' : 'none';
+  $('gl').style.display      = m === 'load'    ? 'block' : 'none';
+  for (const [id, mm] of [['m1','clock'],['m2','load'],['m3','counter']]) {
+    $(id).setAttribute('aria-pressed', String(mm === m));
+  }
+  $('run').disabled = (m !== 'load') || state.sampling;
+  if (m === 'load') { if (initGL()) resizeGL(); }
+  if (m === 'counter') state.counterLog = [];
+  setStatus(m === 'load'
+    ? `Mode charge — calibrage automatique vers ${TARGET_MS} ms/frame. Prêt pour un relevé.`
+    : m === 'counter'
+      ? 'Mode compteur — le numéro affiché doit se retrouver gravé dans la capture.'
+      : 'Mode horloge — la trotteuse doit continuer de tourner pendant le tracé.');
+}
+
+let statusTimer = null;
+function setStatus(text, live = false) {
+  const el = $('status');
+  el.textContent = text;
+  el.classList.toggle('live', live);
+  clearTimeout(statusTimer);
+  if (!live) statusTimer = setTimeout(() => { el.textContent = ''; }, 12000);
+}
+
+$('m1').onclick = () => setMode('clock');
+$('m2').onclick = () => setMode('load');
+$('m3').onclick = () => setMode('counter');
+$('run').onclick = startRun;
+$('align').onclick = alignClock;
+$('reset').onclick = () => {
+  if (!confirm('Effacer tous les relevés ?')) return;
+  state.runs = []; state.counterLog = []; state.clockAlign = null;
+  renderResults(); setStatus('Relevés effacés.');
+};
+$('copy').onclick = async () => {
+  const json = JSON.stringify(payload(), null, 2);
+  try {
+    await navigator.clipboard.writeText(json);
+    setStatus(`JSON copié (${json.length} caractères). Colle-le dans RESULTATS.md.`);
+  } catch {
+    console.log(json);
+    setStatus('Presse-papiers refusé — le JSON est dans la console.');
+  }
+};
+
+addEventListener('keydown', (e) => {
+  if (e.target === $('probe')) return;         // ne jamais capturer la saisie du champ de test
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  const k = e.key.toLowerCase();
+  if (k === '1') setMode('clock');
+  else if (k === '2') setMode('load');
+  else if (k === '3') setMode('counter');
+  else if (k === 'r') startRun();
+  else if (k === 'a') alignClock();
+  else if (k === 'h') $('hud').classList.toggle('hidden');
+});
+
+// Un clic dans la scène aligne aussi l'horloge : plus pratique que la touche
+// quand une main tient déjà ⌥⌘.
+$('scene').addEventListener('click', alignClock);
+
+// C4 : le caret doit continuer de clignoter dans ce champ pendant tout le tracé.
+$('probe').focus();
+setMode('clock');
+console.log('[temoin1] prêt — 1 horloge · 2 charge · 3 compteur · R relevé · A aligner · H panneau');
+</script>
+</body>
+</html>
