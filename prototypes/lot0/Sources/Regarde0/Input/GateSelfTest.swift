@@ -168,6 +168,12 @@ enum GateSelfTest {
                  flags: [.maskAlternate, .maskCommand, .maskShift], expected: .capture),
         ])
 
+        // La disposition du clavier ne se teste pas par des sequences : elle depend du
+        // systeme. On l'AFFICHE, parce que c'est la premiere chose a regarder quand un
+        // raccourci ne repond pas — et parce que le defaut est invisible sur QWERTY.
+        KeyboardLayout.shared.start()
+        print(KeyboardLayout.describe().split(separator: "\n").map { "  \($0)" }.joined(separator: "\n"))
+
         print("")
         if failures == 0 {
             print("  ✓ Toutes les séquences passent.")

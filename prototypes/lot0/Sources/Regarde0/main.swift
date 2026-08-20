@@ -29,8 +29,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         //    volerait le focus, ce qui est precisement ce que le produit ne doit pas faire.
         Preflight.logReport()
 
-        // 2. Disposition des ecrans.
+        // 2. Disposition des ecrans et du clavier.
         StatusItemController.emit(Coordinates.describeScreens())
+
+        // Resout le code de touche de « z » selon la disposition courante. Doit precéder
+        // le demarrage du tap : sans cela, le premier ⌥⌘Z tomberait dans le vide.
+        KeyboardLayout.shared.start()
+        StatusItemController.emit(KeyboardLayout.describe())
 
         // 3. Panneaux et barre de menus.
         StatusItemController.shared.setUp()

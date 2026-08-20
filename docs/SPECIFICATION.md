@@ -525,6 +525,26 @@ Avec le micro lié au geste (§ 3.5), la notion de confiance de rattachement dis
 
 Budget dur : **20 secondes maximum entre le raccourci de fin et le presse-papiers** en chemin nominal. Toute fonctionnalité qui dépasse est supprimée du MVP, pas améliorée.
 
+### 6.6bis Codes de touches et disposition du clavier
+
+`kCGKeyboardEventKeycode` désigne un **emplacement** sur le clavier, pas le caractère
+imprimé dessus. Deux règles opposées en découlent, et les confondre casse un raccourci
+sur un clavier non-QWERTY :
+
+| Type de touche | Résolution | Raison |
+|---|---|---|
+| **Lettre** | par le **caractère**, via `UCKeyTranslate` | la position change : le `Z` d'un AZERTY est à l'emplacement du `W` QWERTY (code 6) |
+| **Rangée numérique** | par le **code physique** (18 à 29) | la position est stable ; sur AZERTY le caractère `1` ne s'obtient que sur le pavé numérique, code 83, absent des portables |
+| **Sans caractère** (`Échap`, flèches, Tab) | par le **code physique** | identique sur toutes les dispositions |
+
+La résolution se fait au démarrage et à chaque `kTISNotifySelectedKeyboardInputSourceChanged`,
+jamais dans le callback du tap, qui ne compare que des entiers (§ 6.2). Si elle échoue, le
+raccourci est **désactivé** plutôt que rabattu sur un code par défaut : un raccourci qui
+atterrit silencieusement sur la mauvaise touche coûte plus cher qu'un raccourci absent.
+
+Établi au lot 0 : ⌥⌘Z, dont le code 6 était écrit en dur, se déclenchait sur la touche `W`
+d'un clavier français.
+
 ### 6.7 `⌥⌘ + chiffre` : règle de désambiguïsation
 
 Trois fonctions distinctes revendiquent `⌥⌘ + chiffre` — marque rétroactive à T−N (§ 5.1),

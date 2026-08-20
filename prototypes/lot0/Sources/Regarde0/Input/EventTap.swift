@@ -75,10 +75,9 @@ final class EventTap: @unchecked Sendable {
         case undo
     }
 
-    private enum KeyCode {
-        static let escape: Int64 = 53
-        static let z: Int64 = 6
-    }
+    // Les codes de touches ne sont plus ecrits en dur : voir `KeyboardLayout`.
+    // `kCGKeyboardEventKeycode` designe un EMPLACEMENT physique, pas un caractere —
+    // le code 6 porte `Z` en QWERTY et `W` en AZERTY.
 
     // MARK: - Cycle de vie
 
@@ -257,13 +256,20 @@ final class EventTap: @unchecked Sendable {
     private func handleKeyDown(event: CGEvent, flags: CGEventFlags) -> Unmanaged<CGEvent>? {
         let code = event.getIntegerValueField(.keyboardEventKeycode)
 
-        if code == KeyCode.escape, OptionGate.shared.isStroking {
+        // Échap n'a pas de caractere : son code physique est stable sur toutes les
+        // dispositions et peut rester en dur.
+        if code == KeyboardLayout.Physical.escape, OptionGate.shared.isStroking {
             OptionGate.shared.cancelStroke()
             onControlKey?(.escape)
             return nil
         }
 
-        if code == KeyCode.z, flags.contains(.maskCommand), !flags.contains(.maskShift),
+        // Le code de « z » est resolu selon la disposition courante, hors du callback :
+        // ici on ne fait que comparer deux entiers. Vaut −1 si la resolution a echoue,
+        // auquel cas aucun code reel ne peut correspondre et le raccourci est inerte —
+        // preferable a un raccourci qui atterrit sur la mauvaise touche.
+        let undo = KeyboardLayout.shared.undoKeyCode
+        if undo >= 0, code == undo, flags.contains(.maskCommand), !flags.contains(.maskShift),
            OptionGate.shared.isArmed {
             // Conditionne a `isArmed` : sans le modificateur d'armement tenu, ⌘Z
             // appartient a l'application testee et le lui voler serait inacceptable.

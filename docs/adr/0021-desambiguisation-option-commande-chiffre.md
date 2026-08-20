@@ -94,6 +94,33 @@ relâcher ⌥⌘, puisque la première s'attache à la fenêtre et bascule le se
 Deux rétroactives d'affilée décrivent un cas marginal — deux événements transitoires distincts
 dans la même seconde — et le geste supplémentaire coûte moins qu'un mode explicite.
 
+## Contrainte d'implémentation découverte au lot 0
+
+**Les chiffres doivent être reconnus par leur code de touche physique, jamais par le
+caractère qu'ils produisent.**
+
+`kCGKeyboardEventKeycode` désigne un emplacement sur le clavier, pas le caractère imprimé
+dessus. Sur un clavier AZERTY français, résoudre le caractère `1` renvoie le code **83 —
+le pavé numérique**, absent de tout MacBook ; la rangée du haut y produit `& é " ' ( -`
+aux codes 18 à 24. Une palette qui résoudrait le caractère serait donc inaccessible sur
+un clavier français, alors même que cette décision existe pour un auteur qui travaille
+en AZERTY.
+
+La règle s'inverse pour les lettres : la position d'une lettre change entre dispositions
+(`Z` en QWERTY est à l'emplacement du `W` AZERTY), donc un raccourci désignant une lettre
+doit se résoudre **par le caractère**, via `UCKeyTranslate` sur la disposition courante,
+au démarrage et à chaque changement de disposition. Le prototype du lot 0 a été corrigé
+sur ce point après que ⌥⌘Z se soit révélé migrer sur la touche `W`.
+
+| Type de touche | Résolution | Raison |
+|---|---|---|
+| Lettre (`z` de l'annulation) | par le **caractère** | la position change selon la disposition |
+| Rangée numérique (`1..9` de cette décision) | par le **code physique** | la position est stable, seul le caractère change |
+| Sans caractère (`Échap`, flèches) | par le **code physique** | code identique partout |
+
+Dans tous les cas, la résolution a lieu hors du callback du tap, qui ne fait que comparer
+des entiers ([ADR-0005](0005-cgeventtap-arbitre-unique.md)).
+
 ## Conséquences
 
 - **Positives** : aucun accord nouveau pour les deux gestes courants ; l'enchaînement
