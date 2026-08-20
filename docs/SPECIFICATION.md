@@ -1114,7 +1114,7 @@ Le nom du produit et l'identifiant de bundle ne figurent plus dans ce tableau : 
 
 | Exclu | Raison |
 |---|---|
-| **Windows, Linux, iPadOS** | Le noyau (`ScreenCaptureKit`, `CGEvent` tap, `SpeechAnalyzer`, `NSPanel`) est intégralement spécifique à macOS. Un portage est une réécriture. |
+| **Windows, Linux, iPadOS** | Hors périmètre du MVP, **pas hors trajectoire** : ces portages sont prévus une fois le concept éprouvé sur macOS. Le noyau (`ScreenCaptureKit`, `CGEvent` tap, `SpeechAnalyzer`, `NSPanel`) est intégralement spécifique à la plateforme et devra être réécrit ; le format des artefacts, le contrat MCP, le modèle d'ancrage et le rendu du rapport se portent en l'état. La frontière entre les deux est maintenue nette dès le MVP pour que ce portage reste délimité. |
 | **Chrome DevTools Protocol** | Depuis Chrome 136, `--remote-debugging-port` est ignoré sur le profil par défaut : il faudrait relancer Chrome sur un profil jetable, donc demander au développeur de ne plus tester son application comme il la teste. Écarté définitivement au profit d'une extension MV3. |
 | **Providers contextuels (URL, sélecteur CSS, console, terminal)** | Le consentement Automation se demande par application cible et son prompt vole le focus en pleine session. Lot 9 et 10, déclenchés depuis les réglages uniquement. L'URL, le titre et les pixels couvrent l'essentiel de la valeur. |
 | **Déduplication perceptuelle des frames** | Un dHash est insensible aux petits changements locaux, c'est-à-dire précisément à ce qui déclenche une marque. Bénéfice marginal sur la variante secondaire, risque de rapport faux. Reviendra comparée sur l'union des `bbox`. |

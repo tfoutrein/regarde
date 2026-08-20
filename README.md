@@ -91,16 +91,33 @@ lire une image et du texte peut exploiter un rapport.
 **Sans rupture de flux.** L'application testée garde le focus et continue de tourner pendant
 l'annotation. Aucun mode à mémoriser : on maintient une touche, on trace, on relâche.
 
-## macOS uniquement
+## macOS d'abord, Windows et Linux ensuite
 
-Ce n'est pas une étape sur la route du multiplateforme, c'est un choix assumé.
+**Prérequis actuels** : macOS 26 (Tahoe) ou supérieur, Apple Silicon.
 
-**Prérequis** : macOS 26 (Tahoe) ou supérieur, Apple Silicon.
+On commence par macOS parce que c'est la machine sur laquelle l'outil est écrit, et parce
+qu'une seule plateforme suffit à répondre à la question qui compte : est-ce que ce mode de
+travail fait vraiment gagner du temps ? Éprouver le concept sur un poste réel vaut mieux que
+trois portages d'une idée non validée.
 
-Le noyau repose entièrement sur des API propres à la plateforme — `ScreenCaptureKit` pour la
-capture, `CGEventTap` pour arbitrer les événements souris, `SpeechAnalyzer` pour la
-transcription locale, `NSPanel` pour le calque. Un portage Windows ou Linux serait une
-réécriture, pas une adaptation. Voir
+Windows et Linux viendront. Ce ne sera pas gratuit — le noyau repose sur des API propres à
+la plateforme : `ScreenCaptureKit` pour la capture, `CGEventTap` pour arbitrer les événements
+souris, `SpeechAnalyzer` pour la transcription locale, `NSPanel` pour le calque. Chacune a
+son équivalent ailleurs, avec ses propres pièges.
+
+La bonne nouvelle est que **cette couche est la moins précieuse du projet**. Ce qui vaut le
+travail de conception se porte tel quel :
+
+| Portable en l'état | À réécrire par plateforme |
+|---|---|
+| Format des artefacts (Markdown, JSON, PNG) | Capture d'écran et encodage |
+| Outils MCP et leur contrat | Calque d'annotation |
+| Modèle de données et règle d'ancrage | Arbitrage des événements d'entrée |
+| Stratégie de budget de jetons | Transcription locale |
+| Rendu du rapport | Autorisations et intégration système |
+
+La frontière entre les deux est tenue nette dès maintenant, précisément pour que le portage
+reste un chantier délimité plutôt qu'une reprise à zéro. Voir
 [ADR-0001](docs/adr/0001-application-macos-native-swift.md).
 
 ## Limites, connues et assumées
@@ -186,10 +203,6 @@ de la logique d'arbitrage tourne sans aucune permission :
 ```bash
 swift build && ./.build/debug/Regarde0 --selftest
 ```
-
-## Le nom
-
-Un impératif, pas un substantif. C'est ce qu'on dit en pointant l'écran du doigt.
 
 ## Licence
 

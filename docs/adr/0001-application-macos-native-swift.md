@@ -94,8 +94,16 @@ d'ignorance de plus.
   critique, sans filet, et alimente directement le risque R15 (enlisement), désigné comme le
   mode d'échec le plus probable du projet.
 - **Ce que ça ferme** : aucune contribution extérieure sans Swift ; aucun composant partagé avec
-  les autres projets de l'auteur ; un portage Windows ou Linux reste une réécriture — perte
-  surtout nominale, puisque les API du noyau sont macOS-only dans toutes les options.
+  les autres projets de l'auteur.
+- **Ce que ça ne ferme pas** : le multiplateforme. Windows et Linux sont prévus une fois le
+  concept éprouvé sur macOS — c'est la raison d'être de ce premier jalon, pas un renoncement.
+  Le portage imposera de réécrire la couche plateforme (capture, calque, arbitrage des entrées,
+  transcription), mais cette couche est la moins précieuse du projet : le format des artefacts,
+  le contrat MCP, le modèle d'ancrage et le rendu du rapport se portent en l'état. Et la perte
+  est de toute façon nominale, puisque les API du noyau sont spécifiques à la plateforme dans
+  **toutes** les options envisagées, y compris Tauri et Electron. La frontière entre couche
+  plateforme et couche portable doit rester nette dès le MVP, pour que ce portage soit un
+  chantier délimité plutôt qu'une reprise à zéro.
 
 ## Signal de révision
 
