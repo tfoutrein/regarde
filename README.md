@@ -128,6 +128,7 @@ reste un chantier délimité plutôt qu’une reprise à zéro. Voir
 |---|---|
 | **Rien n’est utilisable aujourd’hui** | Le prototype valide le geste, rien d’autre : pas de numérotation, pas de voix, pas de rapport, pas d’intégration agent. |
 | **Quatre autorisations système** | Enregistrement de l’écran, Surveillance de la saisie, Accessibilité, Micro. Les deux du milieu sont **obligatoires** : sans elles, rien ne fonctionne. macOS redemande par ailleurs l’autorisation de capture d’écran chaque mois. |
+| **Pas encore distribuable** | La notarisation exige un compte Apple Developer, qui n'est pas ouvert à ce jour. L'application se construit et s'utilise en local avec un certificat auto-signé ; elle ne s'installe pas encore sur une autre machine sans avertissement Gatekeeper. |
 | **Hors Mac App Store** | L’Accessibilité et un tap qui consomme des événements sont incompatibles avec le bac à sable et avec la revue App Store. Distribution en Developer ID notarisé. |
 | **Il reste un geste vers l’agent** | MCP fonctionne en *pull* : rien ne permet de réveiller Claude Code ou Cursor. L’outil réduit ce geste à un `⌘V ⏎`, il ne le supprime pas. |
 | **La parole se paie** | En open space ou en visioconférence, on ne commente pas à voix haute. Une palette d’intentions et une saisie clavier couvrent le mode silencieux, moins finement. |

@@ -351,6 +351,16 @@ périmé.
 notarisation à blanc dès ce lot. C'est administratif, lent, indépendant du code, et ça
 dé-risque le lot 8 sans le commencer.
 
+> **Reporté le 20 août 2026.** Cette avance exige un compte Apple Developer payant, que
+> l'auteur n'a pas. Sans conséquence sur les lots 1 à 7 : le certificat auto-signé stable
+> du § 4.2 couvre tout le développement, y compris la stabilité des autorisations TCC.
+> Ce qui manque est la distribution à un tiers — sans notarisation, Gatekeeper bloque
+> l'application sur une autre machine.
+>
+> **Le lot 8 est donc conditionné à l'ouverture d'un compte Apple Developer**, à prévoir
+> avant de l'engager et non pendant. Le risque assumé en reportant est de découvrir un
+> problème de notarisation tardivement — ce que cette avance devait justement éviter.
+
 ---
 
 ### Lot 2 — Marques et export : premier produit utilisable · 5,5 j
