@@ -26,6 +26,7 @@ aux lots suivants et n'existe pas ici.
 | **⌥⌘ + glisser** | trace un trait rouge par-dessus l'application testée |
 | **relâcher** | la souris revient immédiatement à l'application |
 | **`Échap`** *(pendant le tracé)* | annule le trait en cours |
+| **clic droit** *(pendant le tracé)* | annule le trait en cours — même effet, sans lâcher la souris |
 | **⌥⌘Z** | supprime le dernier trait posé |
 
 Et un menu **◎** dans la barre de menus, dont l'icône porte l'état réel :
@@ -139,6 +140,26 @@ de bouger deux secondes, relâcher.
 elle n'a pas vu le début.
 
 Même manipulation dans le Finder avec un fichier en cours de glissement.
+
+---
+
+**C6c · le clic droit annule sans rien laisser filtrer**
+
+Les écouteurs de C6b sont toujours en place ; ajoute celui-ci dans la console :
+
+```js
+addEventListener('contextmenu', e => console.log('FUITE contextmenu'), true);
+```
+
+Trace sous ⌥⌘, puis **clique droit sans relâcher le bouton gauche**. Relâche tout.
+
+✅ Le trait disparaît, aucun menu contextuel ne s'ouvre, la console reste muette.
+❌ Un menu contextuel s'ouvre, ou une ligne `FUITE` apparaît.
+
+Puis, **hors tracé**, clique droit normalement dans la page — avec et sans ⌥⌘.
+
+✅ Le menu contextuel s'ouvre à chaque fois. Le bouton droit n'appartient à Regarde
+que pendant un tracé, jamais le reste du temps.
 
 ---
 

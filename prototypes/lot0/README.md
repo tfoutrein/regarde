@@ -65,15 +65,14 @@ swift build && ./.build/debug/Regarde0 --selftest
 
 La logique de la porte à verrou est pure : elle ne dépend que du type d'événement, des
 modificateurs et de la position. Elle est donc vérifiable **sans permission, sans écran et
-sans les mains**. Dix séquences déroulent les cas de C1, C2, C6 et C6b, dont celles où le
+sans les mains**. Treize séquences déroulent les cas de C1, C2, C6, C6b et C6c, dont celles où le
 modificateur est relâché en plein tracé et où `Échap` interrompt un clic déjà commencé.
 
 À lancer après chaque modification de `OptionGate.swift`, et avant de repasser les douze
 critères. Le code de sortie est exploitable en ligne de commande.
 
 Ce n'est pas un substitut aux critères : il dit que le raisonnement de la porte est juste,
-pas que le système réel se comporte comme prévu. Ces dix séquences existent parce que la
-première version du prototype échouait sur deux d'entre elles.
+pas que le système réel se comporte comme prévu. Plusieurs de ces séquences existent parce qu'une version du prototype échouait dessus.
 
 ## Utilisation
 
@@ -82,6 +81,7 @@ première version du prototype échouait sur deux d'entre elles.
 | ⌥⌘ + glisser | trace |
 | relâcher | la souris revient à l'application testée, immédiatement |
 | `Échap` pendant le tracé | annule le trait en cours |
+| clic droit pendant le tracé | annule le trait en cours, sans lâcher la souris |
 | ⌥⌘Z | supprime le dernier trait posé |
 
 Le menu ◎ de la barre de menus porte l'état du tap, les rapports de mesure, l'activation du

@@ -117,16 +117,28 @@ final class EventTap: @unchecked Sendable {
         return installed.load(ordering: .acquiring)
     }
 
-    /// Masque des evenements ecoutes. Volontairement etroit : le `switch` normatif du
-    /// § 6.2 ne traite que le bouton gauche et `mouseMoved`. Ajouter le bouton droit ou
-    /// la molette produirait un evenement orphelin des que le modificateur est relache.
-    private static let eventMask: CGEventMask =
-        (1 << CGEventType.leftMouseDown.rawValue) |
-        (1 << CGEventType.leftMouseUp.rawValue) |
-        (1 << CGEventType.leftMouseDragged.rawValue) |
-        (1 << CGEventType.mouseMoved.rawValue) |
-        (1 << CGEventType.flagsChanged.rawValue) |
-        (1 << CGEventType.keyDown.rawValue)
+    /// Masque des evenements ecoutes.
+    ///
+    /// Le bouton droit y figure pour une seule raison : annuler le tracé en cours, geste
+    /// plus direct qu'`Échap` quand la main est deja sur la souris. Il n'est consomme
+    /// QUE pendant un tracé actif, et son relachement l'est aussi — un `rightMouseUp`
+    /// sans `rightMouseDown` serait le meme defaut que C6 interdit pour le bouton gauche.
+    /// Hors tracé, le menu contextuel de l'application testee est intact.
+    ///
+    /// La molette et les boutons auxiliaires restent dehors : ils n'ont aucun role, et
+    /// tout ajout ici se paie sur chaque evenement du systeme.
+    /// Construit par reduction plutot qu'en chainant des `|` : au-dela de quelques
+    /// termes, l'inference de types de Swift renonce sur cette expression.
+    private static let eventMask: CGEventMask = {
+        let types: [CGEventType] = [
+            .leftMouseDown, .leftMouseUp, .leftMouseDragged,
+            .rightMouseDown, .rightMouseUp, .rightMouseDragged,
+            .mouseMoved, .flagsChanged, .keyDown,
+        ]
+        return types.reduce(CGEventMask(0)) { mask, type in
+            mask | (CGEventMask(1) << CGEventMask(type.rawValue))
+        }
+    }()
 
     /// Cree un port arme, sans toucher a l'etat de l'objet. Thread du tap uniquement.
     private func makePort() -> (CFMachPort, CFRunLoopSource)? {
@@ -228,7 +240,8 @@ final class EventTap: @unchecked Sendable {
         case .keyDown:
             return handleKeyDown(event: event, flags: flags)
 
-        case .leftMouseDown, .leftMouseUp, .leftMouseDragged, .mouseMoved:
+        case .leftMouseDown, .leftMouseUp, .leftMouseDragged, .mouseMoved,
+             .rightMouseDown, .rightMouseUp, .rightMouseDragged:
             switch OptionGate.shared.decide(type: type, flags: flags, location: location) {
             case .pass:
                 return Unmanaged.passUnretained(event)

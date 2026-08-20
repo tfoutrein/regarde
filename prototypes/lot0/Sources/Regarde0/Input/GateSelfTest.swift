@@ -136,6 +136,38 @@ enum GateSelfTest {
             Step(label: "mouseUp après reset", type: .leftMouseUp, flags: armed, expected: .swallow),
         ], interlude: [2: { $0.requestReset() }])
 
+        // Clic droit pendant un tracé : annule, et n'en laisse rien filtrer. Le
+        // `rightMouseUp` DOIT etre avale, sinon l'application recoit un relachement
+        // sans pression — le defaut de C6, transpose au bouton droit.
+        failures += run("clic droit annule le tracé", "C6c", [
+            Step(label: "mouseDown armé", type: .leftMouseDown, flags: armed, expected: .capture),
+            Step(label: "mouseDragged", type: .leftMouseDragged, flags: armed, expected: .capture),
+            Step(label: "rightMouseDown", type: .rightMouseDown, flags: armed, expected: .swallow),
+            Step(label: "rightMouseDragged", type: .rightMouseDragged, flags: armed, expected: .swallow),
+            Step(label: "rightMouseUp", type: .rightMouseUp, flags: armed, expected: .swallow),
+            Step(label: "mouseDragged gauche encore enfoncé", type: .leftMouseDragged, flags: armed, expected: .swallow),
+            Step(label: "mouseUp gauche", type: .leftMouseUp, flags: armed, expected: .swallow),
+            Step(label: "mouseDown suivant", type: .leftMouseDown, flags: armed, expected: .capture),
+        ])
+
+        // HORS tracé, le bouton droit appartient entierement a l'application testee :
+        // son menu contextuel ne doit jamais disparaitre, modificateur tenu ou non.
+        failures += run("clic droit hors tracé", "C6c", [
+            Step(label: "rightMouseDown sans modificateur", type: .rightMouseDown, flags: bare, expected: .pass),
+            Step(label: "rightMouseUp sans modificateur", type: .rightMouseUp, flags: bare, expected: .pass),
+            Step(label: "rightMouseDown armé, sans tracé", type: .rightMouseDown, flags: armed, expected: .pass),
+            Step(label: "rightMouseUp armé, sans tracé", type: .rightMouseUp, flags: armed, expected: .pass),
+        ])
+
+        // Le verrou du bouton droit ne doit pas survivre a une remise a plat : apres une
+        // veille, le menu contextuel doit revenir meme si le relachement s'est perdu.
+        failures += run("clic droit apres un reset", "C6c", [
+            Step(label: "mouseDown armé", type: .leftMouseDown, flags: armed, expected: .capture),
+            Step(label: "rightMouseDown annule", type: .rightMouseDown, flags: armed, expected: .swallow),
+            Step(label: "rightMouseDown apres reset", type: .rightMouseDown, flags: bare, expected: .pass),
+            Step(label: "rightMouseUp apres reset", type: .rightMouseUp, flags: bare, expected: .pass),
+        ], interlude: [2: { $0.requestReset() }])
+
         // Un reset HORS tracé ne doit rien avaler : le clic suivant est normal.
         failures += run("reset hors tracé", "—", [
             Step(label: "mouseMoved", type: .mouseMoved, flags: bare, expected: .pass),

@@ -98,6 +98,14 @@ final class OptionGate: @unchecked Sendable {
     /// testee n'a pas vu le `mouseDown` : elle ne doit voir ni les drags ni le `mouseUp`.
     /// Retombe au relachement, seul instant ou le clic est reellement termine.
     private var suppressUntilUp = false
+    /// Meme verrou, pour le bouton DROIT, et strictement independant du precedent.
+    ///
+    /// Un clic droit pendant un tracé annule le trait. Consommer son `rightMouseDown`
+    /// sans consommer le `rightMouseUp` qui suit livrerait a l'application un relachement
+    /// sans pression — le meme defaut que C6 interdit pour le bouton gauche, et la raison
+    /// pour laquelle une regle naive du type « si un tracé est actif, tout avaler » ne
+    /// suffit pas : il faut un verrou, qui tient jusqu'au relachement.
+    private var suppressRightUntilUp = false
 
     // ── Observabilite ────────────────────────────────────────────────────────
     private let capturedCount = Atomic<UInt64>(0)
@@ -165,6 +173,30 @@ final class OptionGate: @unchecked Sendable {
 
         let required = CGEventFlags(rawValue: armingFlags.load(ordering: .relaxed))
         let armed = flags.isSuperset(of: required) && targetRect.read().contains(location)
+
+        // ── Bouton droit : annule le tracé en cours ──────────────────────────
+        // Alternative gestuelle a `Échap`, qui oblige a quitter la souris des yeux.
+        // Le bouton droit n'est JAMAIS consomme en dehors d'un tracé actif : le menu
+        // contextuel de l'application testee reste intact le reste du temps, ce qui
+        // compte d'autant plus qu'au lot 0 la fenetre cible vaut encore `.infinite`.
+        switch type {
+        case .rightMouseDown where strokeActive:
+            cancelStroke()                 // pose aussi `suppressUntilUp` pour le gauche
+            suppressRightUntilUp = true
+            publishState(armed: armed, stroking: false)
+            return .swallow
+
+        case .rightMouseUp where suppressRightUntilUp:
+            suppressRightUntilUp = false
+            publishState(armed: armed, stroking: strokeActive)
+            return .swallow
+
+        case .rightMouseDragged where suppressRightUntilUp:
+            return .swallow
+
+        default:
+            break
+        }
 
         // Clic en vol dont le tracé a ete abandonne : on avale tout jusqu'au relachement.
         // Place APRES le calcul de `armed` pour que `publishState` et les compteurs
@@ -268,9 +300,13 @@ final class OptionGate: @unchecked Sendable {
     /// l'application, qui n'a jamais vu le `mouseDown` correspondant.
     @inline(__always)
     func cancelStroke() {
-        if strokeActive { suppressUntilUp = true }
+        guard strokeActive else { return }
+        suppressUntilUp = true
         strokeActive = false
         strokeFlag.store(false, ordering: .releasing)
+        // Le rendu doit abandonner son trait vivant. Meme notification que pour une
+        // remise a plat : dans les deux cas, le trait en cours n'ira nulle part.
+        onResetRequested?()
     }
 
     /// Demande la remise a plat du verrou. Appelable depuis n'importe quel thread.
@@ -295,6 +331,10 @@ final class OptionGate: @unchecked Sendable {
             if strokeActive { suppressUntilUp = true }
             strokeActive = false
             mouseDownInApp = false
+            // Le verrou du bouton droit, lui, est libere : apres une veille ou un
+            // desarmement du tap, l'application testee doit retrouver son menu contextuel
+            // meme si le `rightMouseUp` s'est perdu entre-temps.
+            suppressRightUntilUp = false
         }
     }
 }
