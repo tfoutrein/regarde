@@ -26,6 +26,10 @@ enum CaptureDemo {
         (.rect, NormRect(bounding: [NormPoint(x: 0.42, y: 0.55), NormPoint(x: 0.58, y: 0.68)]), .misaligned),
         (.point, NormRect(bounding: [NormPoint(x: 0.70, y: 0.60), NormPoint(x: 0.70, y: 0.60)]), .slow),
         (.highlight, NormRect(bounding: [NormPoint(x: 0.25, y: 0.35), NormPoint(x: 0.55, y: 0.40)]), .textToFix),
+        // Sans intention, délibérément : c'est le cas majoritaire du mode éclair, et
+        // c'est celui qui ne produisait aucune image. Toutes les marques de cette
+        // démonstration en portaient une, ce qui masquait le défaut.
+        (.arrow, NormRect(bounding: [NormPoint(x: 0.62, y: 0.30), NormPoint(x: 0.78, y: 0.42)]), nil),
     ]
 
     static func run() {
@@ -60,8 +64,9 @@ enum CaptureDemo {
                     try await MarkCapture.shared.capture(mark: mark)
                 }
 
-                var keep: [Int: String?] = [:]
-                for mark in marks { keep[mark.number] = mark.intention?.label }
+                let keep = marks.map {
+                    MarkCapture.Keep(number: $0.number, intention: $0.intention?.label)
+                }
 
                 let frames = try await MarkCapture.shared.finalize(
                     keeping: keep, into: SessionPaths.frames(of: directory))

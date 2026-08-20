@@ -13,7 +13,7 @@ n'a pas de sens.
 ```bash
 cd ~/DEV/PERSO/AI-DEV/TOOLS/regarde/app
 ./Tools/build-app.sh --run          # compile, signe, installe, lance
-tail -f ~/Regarde/journal.txt       # dans un second terminal — tout y passe
+tail -n +1 -f ~/Regarde/journal.txt  # second terminal — TOUT le fichier, puis la suite
 ```
 
 Prenez une **application de test qui bouge** : une page web avec une animation, une vidéo, un
@@ -39,8 +39,10 @@ c'est le genre de décision qu'on ne peut pas trancher sans l'avoir dans les doi
 - [ ] **1.1** L'icône apparaît dans la barre de menus.
       *Si elle manque : elle peut être derrière l'encoche. Débranchez un écran externe pour voir.*
 - [ ] **1.2** Menu → **Diagnostic…** : toutes les lignes requises sont vertes, verdict `✓`.
-- [ ] **1.3** Le journal affiche `tap démarré — ⌥⌘ + glisser trace, ⌃⌥S ouvre une session`.
-- [ ] **1.4** Le journal liste les quatre raccourcis avec un `✓` et un code de touche.
+- [ ] **1.3** `grep "tap démarré" ~/Regarde/journal.txt` renvoie une ligne.
+      *Écrite au lancement : un `tail -f` ordinaire ne la montre pas, d'où le `-n +1` ci-dessus.*
+- [ ] **1.4** `grep "⌃⌥" ~/Regarde/journal.txt` liste les quatre raccourcis, chacun avec un `✓` et
+      un code de touche.
 - [ ] **1.5** Le journal affiche `cible suivie : <votre application>` et le nom change quand vous
       passez d'une application à l'autre.
 

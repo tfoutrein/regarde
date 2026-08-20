@@ -111,8 +111,9 @@ final class SessionCoordinator {
         // Les marques encore présentes, avec leur intention. Ce dictionnaire EST le
         // filtre : une marque supprimée par ⌘Z n'y figure pas, donc son recadrage est
         // jeté sans avoir jamais touché le disque.
-        var keep: [Int: String?] = [:]
-        for mark in MarkStore.shared.marks { keep[mark.number] = mark.intention?.label }
+        let keep = MarkStore.shared.marks.map {
+            MarkCapture.Keep(number: $0.number, intention: $0.intention?.label)
+        }
         let directory = sessionDirectory
         sessionDirectory = nil
 
@@ -183,8 +184,9 @@ final class SessionCoordinator {
         let marks = MarkStore.shared.marks
         guard !marks.isEmpty else { return }
 
-        var keep: [Int: String?] = [:]
-        for mark in marks { keep[mark.number] = mark.intention?.label }
+        let keep = marks.map {
+            MarkCapture.Keep(number: $0.number, intention: $0.intention?.label)
+        }
         let count = marks.count
         MarkStore.shared.reset()
         OverlayController.shared.redrawAll()

@@ -42,6 +42,24 @@ actor MarkCapture {
 
     private let log = Logger(subsystem: logSubsystem, category: "markcapture")
 
+    /// Une marque à graver, et son intention si elle en porte une.
+    ///
+    /// Une STRUCT et non `[Int: String?]`, et la raison est un bug qui a coûté une
+    /// session de test à l'auteur.
+    ///
+    /// En Swift, `dict[key] = nil` **supprime la clé** : il n'y a aucun moyen de
+    /// distinguer « présente, sans intention » de « absente ». Le dictionnaire construit
+    /// par `keep[mark.number] = mark.intention?.label` perdait donc silencieusement
+    /// toute marque non qualifiée — c'est-à-dire le cas le plus courant du mode éclair —
+    /// et `finalize` n'écrivait aucune image pour elle. Le journal disait
+    /// « 1 marque(s), 0 image(s) » sans la moindre erreur.
+    ///
+    /// Le type porte maintenant la distinction, et le bug n'est plus réécrivable.
+    struct Keep: Sendable {
+        let number: Int
+        let intention: String?
+    }
+
     /// Une marque et son image, prêtes pour le rapport.
     struct Frame: Sendable {
         let number: Int
@@ -131,11 +149,14 @@ actor MarkCapture {
     /// Le filtre sur `keep` est ce qui fait qu'une marque annulée par ⌘Z ne laisse aucun
     /// fichier : son recadrage a été capturé, il est simplement jeté sans avoir jamais
     /// touché le disque.
-    func finalize(keeping keep: [Int: String?], into directory: URL) async throws -> [Frame] {
-        await waitForCaptures(of: Set(keep.keys))
+    func finalize(keeping keep: [Keep], into directory: URL) async throws -> [Frame] {
+        await waitForCaptures(of: Set(keep.map(\.number)))
+        let byNumber = Dictionary(uniqueKeysWithValues: keep.map { ($0.number, $0) })
+
         var written: [Frame] = []
         for item in pending {
-            guard let intention = keep[item.number] else { continue }
+            guard let entry = byNumber[item.number] else { continue }
+            let intention = entry.intention
             let engraved = Engraver.engrave(
                 item.image,
                 items: [Engraver.Item(number: item.number, shape: item.shape,
