@@ -753,7 +753,7 @@ Ce qu'il disait à voix haute pendant ce geste a été transcrit et rattaché à
 
 | | |
 |---|---|
-| Projet | `/Users/tfoutrein2/DEV/PERSO/shop-front` |
+| Projet | `/Users/…/shop-front` |
 | Détection | **certaine** — session Claude Code vivante sur ce répertoire (pid 20378, il y a 12 s) et cwd du shell Warp au premier plan concordant |
 | Git | `feat/checkout-coupon` @ `a3f19c2`, 3 fichiers modifiés non commités |
 | Application testée | Google Chrome — fenêtre « Panier — Boutique Démo », 1512×982 pt |
@@ -927,7 +927,7 @@ Trois couches empêchent la relecture : filtrage par défaut dans `list_feedback
 ### 9.10 La phrase du presse-papiers, et son cycle de vie
 
 ```
-Lis le feedback #42 avec regarde (get_feedback number=42) puis applique les corrections. Si l'outil n'est pas disponible, lis /Users/tfoutrein2/DEV/PERSO/shop-front/.regarde/sessions/0042-20260819-1432-checkout/report.md
+Lis le feedback #42 avec regarde (get_feedback number=42) puis applique les corrections. Si l'outil n'est pas disponible, lis /Users/…/shop-front/.regarde/sessions/0042-20260819-1432-checkout/report.md
 ```
 
 Une seule ligne, sans retour chariot. `puis applique les corrections` est la clause la plus importante : sans elle, l'agent lit et résume alors que le développeur veut qu'il code. La clause de repli avec chemin absolu fait qu'aucune session n'est perdue à cause d'un problème d'intégration.
@@ -1092,7 +1092,7 @@ Lot 0 ──[GO/NO-GO 1 : le geste marche-t-il, et a quel cout de composition ?]
 | # | Question | Décision |
 |---|---|---|
 | **A1** | Le pré-roll permanent est-il actif par défaut ? | **Opt-in, proposé une fois à l'onboarding.** L'indicateur système de capture d'écran reste allumé en permanence quand le pré-roll est actif : c'est non contournable, cela doit être un choix conscient. |
-| **A6** | Nom du produit et identifiant de bundle. | **Regarde**, `dev.tfoutrein.regarde`, binaire `regarde`, sidecar `regarde-mcp`, dépôt `~/DEV/PERSO/AI-DEV/TOOLS/regarde`. |
+| **A6** | Nom du produit et identifiant de bundle. | **Regarde**, `dev.tfoutrein.regarde`, binaire `regarde`, sidecar `regarde-mcp`, dépôt `~/…/TOOLS/regarde`. |
 | — | Micro ouvert en continu ou par fenêtre de parole ? | **Fenêtre de parole liée au geste** (§ 3.5), contre le choix initial du micro continu. Le rattachement devient déterministe, ce qui supprime la revue obligatoire de fin de session. Voir ADR-0011. |
 | — | Modificateur d'armement du tracé. | **⌥⌘ maintenu**, configurable, sans double-appui (§ 6.3), contre le choix initial de ⌥ seul. Voir ADR-0006. |
 | — | Cible d'engagement du développement. | **Lots 0 à 4** (22,5 j), puis GO/NO-GO n°2 sur deux semaines d'usage réel avant d'engager les lots 5 à 8. |
@@ -1106,7 +1106,7 @@ Lot 0 ──[GO/NO-GO 1 : le geste marche-t-il, et a quel cout de composition ?]
 | **A4** | Le **mode éclair** (§ 2.1) écrit-il dans le projet comme une session à part entière, ou dans un dossier léger séparé ? | **Comme une session à part entière**, avec un numéro, un rapport et une entrée dans `index.jsonl`. Un format unique, un seul chemin de code, et le mode éclair bénéficie du chaînage et de `resolve_feedback`. | Dossier séparé : moins de bruit dans `index.jsonl`, mais deux formats à maintenir et un mode qui ne profite pas de l'état « traité ». |
 | **A5** | Le plafond de durée de session (défaut 15 min) **envoie en revue avec purge par défaut**, ou publie automatiquement ? | **Revue avec purge par défaut.** Une session qui atteint le plafond est presque toujours une session oubliée ; publier automatiquement un rapport contenant potentiellement une conversation dans un dépôt Git est le pire incident possible. L'auto-pause d'inactivité à 60 s doit de toute façon l'avoir précédée. | Publication automatique : aucune session perdue, au prix d'un risque de fuite. |
 
-Le nom du produit et l'identifiant de bundle ne figurent plus dans ce tableau : **Regarde**, `dev.tfoutrein.regarde`, binaire `regarde`, sidecar `regarde-mcp`, dépôt `~/DEV/PERSO/AI-DEV/TOOLS/regarde`. Décidé par l'auteur, voir ADR-0001.
+Le nom du produit et l'identifiant de bundle ne figurent plus dans ce tableau : **Regarde**, `dev.tfoutrein.regarde`, binaire `regarde`, sidecar `regarde-mcp`, dépôt `~/…/TOOLS/regarde`. Décidé par l'auteur, voir ADR-0001.
 
 ---
 

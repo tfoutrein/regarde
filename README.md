@@ -23,8 +23,8 @@ Développer avec une IA, c'est passer sa journée à décrire des choses qu'on a
 La capture d'écran n'est pas le goulot d'étranglement — `⌘⇧4` fait le travail, et
 CleanShot ou Shottr le font mieux. Le coût est ailleurs : dans le **dernier mètre**.
 Cadrer, coller dans le chat, puis **taper au clavier ce que l'image est censée montrer** —
-parce qu'une image ne porte pas l'intention. Quinze à vingt secondes de frappe par
-observation, pendant lesquelles on n'est plus en train de tester.
+parce qu'une image ne porte pas l'intention. De l'ordre de quinze à vingt secondes de frappe
+par observation, pendant lesquelles on n'est plus en train de tester.
 
 Et pour tout ce qui bouge — une transition, un état de survol, un total qui se rafraîchit
 400 ms trop tard — la capture figée ne dit rien du tout.
@@ -71,9 +71,11 @@ commenter **rétroactivement** — « attends, le truc d'il y a trois secondes �
 exploitable, puisque les images sont déjà dans le tampon.
 
 **Le coût en jetons est maîtrisé et annoncé.** Le canal principal vers l'agent est le texte
-et le chemin de fichier, pas l'image encodée dans la réponse. Une session de six
-observations coûte 2 000 à 4 500 jetons d'entrée au lieu de 30 000, et le rapport annonce
-à l'agent le coût de chaque image pour qu'il arbitre lui-même.
+et le chemin de fichier, pas l'image encodée dans la réponse. D'après la formule du § 9 de la
+spécification, une session de six observations reviendrait à 2 000 – 4 500 jetons d'entrée
+au lieu de 30 000, et le rapport annonce à l'agent le coût de chaque image pour qu'il
+arbitre lui-même. Ces chiffres sont des estimations de conception : le code qui les
+produira appartient au lot 4, pas encore écrit.
 
 **Universel par construction.** Le noyau ne connaît que des pixels et de la géométrie :
 application web, application native, fenêtre de terminal, simulateur iOS, script en cours
@@ -153,9 +155,26 @@ chose. C'est précisément la raison d'être d'un prototype de risque.
 ```bash
 git clone https://github.com/tfoutrein/regarde.git
 cd regarde/prototypes/lot0
-./Tools/make-cert.sh    # une fois — crée un certificat de signature stable
+./Tools/make-cert.sh    # une fois — lis l'avertissement ci-dessous d'abord
 ./Tools/start.sh        # auto-test, build signé, lancement, état
 ```
+
+> [!WARNING]
+> **`make-cert.sh` demande `sudo` et modifie ton trousseau système.** Il crée un certificat
+> auto-signé nommé « Regarde Dev », puis l'ajoute au trousseau **système** comme racine
+> approuvée pour la signature de code, et autorise `codesign` à utiliser la clé sans invite.
+>
+> C'est nécessaire parce que TCC identifie une application par son identité de signature :
+> avec une signature ad hoc, elle change à chaque build et les autorisations d'Accessibilité
+> sont perdues à chaque fois. Mais ce n'est pas anodin, et tu dois le décider en connaissance
+> de cause. L'alternative manuelle par Trousseau d'accès est décrite dans
+> [`prototypes/lot0/README.md`](prototypes/lot0/README.md).
+>
+> Pour retirer le certificat ensuite :
+> ```bash
+> sudo security delete-certificate -c "Regarde Dev" /Library/Keychains/System.keychain
+> security delete-certificate -c "Regarde Dev" ~/Library/Keychains/login.keychain-db
+> ```
 
 macOS demandera **Surveillance de la saisie** et **Accessibilité**. Sans elles,
 `CGEvent.tapCreate` renvoie `nil` — sans erreur, sans exception, sans le moindre indice.
