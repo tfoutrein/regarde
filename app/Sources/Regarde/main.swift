@@ -16,6 +16,12 @@ import os
 // l'application n'a encore rien à capturer.
 // ─────────────────────────────────────────────────────────────────────────────
 
+// La table de cas de la conversion de coordonnées tourne sans écran, sans permission
+// et sans interface : elle vérifie des dispositions qu'on n'a pas sous la main.
+if CommandLine.arguments.contains("--geometry-test") {
+    exit(GeometrySelfTest.runAll() == 0 ? 0 : 1)
+}
+
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let log = Logger(subsystem: logSubsystem, category: "app")
