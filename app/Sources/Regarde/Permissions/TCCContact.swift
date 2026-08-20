@@ -62,6 +62,52 @@ actor TCCContact {
         }
     }
 
+    /// Audit des exclusions de capture, exécuté DANS l'acteur.
+    ///
+    /// `SCShareableContent` n'est pas `Sendable` : il ne peut pas franchir la frontière
+    /// d'isolation. Même contrainte que `NSScreen` au lot 0 — seules des données simples
+    /// sortent, jamais l'objet système lui-même.
+    func auditExclusions(blocked: Set<String>, ownBundleID: String?) async -> [String] {
+        var lines = ["\(blocked.count) application(s) sur la liste noire"]
+
+        // Le rafraîchissement de lancement est asynchrone : le diagnostic peut
+        // l'interroger avant qu'il n'ait abouti, et annoncerait alors « indisponible »
+        // pour une autorisation parfaitement accordée. Un diagnostic qui perd une course
+        // ment aussi sûrement qu'un diagnostic faux — on attend le contenu plutôt que de
+        // conclure sur un cache vide.
+        //
+        // Rafraîchir ici ne contredit pas la règle R1 : le doctor n'est pas un chemin de
+        // session, et c'est même l'un des points d'appel prévus.
+        if content == nil { await performRefresh(trigger: .settings) }
+
+        guard let content else {
+            lines.append("⚠ contenu partageable indisponible — l'autorisation d'écran manque")
+            return lines
+        }
+        let running = content.applications.filter { blocked.contains($0.bundleIdentifier) }
+        if running.isEmpty {
+            lines.append("aucune ne tourne actuellement")
+        } else {
+            for app in running { lines.append("en cours, sera exclue : \(app.applicationName)") }
+        }
+        // `SCShareableContent` ne liste que les applications ayant une fenêtre capturable.
+        // Tant que Regarde n'affiche ni calque ni HUD, son absence est normale et ne doit
+        // pas être signalée comme une anomalie : un avertissement qui crie au loup finit
+        // par être ignoré, y compris le jour où il a raison.
+        let ownWindows = content.windows.filter { $0.owningApplication?.bundleIdentifier == ownBundleID }
+        let selfFound = content.applications.contains { $0.bundleIdentifier == ownBundleID }
+        let selfLine: String = switch (selfFound, ownWindows.isEmpty) {
+        case (true, _):
+            "auto-exclusion : Regarde est visible dans le contenu partageable, elle sera exclue"
+        case (false, true):
+            "auto-exclusion : Regarde n'a aucune fenêtre à l'écran, donc rien à exclure pour l'instant"
+        case (false, false):
+            "⚠ auto-exclusion : Regarde a \(ownWindows.count) fenêtre(s) mais n'apparaît pas dans la liste"
+        }
+        lines.append(selfLine)
+        return lines
+    }
+
     /// Sondage horaire : detecte l'expiration mensuelle avant que l'utilisateur ne la
     /// decouvre en pleine session.
     func startHourlyProbe() {

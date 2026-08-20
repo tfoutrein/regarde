@@ -290,3 +290,70 @@ struct AudioDevicesCheck: DoctorCheck {
         )
     }
 }
+
+// MARK: - Confidentialité du répertoire de travail
+
+/// Opération réelle : créer un répertoire de session, y écrire un fichier, relire ses
+/// permissions. Vérifier `0700` sur un répertoire qu'on n'a pas créé ne prouverait rien.
+///
+/// Cette ligne existe parce que le fichier vidéo intermédiaire est le seul artefact du
+/// produit dont la fuite serait un incident plutôt qu'un bug (§ 10.2).
+struct WorkspaceCheck: DoctorCheck {
+    let id = "workspace"
+    let title = "Répertoire de travail sécurisé"
+    let isRequired = false
+
+    func run() async -> CheckResult {
+        do {
+            let dir = try SecureWorkspace.beginSession()
+            let probe = dir.appendingPathComponent("probe")
+            let handle = try SecureWorkspace.createFile(at: probe)
+            try handle.write(contentsOf: Data("témoin".utf8))
+            try handle.close()
+
+            let fm = FileManager.default
+            let dirPerms = (try fm.attributesOfItem(atPath: dir.path)[.posixPermissions] as? NSNumber)?.intValue
+            let filePerms = (try fm.attributesOfItem(atPath: probe.path)[.posixPermissions] as? NSNumber)?.intValue
+
+            var detail = SecureWorkspace.audit()
+            detail.append("répertoire créé en \(String(dirPerms ?? 0, radix: 8))")
+            detail.append("fichier créé en \(String(filePerms ?? 0, radix: 8))")
+
+            // `O_EXCL` doit refuser une seconde création au même chemin.
+            var exclusiveHeld = false
+            do { _ = try SecureWorkspace.createFile(at: probe) }
+            catch { exclusiveHeld = true }
+            detail.append(exclusiveHeld
+                ? "O_EXCL refuse bien une seconde création"
+                : "⚠ O_EXCL n'a pas refusé la seconde création")
+
+            guard dirPerms == 0o700, filePerms == 0o600, exclusiveHeld else {
+                return .warning("permissions inattendues", detail: detail,
+                                remedy: "Le fichier vidéo intermédiaire contient tout l'écran.")
+            }
+            return .ok("0700 / 0600 / O_EXCL vérifiés sur un fichier réel", detail: detail)
+        } catch {
+            return .warning("impossible de préparer un répertoire de session",
+                            detail: [error.localizedDescription])
+        }
+    }
+}
+
+/// Vérifie ce qui sera exclu de la capture, en confrontant la liste noire aux
+/// applications réellement en cours d'exécution.
+struct ExclusionsCheck: DoctorCheck {
+    let id = "exclusions"
+    let title = "Applications exclues de la capture"
+    let isRequired = false
+
+    func run() async -> CheckResult {
+        let (blocked, ownID) = await MainActor.run {
+            (Set(CaptureExclusions.shared.bundleIDs), Bundle.main.bundleIdentifier)
+        }
+        let lines = await TCCContact.shared.auditExclusions(blocked: blocked, ownBundleID: ownID)
+        let hasWarning = lines.contains { $0.hasPrefix("⚠") }
+        return hasWarning
+            ? .warning(lines.first ?? "", detail: Array(lines.dropFirst()))
+            : .ok(lines.first ?? "", detail: Array(lines.dropFirst()))
+    }
+}

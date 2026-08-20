@@ -65,6 +65,8 @@ final class Doctor {
         SecureInputCheck(),
         DisplaysCheck(),
         AudioDevicesCheck(),
+        WorkspaceCheck(),
+        ExclusionsCheck(),
     ]
 
     // MARK: - Exécution
