@@ -281,6 +281,29 @@ func scenarioOutside(origin: CGPoint) {
     disarm()
 }
 
+/// Trois marques a un endroit donne, avec trois outils et trois intentions.
+///
+/// Sert au passage du livrable du lot 2 : trois sur l'ecran principal, trois sur
+/// l'ecran externe, en une seule session.
+func scenarioTriplet(origin: CGPoint, tools: [String], intentions: [Int]) {
+    arm()
+    for (i, name) in tools.enumerated() {
+        selectTool(name)
+        let y = origin.y + Double(i) * 130
+        if name == "point" {
+            stroke(from: CGPoint(x: origin.x + 80, y: y),
+                   to: CGPoint(x: origin.x + 80, y: y), steps: 2)
+        } else {
+            stroke(from: CGPoint(x: origin.x, y: y),
+                   to: CGPoint(x: origin.x + 200, y: y + 70))
+        }
+        if i < intentions.count { applyIntention(intentions[i]) }
+        pause(250)
+    }
+    pause(UInt32(value("hold", 0)))
+    disarm()
+}
+
 func value(_ name: String, _ def: Double) -> Double {
     guard let i = args.firstIndex(of: "--\(name)"), i + 1 < args.count else { return def }
     return Double(args[i + 1]) ?? def
@@ -306,6 +329,7 @@ guard args.count > 1 else {
       continuous     --x --y --count             trace continu, pour C3b
       lot2           --x --y                     4 outils + intentions (S20 a S23)
       outside        --x --y                     hors cible, puis ⌥⌘⇧ (S22)
+      triplet        --x --y --tools --marks     3 marques, 3 outils (S28)
 
     Le curseur revient a sa position initiale a la fin.
     """)
@@ -325,6 +349,12 @@ case "rightidle":  scenarioRightClickIdle(origin: origin)
 case "continuous": scenarioTrace(origin: origin, count: count, width: 320, stepMs: 6)
 case "lot2":       scenarioLot2(origin: origin)
 case "outside":    scenarioOutside(origin: origin)
+case "triplet":
+    let names = args.firstIndex(of: "--tools").map { args[$0 + 1] } ?? "fleche,cadre,point"
+    let ranks = args.firstIndex(of: "--marks").map { args[$0 + 1] } ?? "2,1,4"
+    scenarioTriplet(origin: origin,
+                    tools: names.split(separator: ",").map(String.init),
+                    intentions: ranks.split(separator: ",").compactMap { Int($0) })
 case "hotkey":
     // ⌃⌥ + une touche, pour declencher les raccourcis Carbon de l'application.
     key(CGKeyCode(value("key", 1)), flags: [.maskControl, .maskAlternate])
