@@ -132,10 +132,27 @@ final class StatusItemController {
         }
     }
 
-    /// Sortie unique : stderr pour la console de developpement, et une notification
-    /// visible pour les manipulations ou l'on n'a pas le terminal sous les yeux.
+    /// Sortie unique : stderr pour un lancement en terminal, ET un fichier journal.
+    ///
+    /// Le fichier n'est pas un confort. Lancee par `open`, l'application n'a pas de
+    /// terminal ou ecrire, et `os_log` ne remonte rien pour ce bundle : sans trace sur
+    /// disque, son etat reel n'est observable par aucun moyen. Or c'est precisement dans
+    /// ce mode de lancement — le seul qui porte la vraie identite TCC de l'application —
+    /// que les preflights disent la verite.
     nonisolated static func emit(_ text: String) {
-        FileHandle.standardError.write(Data(("\n" + text + "\n").utf8))
+        let block = "\n" + text + "\n"
+        FileHandle.standardError.write(Data(block.utf8))
+
+        let url = RunReport.outputDirectory.appendingPathComponent("journal.txt")
+        if let data = block.data(using: .utf8) {
+            if let handle = try? FileHandle(forWritingTo: url) {
+                defer { try? handle.close() }
+                _ = try? handle.seekToEnd()
+                try? handle.write(contentsOf: data)
+            } else {
+                try? data.write(to: url)
+            }
+        }
     }
 }
 

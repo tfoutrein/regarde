@@ -73,10 +73,14 @@ enum Preflight {
         let ok = AXIsProcessTrusted()
         return PermissionCheck(
             name: "Accessibilite",
-            state: ok ? .granted : .denied,
+            // `AXIsProcessTrusted` ne distingue pas « refusee » de « jamais accordee » :
+            // il repond faux dans les deux cas. Annoncer « refusee » envoie chercher une
+            // case a decocher qui n'existe peut-etre pas encore dans la liste.
+            state: ok ? .granted : .undetermined,
             required: true,
             settingsPath: "Reglages > Confidentialite et securite > Accessibilite",
-            note: ok ? nil : "Requise parce que le tap consomme des evenements, pas seulement les lit."
+            note: ok ? nil : "Requise parce que le tap CONSOMME des evenements, pas seulement les lit. "
+                          + "Surveillance de la saisie seule ne suffit pas."
         )
     }
 
@@ -114,7 +118,16 @@ enum Preflight {
     /// Les deux ne coincident pas toujours : apres une re-signature, le preflight peut
     /// repondre vrai alors que `tapCreate` echoue. C'est exactement le cas que le § 4.2
     /// decrit et la premiere chose a verifier avant de soupconner le code.
+    ///
+    /// La sonde est creee en `.listenOnly` DELIBEREMENT : un tap consommateur arme en tete
+    /// de chaine HID que personne ne draine retiendrait la souris de l'utilisateur a chaque
+    /// lancement. Mais un tap en lecture seule ne demande QUE Surveillance de la saisie,
+    /// alors que le vrai tap est `.defaultTap` et exige aussi l'Accessibilite : la sonde
+    /// seule repondrait « possible » sur une machine ou le demarrage echoue — un doctor
+    /// qui ment est pire qu'un doctor absent. D'ou le croisement avec `AXIsProcessTrusted`.
     static func canActuallyCreateTap() -> Bool {
+        guard AXIsProcessTrusted() else { return false }
+
         let mask = CGEventMask(1 << CGEventType.mouseMoved.rawValue)
         guard let probe = CGEvent.tapCreate(
             tap: .cghidEventTap,
@@ -160,9 +173,14 @@ enum Preflight {
             }
         }
 
-        if tapOK != checks.first(where: { $0.name.hasPrefix("Surveillance") })?.state.isGranted {
+        // La discordance ne se signale que si TOUTES les permissions requises sont
+        // accordees et que le tap echoue quand meme. Sinon le conseil serait faux : un
+        // tap impossible faute d'Accessibilite n'a rien d'une discordance, et envoyer
+        // l'utilisateur retoucher Surveillance de la saisie lui ferait perdre son temps
+        // sur la mauvaise permission.
+        if problems.isEmpty && !tapOK {
             out.append("")
-            out.append("⚠  Le preflight et la creation effective du tap NE CONCORDENT PAS.")
+            out.append("⚠  Toutes les permissions requises sont accordees et le tap echoue quand meme.")
             out.append("   C'est la signature du probleme decrit au § 4.2 : retirer puis remettre")
             out.append("   l'entree dans Surveillance de la saisie, et relancer.")
         }
@@ -173,7 +191,11 @@ enum Preflight {
 
     static func logReport() {
         let text = report()
-        FileHandle.standardError.write(Data(text.utf8))
+        // Passe par `emit` pour atterrir AUSSI dans le journal sur disque : lancee par
+        // `open`, l'application n'a pas de stderr observable, et c'est precisement dans
+        // ce mode qu'elle porte sa vraie identite TCC — donc le seul ou ce rapport dit
+        // la verite sur ses permissions.
+        StatusItemController.emit(text)
         for line in text.split(separator: "\n") where !line.isEmpty {
             log.info("\(String(line), privacy: .public)")
         }

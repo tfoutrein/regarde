@@ -19,6 +19,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let log = Logger(subsystem: logSubsystem, category: "app")
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Repartir d'un journal vierge a chaque lancement : on veut l'etat de CE
+        // demarrage, pas un historique dans lequel il faut chercher.
+        try? FileManager.default.removeItem(
+            at: RunReport.outputDirectory.appendingPathComponent("journal.txt"))
         StatusItemController.emit(RunReport.startupBanner())
 
         // 1. Permissions. Aucune demande, uniquement des preflights : une invite
@@ -33,8 +37,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         OverlayController.shared.setUp()
 
         // 4. Le tap.
+        //
+        // Le watchdog est arme INCONDITIONNELLEMENT, y compris quand le demarrage echoue.
+        // C'est ce qui permet a l'application de se reparer seule quand la permission est
+        // accordee pendant qu'elle tourne — le cas normal au premier lancement, puisque
+        // macOS ne demande l'autorisation qu'au moment ou on tente de creer le tap.
+        // Ne l'armer qu'en cas de succes condamnait l'application a rester morte jusqu'a
+        // un relancement manuel, sans rien dire.
+        EventTap.shared.startWatchdog()
+
         if EventTap.shared.start() {
-            EventTap.shared.startWatchdog()
             log.notice("tap demarre")
         } else {
             StatusItemController.emit("""
