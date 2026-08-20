@@ -41,6 +41,9 @@ final class StatusItemController {
         add(to: menu, "Simuler le cycle d'une session", key: "") {
             SessionCoordinator.shared.runStateDemo()
         }
+        add(to: menu, "Afficher / masquer le HUD", key: "") {
+            HUDWindow.shared.toggleForced()
+        }
         menu.addItem(.separator())
         add(to: menu, "Quitter Regarde", key: "q") { NSApp.terminate(nil) }
 

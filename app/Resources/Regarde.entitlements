@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!--
+      Hardened Runtime — ADR-0002.
+
+      L'application est hors App Sandbox : l'Accessibilité, `proc_pidinfo` sur les
+      processus voisins et un tap qui consomme des événements y sont incompatibles.
+      Le Hardened Runtime est en revanche exigé par la notarisation, et ne coûte rien
+      ici tant qu'on déclare ce dont on a réellement besoin.
+
+      Chaque entitlement ci-dessous est présent pour une raison précise. On n'en ajoute
+      pas « au cas où » : chacun élargit la surface d'attaque, et la notarisation
+      interroge leur justification.
+    -->
+
+    <!-- Micro, à partir du lot 5. Sans lui, le Hardened Runtime refuse l'accès même
+         quand l'utilisateur a accordé l'autorisation TCC. -->
+    <key>com.apple.security.device.audio-input</key>
+    <true/>
+
+    <!--
+      NON déclarés, volontairement :
+
+      com.apple.security.cs.disable-library-validation
+        Ouvrirait le processus au chargement de bibliothèques tierces non signées.
+        Rien n'en a besoin.
+
+      com.apple.security.cs.allow-unsigned-executable-memory
+      com.apple.security.cs.allow-jit
+        Aucun code généré à l'exécution.
+
+      com.apple.security.automation.apple-events
+        Les providers AppleScript sont au lot 9, et leur consentement se demande
+        par application cible. À ajouter à ce moment-là, pas avant.
+
+      com.apple.developer.persistent-content-capture
+        Réservé par Apple. La spécification (R1) dit explicitement de ne pas
+        l'espérer : la ré-autorisation mensuelle de la capture d'écran se gère par
+        la prise de contact hors session, pas par un entitlement.
+    -->
+</dict>
+</plist>

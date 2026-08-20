@@ -44,7 +44,7 @@ final class SessionCoordinator {
         state = next
         if next == .blocked { blockingReason = reason } else { blockingReason = nil }
         log.notice("état \(previous.rawValue, privacy: .public) → \(next.rawValue, privacy: .public)")
-        onStateChanged?(next)
+        publish(next)
         return true
     }
 
@@ -58,12 +58,21 @@ final class SessionCoordinator {
         let previous = state
         state = .suspended
         log.notice("suspension forcée depuis \(previous.rawValue, privacy: .public) — \(reason, privacy: .public)")
-        onStateChanged?(state)
+        publish(state)
     }
 
     func resumeFromSuspension() {
         guard state == .suspended else { return }
         transition(to: .idle)
+    }
+
+    /// Diffuse l'état à tout ce qui le reflète : barre de menus, HUD, et plus tard le
+    /// calque. Un seul point de publication évite qu'un module se croie en session
+    /// pendant qu'un autre l'a déjà fermée.
+    private func publish(_ state: SessionState) {
+        onStateChanged?(state)
+        HUDWindow.shared.follow(state)
+        NotificationCenter.default.post(name: .sessionStateChanged, object: state)
     }
 
     // MARK: - Observation de l'etat systeme
