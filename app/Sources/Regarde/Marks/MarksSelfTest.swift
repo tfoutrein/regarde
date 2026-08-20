@@ -330,16 +330,28 @@ enum MarksSelfTest {
 
         gate.currentMode = .active
         gate.setTargetFrontmost(true)
-        check(t, "les touches répondent quand la cible est l'application active",
-              gate.isArmedForKeys)
+        check(t, "⌥⌘ + touche répond quand la cible est l'application active",
+              gate.acceptsControlKeys(flags: required))
+
+        // LA règle qui protège l'application testée. Une version antérieure conditionnait
+        // les touches à « une session est ouverte » au lieu du modificateur, ce qui volait
+        // ⌘Z nu en permanence — le raccourci le plus utilisé de macOS, pris par un outil
+        // censé ne rien casser.
+        check(t, "⌘ seul ne nous revient JAMAIS",
+              !gate.acceptsControlKeys(flags: [.maskCommand]))
+        check(t, "une frappe nue ne nous revient jamais",
+              !gate.acceptsControlKeys(flags: []))
+        check(t, "⌥ seul ne nous revient jamais",
+              !gate.acceptsControlKeys(flags: [.maskAlternate]))
 
         gate.setTargetFrontmost(false)
-        check(t, "les touches ne répondent pas quand l'utilisateur est passé ailleurs",
-              !gate.isArmedForKeys)
+        check(t, "⌥⌘ ne répond pas quand l'utilisateur est passé ailleurs",
+              !gate.acceptsControlKeys(flags: required))
 
         gate.setTargetFrontmost(true)
         gate.currentMode = .passthrough
-        check(t, "hors session, aucune touche ne nous revient", !gate.isArmedForKeys)
+        check(t, "porte fermée, aucune touche ne nous revient",
+              !gate.acceptsControlKeys(flags: required))
 
         gate.currentMode = savedMode
         gate.setTargetFrontmost(false)

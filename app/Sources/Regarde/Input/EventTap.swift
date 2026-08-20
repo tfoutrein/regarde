@@ -285,10 +285,12 @@ final class EventTap: @unchecked Sendable {
         // auquel cas aucun code reel ne peut correspondre et le raccourci est inerte —
         // preferable a un raccourci qui atterrit sur la mauvaise touche.
         let undo = KeyboardLayout.shared.code(for: "z")
-        if let undo, code == undo, flags.contains(.maskCommand), !flags.contains(.maskShift),
-           OptionGate.shared.isArmedForKeys {
-            // Conditionne a la session : hors session, ⌘Z appartient a
-            // l'application testee et le lui voler serait inacceptable.
+        if let undo, code == undo, !flags.contains(.maskShift),
+           OptionGate.shared.acceptsControlKeys(flags: flags) {
+            // ⌥⌘Z, jamais ⌘Z nu. Sans le modificateur d'armement dans les flags de la
+            // frappe, l'annulation appartient a l'application testee — et la lui voler
+            // serait la pire regression possible pour un outil qui promet de ne rien
+            // casser.
             onControlKey?(.undo)
             return nil
         }
@@ -296,8 +298,7 @@ final class EventTap: @unchecked Sendable {
         // Changement d'outil, pendant que ⌥⌘ est tenu et que la cible est l'application
         // active. Hors de cet état, ⌥⌘F ou ⌥⌘C appartiennent à l'application testée et
         // les lui voler serait inacceptable.
-        if flags.contains(.maskCommand), flags.contains(.maskAlternate),
-           OptionGate.shared.isArmedForKeys,
+        if OptionGate.shared.acceptsControlKeys(flags: flags),
            let tool = ToolKeyCache.shared.tool(forCode: code) {
             onControlKey?(.selectTool(tool))
             return nil
@@ -310,8 +311,7 @@ final class EventTap: @unchecked Sendable {
         // Comme le changement d'outil, la regle suit l'application ACTIVE et non le
         // curseur : une fleche tracee vers le bord laisse le pointeur dehors, et exiger
         // qu'il soit dedans perdait l'intention frappee juste apres.
-        if flags.contains(.maskCommand), flags.contains(.maskAlternate),
-           OptionGate.shared.isArmedForKeys {
+        if OptionGate.shared.acceptsControlKeys(flags: flags) {
             if let intention = Intention.forKeyCode(code) {
                 onControlKey?(.intention(intention))
                 return nil

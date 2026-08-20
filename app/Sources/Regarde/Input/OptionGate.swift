@@ -177,9 +177,29 @@ final class OptionGate: @unchecked Sendable {
         targetFrontmost.store(value, ordering: .releasing)
     }
 
-    /// Vrai quand une touche de contrôle nous revient. Ne dépend pas du curseur.
-    var isArmedForKeys: Bool {
-        currentMode != .passthrough && targetFrontmost.load(ordering: .acquiring)
+    /// Vrai quand une touche de contrôle nous revient.
+    ///
+    /// Trois conditions, et le choix des trois est ce qui compte :
+    ///
+    ///   ⌥⌘ dans les FLAGS de la frappe — pas un état mémorisé, le modificateur porté par
+    ///   l'événement lui-même. C'est ce qui garantit qu'une frappe nue ne nous revient
+    ///   jamais.
+    ///   la porte n'est pas en passthrough — suspendu, bloqué : on ne prend rien.
+    ///   la cible est l'application active — l'utilisateur annote celle-là, pas son IDE.
+    ///
+    /// Ce qui n'y figure PAS, volontairement : la position du curseur. Le geste normal
+    /// amène le pointeur au bord de ce qu'il désigne, parfois dehors, et l'intention
+    /// frappée juste après tombait alors dans le vide.
+    ///
+    /// Ce qui n'y figure plus : « une session est ouverte ». Cette version-là volait
+    /// `⌘Z` nu à l'application testée en permanence, dès lors que la porte était active —
+    /// c'est-à-dire tout le temps depuis que le mode éclair existe. Le raccourci le plus
+    /// utilisé de macOS, pris en otage par un outil censé ne rien casser.
+    @inline(__always)
+    func acceptsControlKeys(flags: CGEventFlags) -> Bool {
+        let required = CGEventFlags(rawValue: armingFlags.load(ordering: .relaxed))
+        guard flags.isSuperset(of: required) else { return false }
+        return currentMode != .passthrough && targetFrontmost.load(ordering: .acquiring)
     }
     var captured: UInt64 { capturedCount.load(ordering: .relaxed) }
     var passed: UInt64 { passedCount.load(ordering: .relaxed) }
