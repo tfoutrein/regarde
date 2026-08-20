@@ -244,6 +244,19 @@ final class OverlayController {
             store.extendStroke(to: event.point, geometry: geometry)
             if let mark = store.endStroke() {
                 Journal.write("marque \(mark.number) — \(mark.tool.label) sur display \(mark.displayID)")
+                // La capture part MAINTENANT, sans attendre la fin de session : une
+                // infobulle se referme, une animation se termine, un menu disparaît.
+                // Capturer plus tard donnerait six images d'un même écran au repos, où
+                // aucune des six marques n'aurait plus de sens.
+                Task.detached(priority: .userInitiated) {
+                    do {
+                        try await MarkCapture.shared.capture(mark: mark)
+                    } catch {
+                        await MainActor.run {
+                            Journal.write("⚠ capture de la marque \(mark.number) : \(error)")
+                        }
+                    }
+                }
             }
         }
         if let id = store.liveDisplayID ?? store.marks.last?.displayID { touched.insert(id) }

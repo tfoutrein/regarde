@@ -29,6 +29,9 @@ final class SessionCoordinator {
     /// Raison de l'etat `blocked`, affichee telle quelle par le doctor.
     private(set) var blockingReason: String?
 
+    /// Répertoire de la session en cours. `nil` hors session.
+    private(set) var sessionDirectory: URL?
+
     // MARK: - Transitions
 
     @discardableResult
@@ -82,6 +85,8 @@ final class SessionCoordinator {
         }
 
         MarkStore.shared.reset()
+        sessionDirectory = try? SessionPaths.makeSessionDirectory()
+        Task { await MarkCapture.shared.reset() }
         OptionGate.shared.currentMode = .active
         transition(to: .recording)
         HUDWindow.shared.announce("Session ouverte — \(target.name)",
@@ -103,10 +108,37 @@ final class SessionCoordinator {
         TargetWindow.shared.release()
 
         Journal.section("Marques de la session", MarkStore.shared.describe())
+
+        // Les marques encore présentes, avec leur intention. Ce dictionnaire EST le
+        // filtre : une marque supprimée par ⌘Z n'y figure pas, donc son recadrage est
+        // jeté sans avoir jamais touché le disque.
+        var keep: [Int: String?] = [:]
+        for mark in MarkStore.shared.marks { keep[mark.number] = mark.intention?.label }
+        let directory = sessionDirectory
+        sessionDirectory = nil
+
         transition(to: .publishing)
-        transition(to: .idle)
-        HUDWindow.shared.announce("Session terminée — \(count) marque\(count > 1 ? "s" : "")",
-                                  detail: "Écriture des artefacts en S27", duration: 3)
+        Task {
+            var written = 0
+            if let directory {
+                do {
+                    let frames = try await MarkCapture.shared.finalize(
+                        keeping: keep, into: SessionPaths.frames(of: directory))
+                    written = frames.count
+                } catch {
+                    await MainActor.run { Journal.write("⚠ gravure : \(error)") }
+                }
+            }
+            await MainActor.run {
+                Journal.write("\(written) image\(written > 1 ? "s" : "") écrite"
+                              + (written > 1 ? "s" : "")
+                              + (directory.map { " dans \($0.path)" } ?? ""))
+                self.transition(to: .idle)
+                HUDWindow.shared.announce(
+                    "Session terminée — \(count) marque\(count > 1 ? "s" : "")",
+                    detail: directory?.lastPathComponent ?? "aucun artefact", duration: 4)
+            }
+        }
     }
 
     /// Force l'etat `suspended` sans passer par la validation.

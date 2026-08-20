@@ -32,6 +32,12 @@ if CommandLine.arguments.contains("--geometry-test") {
 // Les marques : numérotation, modes de peinture, ancrage des badges, codes de la palette
 // et confinement à la fenêtre cible. Tourne sans écran et sans permission — ce qu'il
 // vérifie est du calcul, pas de l'affichage.
+// Le recadrage et la gravure : rectangles, paliers de facturation et conversions de
+// repère. Aucun écran, aucune permission — ce sont des calculs.
+if CommandLine.arguments.contains("--capture-test") {
+    exit(CaptureSelfTest.run() ? 0 : 1)
+}
+
 if CommandLine.arguments.contains("--marks-test") {
     exit(MainActor.assumeIsolated { MarksSelfTest.run() } ? 0 : 1)
 }
@@ -79,6 +85,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         HotKeyCenter.shared.install()
         Journal.section("Raccourcis", HotKeyCenter.shared.describe())
+
+        // Vérification de bout en bout de la capture, sans passer par le tap : elle ne
+        // doit dépendre d'aucune autorisation d'injection, qui n'a rien à voir avec elle.
+        if CommandLine.arguments.contains("--capture-demo") {
+            CaptureDemo.run()
+            return
+        }
 
         // Diagnostic complet au démarrage, sous la vraie identité de l'application.
         // Chaque ligne exécute son opération réelle — c'est tout l'objet de S11.

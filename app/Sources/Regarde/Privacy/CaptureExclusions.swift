@@ -59,12 +59,19 @@ final class CaptureExclusions {
     /// spécification la donnait pour ignorée depuis macOS 15.4. On ne s'y fie pas pour
     /// autant : l'exclusion par application couvre aussi les fenêtres créées après coup.
     func applicationsToExclude(from content: SCShareableContent) -> [SCRunningApplication] {
-        let ownBundleID = Bundle.main.bundleIdentifier
-        let blocked = Set(bundleIDs)
+        let blocked = excludedBundleIDs
+        return content.applications.filter { blocked.contains($0.bundleIdentifier) }
+    }
 
-        return content.applications.filter { app in
-            app.bundleIdentifier == ownBundleID || blocked.contains(app.bundleIdentifier)
-        }
+    /// La même liste, réduite à des chaînes.
+    ///
+    /// `SCRunningApplication` n'est pas `Sendable` : le filtrage ne peut donc pas
+    /// traverser une frontière d'isolation. Ce sont les identifiants qui voyagent, et le
+    /// filtre se refait de l'autre côté sur le contenu local.
+    var excludedBundleIDs: Set<String> {
+        var ids = Set(bundleIDs)
+        if let own = Bundle.main.bundleIdentifier { ids.insert(own) }
+        return ids
     }
 
 }

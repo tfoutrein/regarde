@@ -34,6 +34,37 @@ struct ScreenRecordingCheck: DoctorCheck {
             let displays = content.displays.map { d in
                 "display \(d.displayID) — \(d.width)×\(d.height) px"
             }
+
+            // Zéro écran EST l'échec, même sans exception.
+            //
+            // `SCShareableContent` ne lève pas quand l'autorisation manque : elle rend
+            // une liste vide. Traiter « pas d'exception » comme « autorisation
+            // accordée » a produit un diagnostic tout vert annonçant « 0 écran(s)
+            // accessibles » pendant que toute capture échouait — la ligne se
+            // contredisait elle-même et le verdict la croyait quand même.
+            //
+            // Un écran physique existe toujours. Une liste vide ne peut donc rien
+            // vouloir dire d'autre que : le système ne nous en montre aucun.
+            guard !content.displays.isEmpty else {
+                // Déclenche le dialogue système, une seule fois par lancement.
+                //
+                // Sans lui, la seule issue serait d'aller cocher la case à la main dans
+                // les Réglages — et la case n'apparaît que si l'application a demandé
+                // au moins une fois. Une autorisation révoquée laisserait donc
+                // l'utilisateur devant un panneau où Regarde ne figure même pas.
+                //
+                // Cet appel est hors du chemin d'une session (ADR-0003) : il ne se
+                // produit qu'au diagnostic, jamais pendant qu'on annote.
+                CGRequestScreenCaptureAccess()
+                return .failed(
+                    "aucun écran accessible — autorisation absente ou révoquée",
+                    detail: ["l'appel a réussi mais n'a renvoyé aucun écran",
+                             "macOS ne lève pas d'erreur dans ce cas : il rend une liste vide"],
+                    remedy: "Autorise Regarde dans Enregistrement de l'écran, "
+                        + "puis relance l'application.",
+                    needsRelaunch: true
+                )
+            }
             return .ok("\(content.displays.count) écran(s) accessibles", detail: displays)
         } catch {
             return .failed(

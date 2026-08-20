@@ -14,6 +14,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 HARNESS="$ROOT/../prototypes/lot0/.build/harness"
 OUT="${1:-$ROOT/.build/lot2}"
+SESSIONS="$HOME/Regarde/sessions"
 JOURNAL="$HOME/Regarde/journal.txt"
 
 mkdir -p "$OUT"
@@ -62,8 +63,20 @@ echo "→ ⌃⌥F : fermeture de session"
 osascript -e 'tell application "System Events" to key code 3 using {control down, option down}'
 sleep 1
 
+sleep 2
+
 echo
 echo "── Journal ──"
-grep -E "marque |outil :|cible :|intention |chiffre " "$JOURNAL" | tail -25
+grep -E "marque |outil :|cible :|intention |chiffre |image" "$JOURNAL" | tail -25
+
+echo
+echo "── Artefacts écrits ──"
+LAST=$(ls -1dt "$SESSIONS"/*/ 2>/dev/null | head -1 || true)
+if [ -n "$LAST" ]; then
+    echo "$LAST"
+    ls -la "$LAST/frames" 2>/dev/null | tail -8
+else
+    echo "aucune session écrite"
+fi
 echo
 echo "Capture : $OUT/lot2-marques.png"
