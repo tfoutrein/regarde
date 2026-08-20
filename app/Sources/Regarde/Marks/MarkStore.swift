@@ -159,10 +159,19 @@ final class MarkStore {
     /// Remise à neuf pour une NOUVELLE session. C'est le seul endroit où la numérotation
     /// repart de 1 — l'unicité promise par l'ADR-0013 vaut à l'intérieur d'une session,
     /// pas d'une session à l'autre, sans quoi les numéros grandiraient sans fin.
-    func reset() {
+    func reset(keepingTool: Bool = false) {
         clear()
         nextNumber = 1
-        tool = .arrow
+        // L'outil survit à une publication éclair, pas à une nouvelle session.
+        //
+        // Le mode éclair publie tout seul 0,8 s après le relâchement de ⌥⌘ : remettre la
+        // flèche à ce moment-là ferait perdre le surlignage que l'utilisateur venait de
+        // choisir, sans un mot au HUD ni au journal. Il tracerait sa marque suivante avec
+        // le mauvais outil sans savoir pourquoi.
+        //
+        // Une session explicite, elle, est un nouveau départ annoncé : y repartir de la
+        // flèche est prévisible.
+        if !keepingTool { tool = .arrow }
 
         // Les recadrages en attente partent avec le modèle. Sans cela, une session
         // abandonnée laisserait ses items 1 à 4 dans le pot alors que la numérotation

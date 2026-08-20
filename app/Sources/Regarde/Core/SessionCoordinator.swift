@@ -219,7 +219,7 @@ final class SessionCoordinator {
             MarkCapture.Keep(number: $0.number, intention: $0.intention?.label)
         }
         let count = marks.count
-        MarkStore.shared.reset()
+        MarkStore.shared.reset(keepingTool: true)
         OverlayController.shared.redrawAll()
 
         Task {

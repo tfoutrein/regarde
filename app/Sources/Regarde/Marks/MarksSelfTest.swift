@@ -152,6 +152,13 @@ enum MarksSelfTest {
         check(t, "le numéro d'un geste trop court est rendu", store.liveNumber == 4)
         store.cancelStroke()
 
+        // L'outil survit à une publication éclair, mais pas à une nouvelle session.
+        store.tool = .highlight
+        store.reset(keepingTool: true)
+        check(t, "l'outil survit à une publication éclair", store.tool == .highlight)
+        store.reset()
+        check(t, "une nouvelle session repart de la flèche", store.tool == .arrow)
+
         // Une nouvelle session repart de 1.
         store.reset()
         store.beginStroke(at: CGPoint(x: 100, y: 100), geometry: g)
