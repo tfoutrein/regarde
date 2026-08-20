@@ -79,6 +79,21 @@ final class OverlayController {
 
         EventTap.shared.onControlKey = { key in
             DispatchQueue.main.async {
+                // Le ring est vidé AVANT de traiter la touche, et c'est indispensable.
+                //
+                // Les événements souris traversent le ring et n'atteignent le modèle
+                // qu'au prochain tick du display link — jusqu'à 8 ms plus tard. Les
+                // touches, elles, arrivent directement par ce chemin. Sans ce drainage,
+                // relâcher le bouton et frapper un chiffre dans la foulée — le geste
+                // naturel, puisque ⌥⌘ est déjà tenu — appliquerait l'intention à la
+                // marque PRÉCÉDENTE, celle d'avant le tracé qu'on vient de finir.
+                //
+                // Le symptôme n'est pas une panne : c'est un rapport faux, où chaque
+                // marque porte l'intention de sa voisine. Le décalage a été observé sur
+                // la première exécution du scénario S20-S23, quatre intentions sur
+                // quatre décalées d'un cran.
+                OverlayController.shared.pump()
+
                 switch key {
                 case .escape:
                     MarkStore.shared.cancelStroke()
@@ -86,6 +101,31 @@ final class OverlayController {
                     if let removed = MarkStore.shared.undoLast() {
                         Journal.write("marque \(removed.number) supprimée — le numéro n'est pas réattribué")
                     }
+                case .selectTool(let tool):
+                    MarkStore.shared.tool = tool
+                    Journal.write("outil : \(tool.label)")
+                    HUDWindow.shared.announce("Outil : \(tool.label)",
+                                              detail: "⌥⌘ + F C P S", duration: 2)
+                case .intention(let intention):
+                    switch MarkStore.shared.apply(intention) {
+                    case .applied(let number, let intention):
+                        Journal.write("marque \(number) : \(intention.label)")
+                        HUDWindow.shared.announce("Marque \(number) — \(intention.label)",
+                                                  detail: "⌥⌘ + 1..6", duration: 2)
+                    case .noMark, .muted:
+                        // Aucune marque à qualifier. Le dire, plutôt que de laisser
+                        // l'utilisateur croire que sa frappe a porté.
+                        Journal.write("intention \(intention.rawValue) sans marque à qualifier")
+                        HUDWindow.shared.announce("Aucune marque à qualifier",
+                                                  detail: "Trace d'abord, qualifie ensuite",
+                                                  duration: 2)
+                    }
+                case .mutedDigit(let rank):
+                    // Le chiffre a été avalé : la palette s'arrête à 6 (ADR-0021).
+                    Journal.write("chiffre \(rank) sans effet — la palette s'arrête à 6")
+                    HUDWindow.shared.announce("\(rank) — hors palette",
+                                              detail: "Les intentions vont de 1 à 6",
+                                              duration: 2)
                 }
                 OverlayController.shared.redrawAll()
             }
@@ -164,7 +204,11 @@ final class OverlayController {
     }
 
     /// Unique consommateur du ring : draine, applique, publie.
-    private func pump() {
+    ///
+    /// Appelé par le display link, et aussi à la main avant de traiter une touche de
+    /// contrôle, pour que souris et clavier atteignent le modèle dans l'ordre où
+    /// l'utilisateur les a produits.
+    func pump() {
         stamps.removeAll(keepingCapacity: true)
         var touched = Set<CGDirectDisplayID>()
 
@@ -227,10 +271,11 @@ final class OverlayController {
         guard let panel = panels[displayID] else { return }
         let size = panel.inkView.bounds.size
         let store = MarkStore.shared
-        panel.inkView.setCommittedPath(
-            store.committedPath(for: displayID, size: size, lineWidth: InkStyle.width))
-        panel.inkView.setLivePath(
-            store.livePath(for: displayID, size: size, lineWidth: InkStyle.width))
+        panel.inkView.setCommittedPaths(
+            store.committedPaths(for: displayID, size: size, lineWidth: InkStyle.width))
+        panel.inkView.setLivePaths(
+            store.livePaths(for: displayID, size: size, lineWidth: InkStyle.width))
+        panel.inkView.setBadges(store.badges(for: displayID, size: size))
     }
 
     func redrawAll() {

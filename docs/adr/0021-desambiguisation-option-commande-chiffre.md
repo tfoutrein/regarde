@@ -119,7 +119,31 @@ sur ce point après que ⌥⌘Z se soit révélé migrer sur la touche `W`.
 | Sans caractère (`Échap`, flèches) | par le **code physique** | code identique partout |
 
 Dans tous les cas, la résolution a lieu hors du callback du tap, qui ne fait que comparer
-des entiers ([ADR-0005](0005-cgeventtap-arbitre-unique.md)).
+des entiers ([ADR-0005](0005-cgeventtap-arbitre-unique.md)). Deux conséquences pratiques :
+`Intention.forKeyCode` est un `switch` sur des constantes et non un `allCases.first { ... }`,
+qui construirait un tableau à chaque frappe ; et les touches d'outil, résolues par
+caractère, sont mises en cache dans quatre atomiques rafraîchies au changement de
+disposition.
+
+L'ordre des constantes Carbon n'est pas celui des chiffres : `kVK_ANSI_5` vaut **23** et
+`kVK_ANSI_6` vaut **22**. Les écrire à la main en supposant une suite contiguë
+interposerait silencieusement deux intentions — le genre de défaut qu'on ne voit qu'en
+relisant un rapport où « lent » et « texte à corriger » ont été échangés. Deux
+vérifications de l'autotest existent pour ce seul piège.
+
+## Contrainte d'implémentation découverte au lot 2
+
+**Le chiffre est reconnu tant que la cible est l'application active, indépendamment de la
+position du curseur.**
+
+La règle d'armement de l'[ADR-0006](0006-modificateur-option-commande.md) confine ⌥⌘ à la
+fenêtre cible. Appliquée telle quelle aux touches, elle perd les intentions : une flèche
+tracée vers le bord laisse le pointeur hors de la fenêtre, et le chiffre frappé juste
+après n'est pas intercepté — il part à l'application testée. Mesuré sur un scénario de
+quatre marques : deux intentions sur quatre perdues.
+
+Le confinement au rectangle reste la règle pour les **clics**, où la position porte le
+sens. Voir la spécification § 6.2.
 
 ## Conséquences
 

@@ -70,7 +70,7 @@ final class OverlayPanel: NSPanel {
         // ScreenCaptureKit — alors que la spécification le donnait pour ignoré depuis
         // macOS 15.4. On le garde comme seconde ligne de défense sans s'y fier :
         // l'exclusion par application couvre aussi les fenêtres créées après coup.
-        sharingType = .none
+        sharingType = TestFlags.visibleCapture ? .readOnly : .none
 
         contentView = inkView
         inkView.wantsLayer = true

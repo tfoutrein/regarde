@@ -38,12 +38,16 @@ final class MarkStore {
         let start: NormPoint
         var current: NormPoint
         let tool: MarkTool
+        /// Numéro réservé dès la pression, pas au relâchement (ADR-0013).
+        let number: Int
     }
 
     private var live: LiveStroke?
 
     var hasLiveStroke: Bool { live != nil }
     var liveDisplayID: CGDirectDisplayID? { live?.displayID }
+    /// Numéro du tracé en cours, à afficher pendant le geste.
+    var liveNumber: Int? { live?.number }
 
     // MARK: - Cycle d'un geste
 
@@ -54,8 +58,14 @@ final class MarkStore {
         let localPoint = geometry.windowLocal(fromEvent: eventPoint, on: screen)
         let norm = NormPoint(local: localPoint, in: size)
 
+        // Le numéro est réservé ICI, à la pression — pas au relâchement.
+        //
+        // L'utilisateur prononce les numéros à voix haute pendant qu'il trace : « comme
+        // sur la marque 2 ». Attribuer au relâchement rendrait le badge invisible
+        // pendant le geste, donc le numéro imprononçable au moment où il en a besoin.
         live = LiveStroke(displayID: screen.displayID, panelSize: size,
-                          start: norm, current: norm, tool: tool)
+                          start: norm, current: norm, tool: tool, number: nextNumber)
+        nextNumber += 1
     }
 
     /// Prolongement du tracé. Les points restent rapportés à l'écran de départ, même
@@ -72,15 +82,19 @@ final class MarkStore {
     /// Fin du tracé. Retourne la marque créée, ou `nil` si le geste était trop court.
     @discardableResult
     func endStroke() -> Mark? {
-        defer { live = nil }
-        guard let stroke = live else { return nil }
+        guard let stroke = live else { live = nil; return nil }
         guard let shape = MarkGeometry.shape(for: stroke.tool, from: stroke.start,
                                              to: stroke.current, in: stroke.panelSize)
-        else { return nil }
+        else {
+            // Geste trop court : rien n'est posé, et le numéro repart au pot.
+            releaseNumberIfLast()
+            live = nil
+            return nil
+        }
+        defer { live = nil }
 
-        let mark = Mark(number: nextNumber, displayID: stroke.displayID,
+        let mark = Mark(number: stroke.number, displayID: stroke.displayID,
                         shape: shape, tool: stroke.tool)
-        nextNumber += 1
         marks.append(mark)
         return mark
     }
@@ -90,7 +104,40 @@ final class MarkStore {
     /// Le numéro n'est PAS consommé : l'utilisateur n'a pas encore pu le prononcer,
     /// c'est le seul cas où le réutiliser est légitime (ADR-0013).
     func cancelStroke() {
+        releaseNumberIfLast()
         live = nil
+    }
+
+    /// Rend le numéro réservé, s'il est encore le dernier attribué.
+    ///
+    /// Seul cas légitime de réutilisation : le tracé a été abandonné avant que
+    /// l'utilisateur ait pu prononcer son numéro. La garde `== nextNumber - 1` évite de
+    /// rendre un numéro qu'une marque suivante aurait déjà dépassé.
+    private func releaseNumberIfLast() {
+        guard let stroke = live, stroke.number == nextNumber - 1 else { return }
+        nextNumber -= 1
+    }
+
+    // MARK: - Intentions (S23)
+
+    /// Résultat d'une frappe de chiffre, pour que le HUD dise ce qui s'est passé.
+    enum IntentionOutcome {
+        case applied(mark: Int, intention: Intention)
+        case noMark
+        case muted(Int64)
+    }
+
+    /// Applique une intention à la marque qualifiable.
+    ///
+    /// La cible est la DERNIÈRE marque posée. L'ADR-0021 la définit comme « la marque
+    /// attachée à la fenêtre de parole courante » ; la fenêtre de parole arrive au lot 4,
+    /// et jusque-là la dernière marque en est l'approximation exacte — il n'existe pas
+    /// encore de fenêtre pouvant contenir autre chose.
+    @discardableResult
+    func apply(_ intention: Intention) -> IntentionOutcome {
+        guard let index = marks.indices.last else { return .noMark }
+        marks[index].intention = intention
+        return .applied(mark: marks[index].number, intention: intention)
     }
 
     // MARK: - Édition
@@ -109,28 +156,60 @@ final class MarkStore {
         // `nextNumber` n'est pas remis à zéro : les numéros d'une session sont uniques.
     }
 
+    /// Remise à neuf pour une NOUVELLE session. C'est le seul endroit où la numérotation
+    /// repart de 1 — l'unicité promise par l'ADR-0013 vaut à l'intérieur d'une session,
+    /// pas d'une session à l'autre, sans quoi les numéros grandiraient sans fin.
+    func reset() {
+        clear()
+        nextNumber = 1
+        tool = .arrow
+    }
+
     // MARK: - Rendu
 
-    /// Chemin des marques posées sur un écran, dans un cadre de taille donnée.
-    func committedPath(for displayID: CGDirectDisplayID, size: CGSize,
-                       lineWidth: CGFloat) -> CGPath? {
-        let onScreen = marks.filter { $0.displayID == displayID }
-        guard !onScreen.isEmpty else { return nil }
-        let path = CGMutablePath()
-        for mark in onScreen {
+    /// Chemins des marques posées sur un écran, groupés par mode de peinture.
+    ///
+    /// Le groupement se fait ici plutôt que dans la vue : fusionner les formes d'un même
+    /// mode en un seul `CGPath` laisse trois couches à recomposer quel que soit le nombre
+    /// de marques, là où une couche par marque ferait grossir l'arbre à chaque geste.
+    func committedPaths(for displayID: CGDirectDisplayID, size: CGSize,
+                        lineWidth: CGFloat) -> [MarkRendering: CGPath] {
+        var byRendering: [MarkRendering: CGMutablePath] = [:]
+        for mark in marks where mark.displayID == displayID {
+            let path = byRendering[mark.shape.rendering] ?? CGMutablePath()
             path.addPath(MarkGeometry.path(for: mark.shape, in: size, lineWidth: lineWidth))
+            byRendering[mark.shape.rendering] = path
         }
-        return path
+        return byRendering
     }
 
     /// Chemin du tracé en cours, s'il appartient à cet écran.
-    func livePath(for displayID: CGDirectDisplayID, size: CGSize,
-                  lineWidth: CGFloat) -> CGPath? {
-        guard let stroke = live, stroke.displayID == displayID else { return nil }
+    func livePaths(for displayID: CGDirectDisplayID, size: CGSize,
+                   lineWidth: CGFloat) -> [MarkRendering: CGPath] {
+        guard let stroke = live, stroke.displayID == displayID else { return [:] }
         guard let shape = MarkGeometry.shape(for: stroke.tool, from: stroke.start,
                                              to: stroke.current, in: size)
-        else { return nil }
-        return MarkGeometry.path(for: shape, in: size, lineWidth: lineWidth)
+        else { return [:] }
+        return [shape.rendering: MarkGeometry.path(for: shape, in: size, lineWidth: lineWidth)]
+    }
+
+    /// Numéros à afficher sur un écran, tracé en cours compris.
+    func badges(for displayID: CGDirectDisplayID, size: CGSize) -> [BadgeSpec] {
+        var specs = marks.filter { $0.displayID == displayID }.map { mark -> BadgeSpec in
+            let a = MarkGeometry.badgeAnchor(for: mark.shape, in: size)
+            return BadgeSpec(number: mark.number, anchor: a.point, anchorX: a.anchorX,
+                             intention: mark.intention?.glyph)
+        }
+        // Le tracé en cours porte déjà son numéro : c'est pendant le geste que
+        // l'utilisateur le prononce, pas après.
+        if let stroke = live, stroke.displayID == displayID,
+           let shape = MarkGeometry.shape(for: stroke.tool, from: stroke.start,
+                                          to: stroke.current, in: size) {
+            let a = MarkGeometry.badgeAnchor(for: shape, in: size)
+            specs.append(BadgeSpec(number: stroke.number, anchor: a.point,
+                                   anchorX: a.anchorX, intention: nil))
+        }
+        return specs
     }
 
     // MARK: - Diagnostic

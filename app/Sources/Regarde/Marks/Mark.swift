@@ -74,9 +74,32 @@ enum MarkShape: Codable, Hashable, Sendable {
     }
 
     var boundingBox: NormRect { NormRect(bounding: points) }
+
+    /// Comment la forme est peinte.
+    ///
+    /// Le découpage n'est pas cosmétique : un surlignage tracé au trait donne un cadre
+    /// vide, et un point tracé au trait donne un anneau. Chacun ferait un repère
+    /// différent de celui que l'utilisateur croit poser.
+    var rendering: MarkRendering {
+        switch self {
+        case .arrow, .rect: .stroke
+        case .point: .fill
+        case .highlight: .wash
+        }
+    }
 }
 
-/// Outil actif. Le changement se fait au clavier (S20).
+/// Peinture d'une forme.
+enum MarkRendering: Sendable {
+    /// Trait vermillon opaque — flèche, cadre.
+    case stroke
+    /// Aplat vermillon opaque — point.
+    case fill
+    /// Aplat translucide, qui laisse lire l'interface dessous — surlignage.
+    case wash
+}
+
+/// Outil actif. Le changement se fait au clavier, ⌥⌘ tenu.
 enum MarkTool: String, CaseIterable, Sendable {
     case arrow, rect, point, highlight
 
@@ -86,6 +109,40 @@ enum MarkTool: String, CaseIterable, Sendable {
         case .rect: "cadre"
         case .point: "point"
         case .highlight: "surlignage"
+        }
+    }
+
+    /// Touche de sélection, désignée par son CARACTÈRE et non par un code physique.
+    ///
+    /// Le lot 0 l'a payé : coder un code physique fait migrer le raccourci d'une touche
+    /// à l'autre sur un clavier non-QWERTY. Ici la règle vaut d'autant plus que les
+    /// initiales sont françaises — Flèche, Cadre, Point, Surlignage.
+    var key: Character {
+        switch self {
+        case .arrow: "f"
+        case .rect: "c"
+        case .point: "p"
+        case .highlight: "s"
+        }
+    }
+
+    /// Ordre stable, utilisé pour indexer le cache de codes du tap.
+    var slot: Int {
+        switch self {
+        case .arrow: 0
+        case .rect: 1
+        case .point: 2
+        case .highlight: 3
+        }
+    }
+
+    static func at(slot: Int) -> MarkTool? {
+        switch slot {
+        case 0: .arrow
+        case 1: .rect
+        case 2: .point
+        case 3: .highlight
+        default: nil
         }
     }
 }
@@ -104,13 +161,17 @@ struct Mark: Identifiable, Sendable {
     let displayID: CGDirectDisplayID
     let shape: MarkShape
     let tool: MarkTool
+    /// Étiquette posée après coup, `⌥⌘ + 1..6`. Reste `nil` si l'utilisateur n'en pose
+    /// pas : en mode parlé, l'intention est dans la voix, pas au clavier.
+    var intention: Intention?
 
     init(id: UUID = UUID(), number: Int, displayID: CGDirectDisplayID,
-         shape: MarkShape, tool: MarkTool) {
+         shape: MarkShape, tool: MarkTool, intention: Intention? = nil) {
         self.id = id
         self.number = number
         self.displayID = displayID
         self.shape = shape
         self.tool = tool
+        self.intention = intention
     }
 }

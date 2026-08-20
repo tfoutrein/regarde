@@ -7,9 +7,14 @@ import QuartzCore
 // Trois couches, pour que le trait en cours ne force pas la recomposition de ce qui est
 // déjà posé :
 //
-//   committed  les traits terminés, rasterisés — coût de recomposition nul
-//   live       le trait en cours, un SEUL CAShapeLayer
+//   committed  les marques terminées, rasterisées — coût de recomposition nul
+//   live       la marque en cours, un SEUL CAShapeLayer par mode de peinture
 //   badges     les numéros (S21 et S23)
+//
+// Chaque étage se dédouble en trois modes de peinture, parce qu'un `CAShapeLayer` n'a
+// qu'un `fillColor` et qu'un `strokeColor` pour tout son chemin : trait opaque, aplat
+// opaque, aplat translucide. Le surlignage doit laisser lire l'interface dessous, donc
+// il ne peut pas partager la couche du trait.
 //
 // `CATransaction.setDisableActions(true)` est obligatoire : sans lui, Core Animation
 // anime implicitement `path` et le trait arrive avec 0,25 s de retard. Ce n'est pas une
@@ -22,9 +27,60 @@ import QuartzCore
 
 final class InkView: NSView {
 
-    private let committed = CAShapeLayer()
-    private let live = CAShapeLayer()
+    /// Un jeu de couches pour un étage : trait, aplat, lavis.
+    private struct Painter {
+        let stroke = CAShapeLayer()
+        let fill = CAShapeLayer()
+        let wash = CAShapeLayer()
+
+        var all: [CAShapeLayer] { [wash, fill, stroke] }
+
+        func layer(for rendering: MarkRendering) -> CAShapeLayer {
+            switch rendering {
+            case .stroke: stroke
+            case .fill: fill
+            case .wash: wash
+            }
+        }
+
+        func setPaths(_ paths: [MarkRendering: CGPath]) {
+            stroke.path = paths[.stroke]
+            fill.path = paths[.fill]
+            wash.path = paths[.wash]
+        }
+
+        func configure() {
+            stroke.fillColor = nil
+            stroke.strokeColor = InkStyle.color.cgColor
+            stroke.lineWidth = InkStyle.width
+            stroke.lineCap = .round
+            stroke.lineJoin = .round
+
+            fill.fillColor = InkStyle.color.cgColor
+            fill.strokeColor = nil
+
+            // Le lavis porte un liseré à pleine opacité : sans lui, un surlignage sur un
+            // fond clair devient un halo aux bords indécis, et la gravure du lot 2 doit
+            // pouvoir en désigner la limite exacte.
+            wash.fillColor = InkStyle.washColor.cgColor
+            wash.strokeColor = InkStyle.color.cgColor
+            wash.lineWidth = 1.5
+
+            for l in all {
+                // Aucune ombre, aucun flou, aucun `NSVisualEffectView` : chacun est une
+                // passe de composition supplémentaire, et le risque R8 en fait un danger
+                // explicite — l'outil deviendrait la lenteur qu'il sert à diagnostiquer.
+                l.shadowOpacity = 0
+                l.actions = ["path": NSNull(), "position": NSNull(), "bounds": NSNull()]
+            }
+        }
+    }
+
+    private let committed = Painter()
+    private let live = Painter()
     private let badges = CALayer()
+    /// Pastilles recyclées d'une frame à l'autre, jamais recréées.
+    private var badgePool: [BadgeLayer] = []
 
     /// Rendu gelé : le panneau est masqué, commiter ne servirait à rien.
     private(set) var isFrozen = false
@@ -49,26 +105,20 @@ final class InkView: NSView {
         guard let root = layer else { return }
         root.masksToBounds = false
 
-        for l in [committed, live] {
-            l.fillColor = nil
-            l.strokeColor = InkStyle.color.cgColor
-            l.lineWidth = InkStyle.width
-            l.lineCap = .round
-            l.lineJoin = .round
-            // Aucune ombre, aucun flou, aucun `NSVisualEffectView` : chacun est une
-            // passe de composition supplémentaire, et le risque R8 en fait un danger
-            // explicite — l'outil deviendrait la lenteur qu'il sert à diagnostiquer.
-            l.shadowOpacity = 0
-            l.actions = ["path": NSNull(), "position": NSNull(), "bounds": NSNull()]
+        committed.configure()
+        live.configure()
+
+        // Les marques posées ne changent plus : les rasteriser rend leur recomposition
+        // gratuite pendant que la marque vivante se redessine à chaque frame.
+        for l in committed.all {
+            l.shouldRasterize = true
+            l.rasterizationScale = window?.backingScaleFactor ?? 2.0
         }
 
-        // Les traits posés ne changent plus : les rasteriser rend leur recomposition
-        // gratuite pendant que le trait vivant se redessine à chaque frame.
-        committed.shouldRasterize = true
-        committed.rasterizationScale = window?.backingScaleFactor ?? 2.0
-
-        root.addSublayer(committed)
-        root.addSublayer(live)
+        // Ordre de superposition : les lavis d'abord, puis les aplats, puis les traits.
+        // Un surlignage posé après une flèche ne doit pas la voiler.
+        for l in committed.all { root.addSublayer(l) }
+        for l in live.all { root.addSublayer(l) }
         root.addSublayer(badges)
         layoutLayers()
     }
@@ -76,14 +126,15 @@ final class InkView: NSView {
     func layoutLayers() {
         guard let root = layer else { return }
         transaction {
-            for l in [committed, live, badges] { l.frame = root.bounds }
-            committed.rasterizationScale = window?.backingScaleFactor ?? 2.0
+            for l in committed.all + live.all { l.frame = root.bounds }
+            badges.frame = root.bounds
+            for l in committed.all { l.rasterizationScale = window?.backingScaleFactor ?? 2.0 }
         }
     }
 
     override func viewDidChangeBackingProperties() {
         super.viewDidChangeBackingProperties()
-        committed.rasterizationScale = window?.backingScaleFactor ?? 2.0
+        for l in committed.all { l.rasterizationScale = window?.backingScaleFactor ?? 2.0 }
     }
 
     /// Une transaction sans animation implicite. Tout passe par ici.
@@ -127,25 +178,71 @@ final class InkView: NSView {
 
     // MARK: - Contenu
 
-    /// Publie le trait en cours.
-    func setLivePath(_ path: CGPath?) {
+    /// Publie la marque en cours.
+    func setLivePaths(_ paths: [MarkRendering: CGPath]) {
         guard !isFrozen else { return }
-        transaction { live.path = path }
+        transaction { live.setPaths(paths) }
     }
 
-    /// Publie l'ensemble des traits posés.
-    func setCommittedPath(_ path: CGPath?) {
+    /// Publie l'ensemble des marques posées.
+    func setCommittedPaths(_ paths: [MarkRendering: CGPath]) {
         guard !isFrozen else { return }
-        transaction { committed.path = path }
+        transaction { committed.setPaths(paths) }
+    }
+
+    /// Publie les numéros. Le tracé en cours porte le sien, comme les marques posées.
+    func setBadges(_ specs: [BadgeSpec]) {
+        guard !isFrozen else { return }
+        let scale = window?.backingScaleFactor ?? 2.0
+        transaction {
+            while badgePool.count < specs.count {
+                let badge = BadgeLayer()
+                badges.addSublayer(badge)
+                badgePool.append(badge)
+            }
+            for (i, badge) in badgePool.enumerated() {
+                guard i < specs.count else { badge.isHidden = true; continue }
+                let spec = specs[i]
+                badge.isHidden = false
+                badge.configure(number: spec.number, intention: spec.intention, scale: scale)
+                badge.anchorPoint = CGPoint(x: spec.anchorX, y: 0.5)
+                // Ramené dans le cadre : une marque posée au bord de l'écran aurait son
+                // numéro à moitié dehors, donc illisible — et le numéro est ce par quoi
+                // l'utilisateur désigne la marque à voix haute.
+                badge.position = clamp(spec.anchor, width: badge.bounds.width,
+                                       anchorX: spec.anchorX)
+            }
+        }
+    }
+
+    /// Ramène une pastille dans les limites de la vue.
+    private func clamp(_ point: CGPoint, width: CGFloat, anchorX: CGFloat) -> CGPoint {
+        let half = BadgeLayer.diameter / 2
+        let left = point.x - width * anchorX
+        let corrected = min(max(left, 2), max(2, bounds.width - width - 2))
+        return CGPoint(x: corrected + width * anchorX,
+                       y: min(max(point.y, half + 2), bounds.height - half - 2))
     }
 
     func clear() {
         transaction {
-            live.path = nil
-            committed.path = nil
-            badges.sublayers?.forEach { $0.removeFromSuperlayer() }
+            live.setPaths([:])
+            committed.setPaths([:])
+            for badge in badgePool { badge.isHidden = true }
         }
     }
+}
+
+/// Un numéro à poser, avec son point d'ancrage local.
+struct BadgeSpec: Equatable {
+    let number: Int
+    let anchor: CGPoint
+    /// Côté par lequel la gélule s'accroche : 0 pour s'étendre vers la droite, 1 vers la
+    /// gauche, 0,5 pour rester centrée. Sans lui, un libellé long partirait du mauvais
+    /// côté et recouvrirait ce que la marque désigne.
+    let anchorX: CGFloat
+    /// Libellé d'intention, `nil` tant qu'aucune n'est choisie (S23).
+    let intention: String?
 }
 
 /// Style de l'encre — spécification § 5.6.
@@ -156,4 +253,9 @@ final class InkView: NSView {
 enum InkStyle {
     static let color = NSColor(srgbRed: 1.0, green: 0.231, blue: 0.188, alpha: 1.0)  // #FF3B30
     static let width: CGFloat = 3
+
+    /// Opacité du surlignage. Assez pour se voir sur un fond blanc comme sur un fond
+    /// sombre, assez peu pour que le texte surligné reste lisible dans la capture — sans
+    /// quoi le surlignage effacerait ce qu'il désigne.
+    static let washColor = color.withAlphaComponent(0.22)
 }

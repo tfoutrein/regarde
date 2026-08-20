@@ -154,8 +154,56 @@ final class OptionGate: @unchecked Sendable {
 
     var isStroking: Bool { strokeFlag.load(ordering: .acquiring) }
     var isArmed: Bool { armedFlag.load(ordering: .acquiring) }
+
+    // ── Armement des TOUCHES, distinct de celui des clics ────────────────────
+    //
+    // `isArmed` suit le CURSEUR : il dit « ⌥⌘ est tenu et le pointeur est dans la
+    // fenêtre cible ». C'est le bon critère pour un clic, dont la position EST le sens.
+    //
+    // Ce n'en est pas un pour une touche. Le geste normal amène le curseur au bord de ce
+    // qu'on désigne, parfois dehors — une flèche tracée vers l'extérieur, un cadre tiré
+    // jusqu'au coin. Frapper l'intention juste après tombait alors dans le vide, et le
+    // ⌥⌘ + chiffre partait à l'application testée. Mesuré : sur un scénario de quatre
+    // marques, deux intentions sur quatre perdues et le changement d'outil avec.
+    //
+    // Le critère juste pour une touche est : la cible est-elle l'application ACTIVE ?
+    // Si oui, l'utilisateur annote et les raccourcis nous appartiennent. S'il est passé
+    // dans son éditeur, l'éditeur est actif et récupère les siens. Regarde ne devient
+    // jamais active (ADR-0004), donc ce drapeau ne se trompe pas sur notre compte.
+    private let targetFrontmost = Atomic<Bool>(false)
+
+    /// Publié depuis le thread principal, à chaque changement d'application active.
+    func setTargetFrontmost(_ value: Bool) {
+        targetFrontmost.store(value, ordering: .releasing)
+    }
+
+    /// Vrai quand une touche de contrôle nous revient. Ne dépend pas du curseur.
+    var isArmedForKeys: Bool {
+        currentMode != .passthrough && targetFrontmost.load(ordering: .acquiring)
+    }
     var captured: UInt64 { capturedCount.load(ordering: .relaxed) }
     var passed: UInt64 { passedCount.load(ordering: .relaxed) }
+
+    /// Le modificateur est-il armé, ici, maintenant ?
+    ///
+    /// Deux conditions, et une échappatoire.
+    ///
+    /// La règle : ⌥⌘ tenu ET le curseur dans la fenêtre cible. Le confinement n'est pas
+    /// cosmétique — sans lui, ⌥⌘-cliquer dans l'éditeur pour relire le code en pleine
+    /// session poserait une marque sur l'éditeur, et volerait son clic à l'IDE.
+    ///
+    /// L'échappatoire : ⇧ en plus. Il existe parce que la cible n'est pas toujours là où
+    /// se trouve le défaut — une notification système, un menu déroulant qui déborde de
+    /// la fenêtre, une seconde fenêtre de la même application. Sans échappatoire, ces
+    /// cas seraient simplement inannotables, ce qui est pire qu'un raccourci de plus.
+    ///
+    /// ⇧ ne se dispute rien avec l'ADR-0021 : là il qualifie des CHIFFRES, ici un CLIC.
+    @inline(__always)
+    static func isArmed(flags: CGEventFlags, required: CGEventFlags,
+                        location: CGPoint, target: CGRect) -> Bool {
+        guard flags.isSuperset(of: required) else { return false }
+        return flags.contains(.maskShift) || target.contains(location)
+    }
 
     // MARK: - Decision (thread du tap, chemin critique)
 
@@ -172,7 +220,8 @@ final class OptionGate: @unchecked Sendable {
         }
 
         let required = CGEventFlags(rawValue: armingFlags.load(ordering: .relaxed))
-        let armed = flags.isSuperset(of: required) && targetRect.read().contains(location)
+        let armed = Self.isArmed(flags: flags, required: required,
+                                 location: location, target: targetRect.read())
 
         // ── Bouton droit : annule le tracé en cours ──────────────────────────
         // Alternative gestuelle a `Échap`, qui oblige a quitter la souris des yeux.
@@ -289,7 +338,8 @@ final class OptionGate: @unchecked Sendable {
             return
         }
         let required = CGEventFlags(rawValue: armingFlags.load(ordering: .relaxed))
-        let armed = flags.isSuperset(of: required) && targetRect.read().contains(location)
+        let armed = Self.isArmed(flags: flags, required: required,
+                                 location: location, target: targetRect.read())
         publishState(armed: armed, stroking: strokeActive)
     }
 

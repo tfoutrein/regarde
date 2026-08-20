@@ -48,6 +48,67 @@ final class SessionCoordinator {
         return true
     }
 
+    // MARK: - Session d'annotation (lot 2)
+
+    /// Ouvre une session. `⌃⌥S`.
+    ///
+    /// Trois étapes, dans cet ordre, parce que chacune peut échouer et qu'échouer tard
+    /// coûte plus cher : le tap doit tourner, la cible doit exister, et seulement alors
+    /// la porte s'ouvre. Une session ouverte sans cible armerait ⌥⌘ sur tout l'écran,
+    /// donc sur l'éditeur — exactement ce que S22 existe pour empêcher.
+    func openSession() {
+        guard state == .idle || state == .blocked else {
+            Journal.write("⌃⌥S ignoré — déjà en \(state.rawValue)")
+            return
+        }
+        guard transition(to: .preflight) else { return }
+
+        guard EventTap.shared.isInstalled else {
+            transition(to: .blocked, reason: "le tap n'est pas installé")
+            // Le diagnostic s'ouvre de lui-même : dire « ça n'a pas marché » sans montrer
+            // quelle permission manque laisserait l'utilisateur chercher.
+            DoctorWindow.shared.show()
+            return
+        }
+
+        guard transition(to: .arming) else { return }
+
+        guard let target = TargetWindow.shared.acquire() else {
+            HUDWindow.shared.announce("Aucune fenêtre à annoter",
+                                      detail: "Mets l'application au premier plan, puis ⌃⌥S",
+                                      duration: 3)
+            transition(to: .idle)
+            return
+        }
+
+        MarkStore.shared.reset()
+        OptionGate.shared.currentMode = .active
+        transition(to: .recording)
+        HUDWindow.shared.announce("Session ouverte — \(target.name)",
+                                  detail: "⌥⌘ + glisser pour tracer", duration: 3)
+    }
+
+    /// Termine la session. `⌃⌥F`. La publication des artefacts arrive en S27.
+    func closeSession() {
+        guard state == .recording else {
+            Journal.write("⌃⌥F ignoré — aucune session en cours (\(state.rawValue))")
+            return
+        }
+        let count = MarkStore.shared.count
+        transition(to: .finalizing)
+
+        // La porte se ferme AVANT tout le reste. Tant qu'elle est ouverte, un ⌥⌘-clic
+        // pendant la finalisation créerait une marque que personne ne publierait.
+        OptionGate.shared.currentMode = .passthrough
+        TargetWindow.shared.release()
+
+        Journal.section("Marques de la session", MarkStore.shared.describe())
+        transition(to: .publishing)
+        transition(to: .idle)
+        HUDWindow.shared.announce("Session terminée — \(count) marque\(count > 1 ? "s" : "")",
+                                  detail: "Écriture des artefacts en S27", duration: 3)
+    }
+
     /// Force l'etat `suspended` sans passer par la validation.
     ///
     /// Utilise pour les evenements systeme — veille, verrouillage, changement

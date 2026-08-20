@@ -193,6 +193,94 @@ func scenarioPlainDrag(from a: CGPoint, to b: CGPoint) {
 // MARK: - Entree
 
 let args = CommandLine.arguments
+// MARK: - Scenario du lot 2 : les quatre outils et la palette d'intentions
+
+/// Codes PHYSIQUES. Les lettres sont resolues sur la disposition COURANTE cote
+/// application ; ici on injecte des emplacements, donc on donne les codes AZERTY de
+/// l'auteur — c'est exactement l'asymetrie que l'ADR-0021 decrit.
+let TOOL_KEYS: [String: CGKeyCode] = [
+    "fleche": 3,     // F
+    "cadre": 8,      // C
+    "point": 35,     // P
+    "surlignage": 1, // S
+]
+let DIGIT_KEYS: [CGKeyCode] = [18, 19, 20, 21, 23, 22]   // 1 2 3 4 5 6 — 5 et 6 inverses
+
+func selectTool(_ name: String) {
+    guard let code = TOOL_KEYS[name] else { return }
+    key(code, flags: ARMED)
+    pause(120)
+}
+
+func applyIntention(_ rank: Int) {
+    guard rank >= 1, rank <= 6 else { return }
+    key(DIGIT_KEYS[rank - 1], flags: ARMED)
+    pause(120)
+}
+
+/// Une marque par outil, chacune qualifiee par une intention differente.
+///
+/// Le scenario tient l'armement pendant TOUTE la sequence : relacher ⌥⌘ entre deux
+/// marques desarmerait la porte, et le changement d'outil ne passerait plus — il est
+/// conditionne a `isArmed` pour ne pas voler ⌥⌘C a l'application testee.
+func scenarioLot2(origin: CGPoint) {
+    arm()
+
+    selectTool("fleche")
+    stroke(from: origin, to: CGPoint(x: origin.x + 220, y: origin.y + 90))
+    applyIntention(2)                                    // erreur
+    pause(200)
+
+    selectTool("cadre")
+    stroke(from: CGPoint(x: origin.x, y: origin.y + 160),
+           to: CGPoint(x: origin.x + 260, y: origin.y + 300))
+    applyIntention(1)                                    // mal aligne
+    pause(200)
+
+    selectTool("point")
+    stroke(from: CGPoint(x: origin.x + 360, y: origin.y + 60),
+           to: CGPoint(x: origin.x + 360, y: origin.y + 60), steps: 2)
+    applyIntention(4)                                    // lent
+    pause(200)
+
+    selectTool("surlignage")
+    stroke(from: CGPoint(x: origin.x + 330, y: origin.y + 200),
+           to: CGPoint(x: origin.x + 620, y: origin.y + 250))
+    applyIntention(5)                                    // texte a corriger
+    pause(200)
+
+    // Un chiffre hors palette : il doit etre avale, et le HUD doit le dire.
+    key(26, flags: ARMED)                                // 7
+    pause(200)
+
+    // L'armement est TENU le temps demande. Le calque est retire des le desarmement
+    // (ADR-0010) : capturer apres coup ne montrerait qu'un ecran nu, ce qui est le
+    // comportement voulu mais ne prouve rien sur le rendu.
+    pause(UInt32(value("hold", 0)))
+
+    disarm()
+}
+
+/// Confinement a la fenetre cible (S22).
+///
+/// Deux traces au MEME endroit, hors de la cible. Le premier ne doit rien poser — c'est
+/// le ⌥⌘-clic dans l'IDE pendant une session. Le second, avec ⇧, doit poser une marque :
+/// c'est l'echappatoire, pour les defauts qui ne sont pas dans la fenetre.
+func scenarioOutside(origin: CGPoint) {
+    arm()
+    stroke(from: origin, to: CGPoint(x: origin.x + 180, y: origin.y + 60))
+    pause(400)
+    disarm()
+    pause(300)
+
+    let escaped: CGEventFlags = [.maskAlternate, .maskCommand, .maskShift]
+    flagsChanged(escaped); pause(150)
+    stroke(from: CGPoint(x: origin.x, y: origin.y + 100),
+           to: CGPoint(x: origin.x + 180, y: origin.y + 160), flags: escaped)
+    pause(400)
+    disarm()
+}
+
 func value(_ name: String, _ def: Double) -> Double {
     guard let i = args.firstIndex(of: "--\(name)"), i + 1 < args.count else { return def }
     return Double(args[i + 1]) ?? def
@@ -216,6 +304,8 @@ guard args.count > 1 else {
       rightclick     --x --y                     clic droit pendant le trace (C6c)
       rightidle      --x --y                     clic droit hors trace (C6c)
       continuous     --x --y --count             trace continu, pour C3b
+      lot2           --x --y                     4 outils + intentions (S20 a S23)
+      outside        --x --y                     hors cible, puis ⌥⌘⇧ (S22)
 
     Le curseur revient a sa position initiale a la fin.
     """)
@@ -233,6 +323,11 @@ case "escape":     scenarioEscapeMidStroke(origin: origin)
 case "rightclick": scenarioRightClick(origin: origin)
 case "rightidle":  scenarioRightClickIdle(origin: origin)
 case "continuous": scenarioTrace(origin: origin, count: count, width: 320, stepMs: 6)
+case "lot2":       scenarioLot2(origin: origin)
+case "outside":    scenarioOutside(origin: origin)
+case "hotkey":
+    // ⌃⌥ + une touche, pour declencher les raccourcis Carbon de l'application.
+    key(CGKeyCode(value("key", 1)), flags: [.maskControl, .maskAlternate])
 default:
     FileHandle.standardError.write(Data("scenario inconnu : \(args[1])\n".utf8))
     exit(2)

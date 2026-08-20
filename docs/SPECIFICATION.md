@@ -494,6 +494,12 @@ private func handle(_ type: CGEventType, _ e: CGEvent) -> Unmanaged<CGEvent>? {
 }
 ```
 
+**Les clics suivent le curseur, les touches suivent l'application active.** La condition ci-dessus — `targetWindowRect.contains(e.location)` — est le bon critère pour un `mouseDown`, dont la position **est** le sens. Elle est fausse pour une touche de contrôle : le geste normal amène le curseur au bord de ce qu'il désigne, parfois dehors (une flèche tracée vers l'extérieur, un cadre tiré jusqu'au coin), et l'intention frappée juste après tomberait dans le vide — pendant que le `⌥⌘ + chiffre` partirait à l'application testée. Mesuré au lot 2 sur un scénario de quatre marques : **deux intentions sur quatre perdues**, et deux changements d'outil avec.
+
+Le critère retenu pour `⌘Z`, le changement d'outil et la palette d'intentions est donc : **une session est ouverte et la fenêtre cible est l'application au premier plan**. Si l'utilisateur est passé dans son éditeur, l'éditeur est actif et récupère ses raccourcis. Regarde ne devient jamais active ([ADR-0004](adr/0004-application-accessory-sans-dock.md)), donc ce drapeau ne se trompe jamais sur son propre compte. Il est publié depuis le thread principal sur `didActivateApplicationNotification` et lu comme un booléen atomique dans le callback — `NSWorkspace` est du AppKit, interdit ici.
+
+**Ordre entre souris et clavier.** Les événements souris traversent le ring et n'atteignent le modèle qu'au prochain tick du display link ; les touches de contrôle arrivent directement sur le thread principal. Le ring doit donc être **drainé avant** de traiter une touche, sans quoi relâcher le bouton et frapper un chiffre dans la foulée — le geste naturel, puisque ⌥⌘ est déjà tenu — applique l'intention à la marque **précédente**. Le symptôme n'est pas une panne mais un rapport faux, où chaque marque porte l'intention de sa voisine ; observé au lot 2, quatre intentions sur quatre décalées d'un cran.
+
 Budget du callback : zéro allocation, zéro appel AppKit, zéro I/O, zéro verrou bloquant. Les souris haute fréquence émettent à 125–1000 Hz ; un dépassement déclenche `kCGEventTapDisabledByTimeout` et la bascule cesse silencieusement. Watchdog toutes les 5 s vérifiant `tapIsEnabled` **et** qu'un événement a été vu récemment ; recréation intégrale sinon.
 
 ### 6.3 Les conflits de raccourcis, résolus

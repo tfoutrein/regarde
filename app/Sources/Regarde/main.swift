@@ -29,6 +29,13 @@ if CommandLine.arguments.contains("--geometry-test") {
     exit(GeometrySelfTest.runAll() == 0 ? 0 : 1)
 }
 
+// Les marques : numérotation, modes de peinture, ancrage des badges, codes de la palette
+// et confinement à la fenêtre cible. Tourne sans écran et sans permission — ce qu'il
+// vérifie est du calcul, pas de l'affichage.
+if CommandLine.arguments.contains("--marks-test") {
+    exit(MainActor.assumeIsolated { MarksSelfTest.run() } ? 0 : 1)
+}
+
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let log = Logger(subsystem: logSubsystem, category: "app")
@@ -39,7 +46,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // La disposition du clavier doit être résolue AVANT l'enregistrement des
         // raccourcis : ils s'appuient sur elle pour trouver la bonne touche.
-        KeyboardLayout.shared.start(resolving: HotKeyAction.allCases.map(\.character))
+        KeyboardLayout.shared.start(resolving:
+            HotKeyAction.allCases.map(\.character) + MarkTool.allCases.map(\.key) + ["z"])
+        ToolKeyCache.shared.start()
         Journal.section("Clavier", KeyboardLayout.shared.describe())
 
         StatusItemController.shared.setUp()
@@ -51,9 +60,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         // Le tap alimente le ring que le contrôleur draine. Sans les deux autorisations
         // d'entrée, il ne démarre pas — le doctor le dit, et ⌃⌥S reste atteignable.
+        // La porte démarre FERMÉE. Depuis S22, ⌥⌘ n'arme que dans la fenêtre cible, et
+        // la cible n'existe qu'à partir de l'ouverture d'une session : hors session, la
+        // porte doit laisser passer, sans quoi elle retiendrait des clics au nom d'une
+        // cible qu'elle n'a pas.
+        OptionGate.shared.currentMode = .passthrough
+
+        if TestFlags.visibleCapture {
+            Journal.write("⚠ --visible-capture : le calque APPARAÎT dans les captures")
+        }
+
         if EventTap.shared.start() {
             EventTap.shared.startWatchdog()
-            Journal.write("tap démarré — ⌥⌘ + glisser trace")
+            Journal.write("tap démarré — ⌃⌥S pour ouvrir une session")
         } else {
             Journal.write("⚠ tap non démarré : voir le diagnostic (⌃⌥S)")
         }
@@ -72,11 +91,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     static func handle(_ action: HotKeyAction) {
         switch action {
         case .openSession:
-            // ⌃⌥S ouvre le diagnostic tant qu'il n'y a pas de session à ouvrir. C'est
-            // le critère de S10 : ce raccourci doit répondre sans aucune permission.
-            DoctorWindow.shared.show()
+            // ⌃⌥S ouvre une session, et retombe sur le diagnostic quand elle ne peut pas
+            // s'ouvrir. Le critère de S10 tient toujours : le raccourci répond sans
+            // aucune permission, et sans permission il montre justement le diagnostic.
+            SessionCoordinator.shared.openSession()
         case .endSession:
-            Journal.write("⌃⌥F — aucune session à terminer (lot 3)")
+            SessionCoordinator.shared.closeSession()
         case .toggleMicrophoneLock:
             Journal.write("⌃⌥M — verrou du micro (lot 5)")
         case .toggleAnnotationLock:

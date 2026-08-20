@@ -68,12 +68,55 @@ enum MarkGeometry {
     // MARK: - Point
 
     /// Un point : un cercle plein, dimensionné sur l'épaisseur du trait.
+    ///
+    /// 2,6 fois l'épaisseur et non 1,8 : à 1,8 le disque disparaissait sous sa propre
+    /// pastille de numéro sur la première capture de contrôle. Un repère qu'il faut
+    /// chercher ne remplit pas son office.
     static func pointPath(at center: CGPoint, lineWidth: CGFloat) -> CGPath {
-        let radius = lineWidth * 1.8
+        let radius = lineWidth * 2.6
         return CGPath(ellipseIn: CGRect(x: center.x - radius, y: center.y - radius,
                                         width: radius * 2, height: radius * 2),
                       transform: nil)
     }
+
+    // MARK: - Ancrage du badge
+
+    /// Où poser le numéro d'une forme, en coordonnées locales (origine en bas à gauche).
+    ///
+    /// Jamais sur ce que la marque désigne. La pointe d'une flèche est le pixel dont
+    /// l'utilisateur parle : un badge posé dessus masquerait précisément le défaut à
+    /// montrer. Le badge se range donc à la QUEUE de la flèche, et au coin supérieur
+    /// gauche des formes fermées, à l'extérieur du contour.
+    static func badgeAnchor(for shape: MarkShape, in size: CGSize) -> (point: CGPoint, anchorX: CGFloat) {
+        switch shape {
+        case .arrow(let from, let to):
+            let a = from.local(in: size), b = to.local(in: size)
+            // Reculé de quelques points au-delà de la queue, dans l'axe du trait :
+            // au contact, la pastille recouvrirait le début du corps.
+            let dx = a.x - b.x, dy = a.y - b.y
+            let length = hypot(dx, dy)
+            guard length > 1 else { return (a, 0.5) }
+            let anchor = CGPoint(x: a.x + dx / length * badgeOffset,
+                                 y: a.y + dy / length * badgeOffset)
+            // La gélule s'étend À L'OPPOSÉ de la pointe. Une intention longue —
+            // « texte à corriger » — mesure trois fois la pastille nue ; centrée, elle
+            // viendrait recouvrir le corps de la flèche du côté où elle pointe.
+            return (anchor, dx >= 0 ? 0 : 1)
+        case .rect(let r), .highlight(let r):
+            let local = r.local(in: size)
+            // Ancrée par son bord gauche sur le coin, donc s'étendant vers la droite
+            // au-dessus de la forme, jamais vers la gauche dans le vide.
+            return (CGPoint(x: local.minX, y: local.maxY + badgeOffset), 0)
+        case .point(let p):
+            let local = p.local(in: size)
+            return (CGPoint(x: local.x + pointBadgeOffset, y: local.y + pointBadgeOffset), 0)
+        }
+    }
+
+    private static let badgeOffset: CGFloat = 14
+    /// Le point est rond et petit : sa pastille s'écarte un peu plus, en diagonale, pour
+    /// ne pas le couvrir.
+    private static let pointBadgeOffset: CGFloat = 16
 
     // MARK: - Construction depuis un geste
 

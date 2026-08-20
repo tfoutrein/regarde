@@ -73,6 +73,9 @@ final class EventTap: @unchecked Sendable {
     enum ControlKey: Sendable {
         case escape
         case undo
+        case selectTool(MarkTool)
+        case intention(Intention)
+        case mutedDigit(Int)
     }
 
     // Les codes de touches ne sont plus ecrits en dur : voir `KeyboardLayout`.
@@ -283,11 +286,43 @@ final class EventTap: @unchecked Sendable {
         // preferable a un raccourci qui atterrit sur la mauvaise touche.
         let undo = KeyboardLayout.shared.code(for: "z")
         if let undo, code == undo, flags.contains(.maskCommand), !flags.contains(.maskShift),
-           OptionGate.shared.isArmed {
-            // Conditionne a `isArmed` : sans le modificateur d'armement tenu, ⌘Z
-            // appartient a l'application testee et le lui voler serait inacceptable.
+           OptionGate.shared.isArmedForKeys {
+            // Conditionne a la session : hors session, ⌘Z appartient a
+            // l'application testee et le lui voler serait inacceptable.
             onControlKey?(.undo)
             return nil
+        }
+
+        // Changement d'outil, pendant que ⌥⌘ est tenu et que la cible est l'application
+        // active. Hors de cet état, ⌥⌘F ou ⌥⌘C appartiennent à l'application testée et
+        // les lui voler serait inacceptable.
+        if flags.contains(.maskCommand), flags.contains(.maskAlternate),
+           OptionGate.shared.isArmedForKeys,
+           let tool = ToolKeyCache.shared.tool(forCode: code) {
+            onControlKey?(.selectTool(tool))
+            return nil
+        }
+
+        // Palette d'intentions, ⌥⌘ + 1..6 — codes PHYSIQUES (ADR-0021). Resoudre le
+        // caractere « 1 » renverrait le pave numerique sur un clavier AZERTY, absent de
+        // tout MacBook.
+        //
+        // Comme le changement d'outil, la regle suit l'application ACTIVE et non le
+        // curseur : une fleche tracee vers le bord laisse le pointeur dehors, et exiger
+        // qu'il soit dedans perdait l'intention frappee juste apres.
+        if flags.contains(.maskCommand), flags.contains(.maskAlternate),
+           OptionGate.shared.isArmedForKeys {
+            if let intention = Intention.forKeyCode(code) {
+                onControlKey?(.intention(intention))
+                return nil
+            }
+            // 7 a 9 sont AVALES sans effet, et non laisses passer : envoyer ⌥⌘7 a
+            // l'application testee en plein trace serait pire que de ne rien faire. Le
+            // HUD dit pourquoi, sans quoi l'absence d'effet passerait pour une panne.
+            if let rank = MuteDigit.rank(of: code) {
+                onControlKey?(.mutedDigit(rank))
+                return nil
+            }
         }
 
         return Unmanaged.passUnretained(event)
