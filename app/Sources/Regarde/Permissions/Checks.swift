@@ -46,16 +46,7 @@ struct ScreenRecordingCheck: DoctorCheck {
             // Un écran physique existe toujours. Une liste vide ne peut donc rien
             // vouloir dire d'autre que : le système ne nous en montre aucun.
             guard !content.displays.isEmpty else {
-                // Déclenche le dialogue système, une seule fois par lancement.
-                //
-                // Sans lui, la seule issue serait d'aller cocher la case à la main dans
-                // les Réglages — et la case n'apparaît que si l'application a demandé
-                // au moins une fois. Une autorisation révoquée laisserait donc
-                // l'utilisateur devant un panneau où Regarde ne figure même pas.
-                //
-                // Cet appel est hors du chemin d'une session (ADR-0003) : il ne se
-                // produit qu'au diagnostic, jamais pendant qu'on annote.
-                CGRequestScreenCaptureAccess()
+                requestAccess()
                 return .failed(
                     "aucun écran accessible — autorisation absente ou révoquée",
                     detail: ["l'appel a réussi mais n'a renvoyé aucun écran",
@@ -67,13 +58,30 @@ struct ScreenRecordingCheck: DoctorCheck {
             }
             return .ok("\(content.displays.count) écran(s) accessibles", detail: displays)
         } catch {
+            requestAccess()
             return .failed(
                 "contenu partageable refusé",
-                detail: [error.localizedDescription],
+                detail: [error.localizedDescription,
+                         "une demande d'autorisation a été présentée au système"],
                 remedy: "Autorise Regarde dans Enregistrement de l'écran, puis relance l'application.",
                 needsRelaunch: true
             )
         }
+    }
+
+    /// Déclenche le dialogue système, sur les DEUX façons dont l'autorisation peut
+    /// manquer.
+    ///
+    /// macOS n'échoue pas de la même manière selon l'historique : une autorisation
+    /// jamais demandée fait LEVER `SCShareableContent`, une autorisation révoquée après
+    /// coup lui fait rendre une liste VIDE sans erreur. Ne demander que dans un des deux
+    /// cas laisse l'autre sans issue — et sans demande, la case n'apparaît même pas dans
+    /// les Réglages.
+    ///
+    /// Hors du chemin d'une session (ADR-0003) : ceci ne se produit qu'au diagnostic,
+    /// jamais pendant qu'on annote.
+    private func requestAccess() {
+        CGRequestScreenCaptureAccess()
     }
 }
 
