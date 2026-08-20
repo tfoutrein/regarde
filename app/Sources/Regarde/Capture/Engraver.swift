@@ -123,7 +123,8 @@ enum Engraver {
             let box = boundingRect(of: item.shape, frame: frame)
             let rect = place(number: item.number, intention: item.intention,
                              around: box, in: CGSize(width: w, height: h),
-                             avoiding: placed, map: map, frame: frame, longSide: longSide)
+                             avoiding: placed, map: map, frame: frame, longSide: longSide,
+                             focus: designated(item.shape, frame: frame))
             drawBadge(number: item.number, intention: item.intention, in: rect, ctx: ctx,
                       longSide: longSide)
             placed.append(rect)
@@ -210,6 +211,20 @@ enum Engraver {
         frame.rect(shape.boundingBox)
     }
 
+    /// Le point que la marque DÉSIGNE, à ne pas recouvrir.
+    ///
+    /// Pour une flèche, c'est la pointe et rien d'autre : le reste du trait n'est qu'un
+    /// chemin pour y arriver. Pour un point, c'est le point. Pour les formes fermées, le
+    /// contenu est à l'intérieur, et le badge se range de toute façon dehors — aucune
+    /// exclusion supplémentaire n'est nécessaire.
+    static func designated(_ shape: MarkShape, frame: Frame) -> CGPoint? {
+        switch shape {
+        case .arrow(_, let to): frame.point(to)
+        case .point(let p): frame.point(p)
+        case .rect, .highlight: nil
+        }
+    }
+
     /// Couleur du halo, décidée sur la luminance du fond SOUS le tracé.
     ///
     /// La mesure porte sur la boîte du tracé dilatée, et non sur toute l'image : une
@@ -225,15 +240,20 @@ enum Engraver {
 
     // MARK: - Badges
 
-    /// Huit positions candidates autour de la boîte, dans l'ordre de préférence.
+    /// Huit positions candidates autour de la boîte, filtrées puis départagées.
     ///
-    /// Le premier critère est de rester dans l'image, le deuxième de ne recouvrir aucun
-    /// badge déjà posé, le troisième de tomber sur le fond le plus uni. Ce troisième
-    /// critère est celui qui fait la différence à l'usage : un chiffre posé sur du texte
-    /// se lit mal quelle que soit sa couleur.
+    /// Trois contraintes dures : rester dans l'image, ne recouvrir aucun badge déjà posé,
+    /// et **s'écarter du point que la marque désigne**. Cette troisième contrainte a été
+    /// ajoutée après la première gravure de contrôle, où le badge s'était posé du côté de
+    /// la POINTE d'une flèche — le seul endroit qu'elle sert à montrer. Le fond y était
+    /// le plus uni, ce qui est exactement ce qu'on demandait à l'algorithme ; on lui
+    /// demandait la mauvaise chose.
+    ///
+    /// Le départage entre les positions restantes se fait sur la variance locale de
+    /// luminance : un chiffre posé sur du texte se lit mal quelle que soit sa couleur.
     static func place(number: Int, intention: String?, around box: CGRect, in size: CGSize,
                       avoiding placed: [CGRect], map: LuminanceMap?, frame: Frame,
-                      longSide: CGFloat) -> CGRect {
+                      longSide: CGFloat, focus: CGPoint? = nil) -> CGRect {
         let badge = badgeSize(number: number, intention: intention, longSide: longSide)
         let gap = badgeDiameter(longSide: longSide) * 0.35
         let hw = badge.width / 2, hh = badge.height / 2
@@ -249,19 +269,32 @@ enum Engraver {
             CGPoint(x: box.maxX - hw, y: box.minY - gap - hh),   // au-dessous, à droite
         ]
 
-        var best: (rect: CGRect, score: Float)?
-        for centre in candidates {
-            let rect = CGRect(x: centre.x - hw, y: centre.y - hh,
-                              width: badge.width, height: badge.height)
-            guard rect.minX >= 0, rect.minY >= 0,
-                  rect.maxX <= size.width, rect.maxY <= size.height else { continue }
-            guard !placed.contains(where: { $0.intersects(rect) }) else { continue }
+        // Rayon d'exclusion autour du point désigné. Une fois et demie la hauteur du
+        // badge : assez pour dégager la pointe, assez peu pour ne pas éliminer les huit
+        // positions d'une marque compacte.
+        let keepClear = badge.height * 1.5
 
-            let variance = map?.stats(in: frame.flipped(rect))?.variance ?? 0
-            if best == nil || variance < best!.score { best = (rect, variance) }
+        func evaluate(respectingFocus: Bool) -> CGRect? {
+            var best: (rect: CGRect, score: Float)?
+            for centre in candidates {
+                let rect = CGRect(x: centre.x - hw, y: centre.y - hh,
+                                  width: badge.width, height: badge.height)
+                guard rect.minX >= 0, rect.minY >= 0,
+                      rect.maxX <= size.width, rect.maxY <= size.height else { continue }
+                guard !placed.contains(where: { $0.intersects(rect) }) else { continue }
+                if respectingFocus, let focus,
+                   hypot(rect.midX - focus.x, rect.midY - focus.y) < keepClear { continue }
+
+                let variance = map?.stats(in: frame.flipped(rect))?.variance ?? 0
+                if best == nil || variance < best!.score { best = (rect, variance) }
+            }
+            return best?.rect
         }
 
-        if let best { return best.rect }
+        // La contrainte d'écart est RELÂCHÉE si elle ne laisse rien : mieux vaut un badge
+        // près de la pointe qu'un badge rabattu dans un coin, sans rapport avec sa marque.
+        if let rect = evaluate(respectingFocus: true) { return rect }
+        if let rect = evaluate(respectingFocus: false) { return rect }
 
         // Aucune position candidate ne convient — marque au coin de l'image, ou huit
         // badges déjà serrés autour. On rabat DANS l'image plutôt que de laisser un

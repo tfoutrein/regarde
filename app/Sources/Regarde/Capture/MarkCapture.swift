@@ -77,19 +77,20 @@ actor MarkCapture {
 
         let cropped = Cropper.crop(capture, around: mark.shape.boundingBox)
 
-        // La réduction ne s'applique qu'à l'image entière. Un recadrage sort déjà avec un
-        // côté long dans [640, 896] px, soit très en deçà du palier : le réduire encore
-        // ne ferait qu'effacer le détail annoté sans économiser un jeton.
+        // Mise à la forme finale : côté long ramené sous 896 px par réduction — jamais
+        // par rognage, qui couperait la marque — puis dimensions alignées sur la tuile.
+        //
+        // L'image entière suit un autre palier : son côté long n'a pas à tenir dans 896,
+        // c'est le budget de tuiles qui la borne.
         var image = cropped.image
-        var scale: CGFloat = 1
         if cropped.kind == .full {
             let target = Cropper.tileTarget(width: image.width, height: image.height,
                                             budget: Self.standardBudget)
-            let longSide = max(target.width, target.height)
-            let reduced = Cropper.scale(image, toLongSide: longSide)
-            scale = CGFloat(reduced.width) / CGFloat(image.width)
-            image = reduced
+            image = Cropper.scale(image, toLongSide: max(target.width, target.height))
+        } else {
+            image = Cropper.fitToTiles(image)
         }
+        let scale = CGFloat(image.width) / CGFloat(cropped.image.width)
 
         pending.append(Pending(
             number: mark.number, shape: mark.shape, image: image,

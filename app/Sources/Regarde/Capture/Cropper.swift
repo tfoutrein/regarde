@@ -80,7 +80,15 @@ enum Cropper {
         guard dilated.width * dilated.height < full.width * full.height * fullThreshold
         else { return Result(image: image, kind: .full, sourceRect: full) }
 
-        let rect = align(clampLongSide(dilated, in: full), in: full)
+        // Le prélèvement contient TOUJOURS la boîte dilatée. Il n'est agrandi que par
+        // le bas — pour montrer du contexte quand la marque est minuscule — et jamais
+        // rogné par le haut.
+        //
+        // Rogner un prélèvement trop grand pour tenir dans 896 px l'a coupé au milieu de
+        // la marque : un surlignage de 1037 px natifs se retrouvait dans un recadrage de
+        // 896 px, dont il débordait des deux côtés. La borne haute ne concerne pas la
+        // ZONE prélevée mais l'image FINALE, et c'est la réduction qui l'y amène.
+        let rect = align(growToMinimum(dilated, in: full), in: full)
         guard let cropped = image.cropping(to: rect) else {
             return Result(image: image, kind: .full, sourceRect: full)
         }
@@ -97,17 +105,17 @@ enum Cropper {
             .intersection(bounds)
     }
 
-    /// Ramène le côté long dans la plage utile.
+    /// Agrandit un prélèvement trop petit pour être exploitable.
     ///
-    /// Trop petit, le recadrage ne montre rien d'exploitable ; trop grand, il coûte des
-    /// jetons sans rien ajouter. Le recentrage est REPOUSSÉ dans l'image quand il déborde,
-    /// plutôt que rogné : rogner décentrerait la marque, qui est le sujet.
-    static func clampLongSide(_ box: CGRect, in bounds: CGRect) -> CGRect {
+    /// Uniquement vers le haut : un recadrage de 80 px ne montre rien de son
+    /// environnement, alors qu'un recadrage trop grand se corrige sans perte par la
+    /// réduction. Le recentrage est REPOUSSÉ dans l'image quand il déborde, plutôt que
+    /// rogné : rogner décentrerait la marque, qui est le sujet.
+    static func growToMinimum(_ box: CGRect, in bounds: CGRect) -> CGRect {
         let long = max(box.width, box.height)
-        guard long > 0 else { return box }
+        guard long > 0, long < longSideRange.lowerBound else { return box }
 
-        let target = min(max(long, longSideRange.lowerBound), longSideRange.upperBound)
-        let factor = target / long
+        let factor = longSideRange.lowerBound / long
         let w = min(box.width * factor, bounds.width)
         let h = min(box.height * factor, bounds.height)
 
@@ -161,6 +169,37 @@ enum Cropper {
               let result = ciContext.createCGImage(output, from: output.extent)
         else { return image }
         return result
+    }
+
+    /// Amène une image recadrée à sa forme finale : côté long dans la plage utile, et
+    /// dimensions alignées sur la tuile de facturation.
+    ///
+    /// L'alignement se fait ICI, sur l'image écrite, et non sur la zone prélevée. Aligner
+    /// le prélèvement puis le réduire donne des dimensions quelconques — un recadrage de
+    /// 1120 px réduit d'un facteur 0,8 fait 896, mais un autre de 1148 en fait 918,4.
+    /// Ce sont les dimensions finales que le modèle facture par tuiles.
+    static func fitToTiles(_ image: CGImage) -> CGImage {
+        let w = CGFloat(image.width), h = CGFloat(image.height)
+        let long = max(w, h)
+        guard long > longSideRange.upperBound else { return alignDown(image) }
+
+        // Jamais d'agrandissement : Lanczos rendrait un flou propre, mais un flou quand
+        // même, et le détail annoté est ce qui compte.
+        let reduced = scale(image, toLongSide: longSideRange.upperBound)
+        return alignDown(reduced)
+    }
+
+    /// Rogne au multiple de tuile inférieur, en gardant le centre.
+    private static func alignDown(_ image: CGImage) -> CGImage {
+        let t = CGFloat(tile)
+        let w = (CGFloat(image.width) / t).rounded(.down) * t
+        let h = (CGFloat(image.height) / t).rounded(.down) * t
+        guard w >= t, h >= t,
+              w != CGFloat(image.width) || h != CGFloat(image.height) else { return image }
+        let rect = CGRect(x: ((CGFloat(image.width) - w) / 2).rounded(),
+                          y: ((CGFloat(image.height) - h) / 2).rounded(),
+                          width: w, height: h)
+        return image.cropping(to: rect) ?? image
     }
 
     /// Dimensions cibles d'un palier de facturation — § 9.2.

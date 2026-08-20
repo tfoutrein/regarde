@@ -55,20 +55,22 @@ enum CaptureSelfTest {
         let corner = Cropper.dilate(CGRect(x: 0, y: 0, width: 100, height: 60), in: capture)
         check(t, "une boîte au coin reste dans l'image", capture.contains(corner))
 
-        let clamped = Cropper.clampLongSide(dilated, in: capture)
-        check(t, "le côté long est ramené dans [640, 896]",
-              Cropper.longSideRange.contains(max(clamped.width, clamped.height)),
-              "→ \(max(clamped.width, clamped.height))")
+        let grown = Cropper.growToMinimum(dilated, in: capture)
+        check(t, "un petit prélèvement est porté à 640",
+              abs(max(grown.width, grown.height) - 640) < 1,
+              "→ \(max(grown.width, grown.height))")
         check(t, "le rapport d'aspect est conservé",
-              abs(clamped.width / clamped.height - dilated.width / dilated.height) < 0.01)
+              abs(grown.width / grown.height - dilated.width / dilated.height) < 0.01)
 
-        // Une boîte immense doit RÉTRÉCIR, pas seulement grandir.
-        let huge = Cropper.clampLongSide(CGRect(x: 100, y: 100, width: 2000, height: 1000),
-                                         in: capture)
-        check(t, "un côté long trop grand est ramené à 896",
-              abs(max(huge.width, huge.height) - 896) < 1, "→ \(max(huge.width, huge.height))")
+        // Un grand prélèvement n'est PAS rogné. Il l'était, et il coupait la marque en
+        // deux : un surlignage de 1037 px natifs se retrouvait dans un recadrage de
+        // 896 px dont il débordait des deux côtés. La borne haute concerne l'image
+        // finale, et c'est la réduction qui l'y amène.
+        let huge = CGRect(x: 100, y: 100, width: 2000, height: 1000)
+        check(t, "un grand prélèvement est laissé intact",
+              Cropper.growToMinimum(huge, in: capture) == huge)
 
-        let aligned = Cropper.align(clamped, in: capture)
+        let aligned = Cropper.align(grown, in: capture)
         check(t, "la largeur est un multiple de 28", Int(aligned.width) % 28 == 0,
               "→ \(aligned.width)")
         check(t, "la hauteur est un multiple de 28", Int(aligned.height) % 28 == 0,
@@ -86,11 +88,45 @@ enum CaptureSelfTest {
         // défaut — c'est ce que la plage [640, 896] implique sur un petit écran — mais
         // un test qui l'ignore ne vérifie plus rien du chemin de recadrage.
         let image = solidImage(width: 1920, height: 1200)
-        let small = Cropper.crop(image, around: NormRect(bounding: [
-            NormPoint(x: 0.45, y: 0.45), NormPoint(x: 0.5, y: 0.5)]))
+        let smallBox = NormRect(bounding: [NormPoint(x: 0.45, y: 0.45),
+                                           NormPoint(x: 0.5, y: 0.5)])
+        let small = Cropper.crop(image, around: smallBox)
         check(t, "une petite marque produit un recadrage", small.kind == .crop)
         check(t, "le recadrage est plus petit que l'image",
               small.image.width < image.width || small.image.height < image.height)
+
+        // La règle qui manquait : le prélèvement CONTIENT la marque, entière.
+        let boxInPixels = CGRect(x: CGFloat(smallBox.x) * CGFloat(image.width),
+                                 y: (1 - CGFloat(smallBox.y) - CGFloat(smallBox.h))
+                                    * CGFloat(image.height),
+                                 width: CGFloat(smallBox.w) * CGFloat(image.width),
+                                 height: CGFloat(smallBox.h) * CGFloat(image.height))
+        check(t, "le prélèvement contient la marque entière",
+              small.sourceRect.insetBy(dx: -1, dy: -1).contains(boxInPixels),
+              "→ marque \(boxInPixels) dans \(small.sourceRect)")
+
+        // Une marque LARGE, le cas qui cassait : 0,60 de la largeur d'une capture de
+        // 1920 px fait 1152 px, bien au-delà des 896 de la borne haute.
+        let wideBox = NormRect(bounding: [NormPoint(x: 0.18, y: 0.48),
+                                          NormPoint(x: 0.78, y: 0.53)])
+        let wideCrop = Cropper.crop(image, around: wideBox)
+        let wideInPixels = CGRect(x: CGFloat(wideBox.x) * CGFloat(image.width),
+                                  y: (1 - CGFloat(wideBox.y) - CGFloat(wideBox.h))
+                                     * CGFloat(image.height),
+                                  width: CGFloat(wideBox.w) * CGFloat(image.width),
+                                  height: CGFloat(wideBox.h) * CGFloat(image.height))
+        check(t, "une marque plus large que 896 px reste entière dans son prélèvement",
+              wideCrop.sourceRect.insetBy(dx: -1, dy: -1).contains(wideInPixels),
+              "→ marque \(wideInPixels) dans \(wideCrop.sourceRect)")
+
+        // Et la mise à la forme finale la ramène sous la borne, par réduction.
+        let fitted = Cropper.fitToTiles(wideCrop.image)
+        check(t, "la forme finale tient sous 896 px de côté long",
+              max(fitted.width, fitted.height) <= 896,
+              "→ \(fitted.width)×\(fitted.height)")
+        check(t, "la forme finale est alignée sur la tuile",
+              fitted.width % 28 == 0 && fitted.height % 28 == 0,
+              "→ \(fitted.width)×\(fitted.height)")
 
         let wide = Cropper.crop(image, around: NormRect(bounding: [
             NormPoint(x: 0.05, y: 0.05), NormPoint(x: 0.95, y: 0.95)]))
@@ -231,6 +267,25 @@ enum CaptureSelfTest {
         let second = Engraver.place(number: 2, intention: nil, around: box, in: size,
                                     avoiding: [first], map: nil, frame: frame, longSide: 400)
         check(t, "le second badge évite le premier", !second.intersects(first))
+
+        // Le badge ne se pose PAS du côté de la pointe. C'est arrivé sur la première
+        // gravure de contrôle : le fond y était le plus uni, et l'algorithme faisait
+        // exactement ce qu'on lui demandait — on lui demandait la mauvaise chose.
+        let head = Engraver.designated(shape, frame: frame)
+        check(t, "le point désigné d'une flèche est sa pointe",
+              head != nil && abs(head!.x - 280) < 1, "→ \(String(describing: head))")
+        let away = Engraver.place(number: 4, intention: nil,
+                                  around: Engraver.boundingRect(of: shape, frame: frame),
+                                  in: size, avoiding: [], map: nil, frame: frame,
+                                  longSide: 400, focus: head)
+        check(t, "le badge s'écarte de la pointe",
+              hypot(away.midX - head!.x, away.midY - head!.y) >= 26 * 1.5,
+              "→ distance \(hypot(away.midX - head!.x, away.midY - head!.y))")
+
+        // Une forme fermée n'a pas de point désigné : son contenu est à l'intérieur, et
+        // le badge se range dehors de toute façon.
+        check(t, "un cadre n'impose aucune exclusion",
+              Engraver.designated(.rect(NormRect(bounding: [])), frame: frame) == nil)
 
         // Une marque collée au bord : les positions candidates du dessus sortent toutes,
         // il doit en rester une exploitable.
