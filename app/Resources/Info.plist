@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleName</key>
+    <string>Regarde</string>
+    <key>CFBundleIdentifier</key>
+    <string>dev.tfoutrein.regarde</string>
+    <key>CFBundleExecutable</key>
+    <string>Regarde</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>0.1.0</string>
+    <key>CFBundleVersion</key>
+    <string>1</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>26.0</string>
+
+    <!-- Aucune icône dans le Dock, ignoré par Stage Manager, incapable de devenir
+         actif de lui-même : c'est ce qui garantit que l'application testée ne perd
+         jamais le focus. -->
+    <key>LSUIElement</key>
+    <true/>
+
+    <!-- Le micro n'est pas utilisé avant le lot 5, mais la clé doit être présente
+         dès maintenant : sans elle, la seule interrogation du statut d'autorisation
+         fait terminer le processus par le système. -->
+    <key>NSMicrophoneUsageDescription</key>
+    <string>Regarde transcrit vos commentaires localement, sur votre machine. Aucun enregistrement ne quitte l'ordinateur.</string>
+</dict>
+</plist>
