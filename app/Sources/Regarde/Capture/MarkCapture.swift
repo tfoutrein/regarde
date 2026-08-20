@@ -66,6 +66,33 @@ actor MarkCapture {
     func reset() { pending.removeAll() }
     var pendingCount: Int { pending.count }
 
+    /// Attend que les captures des marques attendues soient arrivées.
+    ///
+    /// La capture est lancée depuis l'acteur principal par une tâche détachée : entre la
+    /// pose de la marque et son entrée ici, il s'écoule le temps d'un aller-retour
+    /// d'ordonnancement plus celui de ScreenCaptureKit. Publier sans attendre laisserait
+    /// la dernière marque — celle qu'on vient de tracer, donc celle qui compte — hors du
+    /// dossier, sans erreur ni trace.
+    ///
+    /// Le plafond existe pour qu'une capture perdue ne bloque pas la publication des
+    /// autres : mieux vaut un dossier incomplet qu'un dossier qui n'arrive jamais.
+    private func waitForCaptures(of expected: Set<Int>) async {
+        let deadline = Date().addingTimeInterval(3)
+        while Date() < deadline {
+            let present = Set(pending.map(\.number))
+            if expected.isSubset(of: present) { return }
+            try? await Task.sleep(for: .milliseconds(40))
+        }
+        let missing = expected.subtracting(Set(pending.map(\.number))).sorted()
+        if !missing.isEmpty {
+            log.error("captures manquantes après 3 s : \(missing, privacy: .public)")
+            let list = missing.map(String.init).joined(separator: ", ")
+            await MainActor.run {
+                Journal.write("⚠ capture absente pour la ou les marques \(list)")
+            }
+        }
+    }
+
     /// Budget de tuiles du palier standard — § 9.2.
     static let standardBudget: Double = 1568
 
@@ -104,7 +131,8 @@ actor MarkCapture {
     /// Le filtre sur `keep` est ce qui fait qu'une marque annulée par ⌘Z ne laisse aucun
     /// fichier : son recadrage a été capturé, il est simplement jeté sans avoir jamais
     /// touché le disque.
-    func finalize(keeping keep: [Int: String?], into directory: URL) throws -> [Frame] {
+    func finalize(keeping keep: [Int: String?], into directory: URL) async throws -> [Frame] {
+        await waitForCaptures(of: Set(keep.keys))
         var written: [Frame] = []
         for item in pending {
             guard let intention = keep[item.number] else { continue }

@@ -8,11 +8,23 @@ import CoreGraphics
 // session poserait une marque sur l'éditeur — une marque qui n'a aucun sens dans le
 // rapport, et qui a volé son clic à l'IDE au passage.
 //
-// La cible est fixée à l'ouverture de session : l'application au premier plan à cet
-// instant. Regarde ne s'active jamais (ADR-0004, panneaux non activables, raccourcis
-// Carbon), donc `frontmostApplication` désigne toujours l'application testée et non la
-// nôtre — c'est ce qui rend la résolution fiable sans demander à l'utilisateur de
-// désigner quoi que ce soit.
+// Deux régimes, parce que le produit a deux modes.
+//
+//   SUIVI    hors session. La cible est l'application au premier plan, quelle qu'elle
+//            soit, réévaluée en continu. C'est ce qui rend le mode éclair possible
+//            (§ 2.1) : ⌥⌘ arme immédiatement sur ce que l'utilisateur regarde, sans
+//            qu'il ait rien ouvert. Sans ce régime, le mode éclair devrait résoudre la
+//            cible à la pression du modificateur, et un `mouseDown` arrivé dans
+//            l'intervalle tomberait sur un rectangle pas encore publié.
+//
+//   FIGÉ     en session explicite. La cible ne bouge plus, même si l'utilisateur passe
+//            dans son éditeur : une session porte sur UNE application, et ses six
+//            marques doivent parler de la même.
+//
+// Regarde ne s'active jamais (ADR-0004, panneaux non activables, raccourcis Carbon),
+// donc `frontmostApplication` désigne toujours l'application testée et non la nôtre —
+// c'est ce qui rend la résolution fiable sans demander à l'utilisateur de désigner quoi
+// que ce soit.
 //
 // Le cadre, lui, est SUIVI : une fenêtre qu'on déplace ou qu'on redimensionne pendant la
 // session reste la cible. Le suivi se fait par sondage hors du chemin critique ; le tap
@@ -40,6 +52,25 @@ final class TargetWindow {
     private(set) var target: Target?
     private var poll: Timer?
 
+    /// Vrai quand la cible est figée par une session ouverte.
+    private(set) var isPinned = false
+
+    /// Cadence de sondage. En session, une fenêtre qu'on déplace doit être rattrapée
+    /// vite ; hors session, personne ne trace, et sonder quatre fois par seconde en
+    /// permanence coûterait sans rien apporter.
+    private var interval: TimeInterval { isPinned ? 0.25 : 0.6 }
+
+    /// Démarre le suivi continu. Appelé une fois au lancement.
+    ///
+    /// Le mode éclair en dépend entièrement : il n'a pas de moment d'ouverture où fixer
+    /// une cible, donc elle doit être prête en permanence.
+    func follow() {
+        isPinned = false
+        observeActivation()
+        refreshTarget()
+        startPolling()
+    }
+
     /// Fixe la cible sur l'application au premier plan. Appelé à l'ouverture de session.
     @discardableResult
     func acquire() -> Target? {
@@ -62,28 +93,52 @@ final class TargetWindow {
         let t = Target(pid: app.processIdentifier, bundleID: app.bundleIdentifier,
                        name: name, frame: frame)
         target = t
+        isPinned = true
         publish(frame)
         OptionGate.shared.setTargetFrontmost(true)
         observeActivation()
-        Journal.write(String(format: "cible : %@ — cadre (%.0f, %.0f) %.0f×%.0f",
+        Journal.write(String(format: "cible figée : %@ — cadre (%.0f, %.0f) %.0f×%.0f",
                              name, frame.minX, frame.minY, frame.width, frame.height))
         startPolling()
         return t
     }
 
-    func release() {
-        poll?.invalidate()
-        poll = nil
-        if let token = activationObserver {
-            NSWorkspace.shared.notificationCenter.removeObserver(token)
-            activationObserver = nil
+    /// Réévalue la cible d'après l'application au premier plan. Suivi seulement.
+    private func refreshTarget() {
+        guard !isPinned else { return }
+        guard let app = NSWorkspace.shared.frontmostApplication,
+              app.processIdentifier != ProcessInfo.processInfo.processIdentifier,
+              let frame = Self.frontWindowFrame(pid: app.processIdentifier)
+        else {
+            // Rien d'annotable : la porte ne doit armer nulle part. Un rectangle vide est
+            // plus honnête qu'un rectangle infini, qui laisserait poser une marque sur un
+            // bureau dont le rapport ne pourrait rien dire.
+            target = nil
+            OptionGate.shared.setTargetRect(.null)
+            OptionGate.shared.setTargetFrontmost(false)
+            return
         }
-        OptionGate.shared.setTargetFrontmost(false)
-        target = nil
-        // `.infinite` remet l'arbitrage en veille : hors session, la porte ne doit rien
-        // retenir, et un rectangle nul ferait taire le tap sans que rien ne le dise.
-        OptionGate.shared.setTargetRect(.infinite)
-        Journal.write("cible : relâchée")
+
+        let name = app.localizedName ?? app.bundleIdentifier ?? "pid \(app.processIdentifier)"
+        if target?.pid != app.processIdentifier {
+            Journal.write("cible suivie : \(name)")
+        }
+        target = Target(pid: app.processIdentifier, bundleID: app.bundleIdentifier,
+                        name: name, frame: frame)
+        publish(frame)
+        OptionGate.shared.setTargetFrontmost(true)
+    }
+
+    /// Libère la cible figée et reprend le suivi.
+    ///
+    /// Reprendre le suivi et non revenir à `.infinite` : hors session, le mode éclair
+    /// reste actif, et ⌥⌘ doit continuer d'armer sur la fenêtre regardée — mais
+    /// seulement sur elle.
+    func release() {
+        isPinned = false
+        Journal.write("cible : dégelée, retour au suivi")
+        refreshTarget()
+        startPolling()
     }
 
     // MARK: - Application active
@@ -102,12 +157,15 @@ final class TargetWindow {
             forName: NSWorkspace.didActivateApplicationNotification,
             object: nil, queue: .main
         ) { [weak self] _ in
+            // Une réévaluation immédiate, sans attendre le prochain tour de sondage :
+            // basculer d'application est exactement le moment où la cible doit suivre.
             // L'état est RELU, la notification n'est pas lue : `Notification` n'est pas
             // `Sendable`, et Swift 6 refuse de la faire traverser vers l'acteur
             // principal. Relire `frontmostApplication` donne la même information, à jour
             // par construction — c'est déjà la correction retenue en S18.
             MainActor.assumeIsolated {
                 guard let self, let t = self.target else { return }
+                guard self.isPinned else { self.refreshTarget(); return }
                 let app = NSWorkspace.shared.frontmostApplication
                 let isTarget = app?.processIdentifier == t.pid
                 OptionGate.shared.setTargetFrontmost(isTarget)
@@ -121,10 +179,9 @@ final class TargetWindow {
 
     private func startPolling() {
         poll?.invalidate()
-        // 250 ms : une fenêtre qu'on déplace se rattrape en un quart de seconde, et le
-        // sondage reste quatre ordres de grandeur sous le budget du callback, qu'il ne
+        // Le sondage reste quatre ordres de grandeur sous le budget du callback, qu'il ne
         // touche de toute façon pas — il n'écrit qu'un rectangle atomique.
-        let timer = Timer(timeInterval: 0.25, repeats: true) { [weak self] _ in
+        let timer = Timer(timeInterval: interval, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.refresh() }
         }
         RunLoop.main.add(timer, forMode: .common)
@@ -132,6 +189,7 @@ final class TargetWindow {
     }
 
     private func refresh() {
+        guard isPinned else { refreshTarget(); return }
         guard var t = target else { return }
         guard let frame = Self.frontWindowFrame(pid: t.pid) else {
             // La fenêtre a disparu — application quittée, fenêtre fermée. On garde le

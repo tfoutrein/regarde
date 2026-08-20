@@ -66,11 +66,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         // Le tap alimente le ring que le contrôleur draine. Sans les deux autorisations
         // d'entrée, il ne démarre pas — le doctor le dit, et ⌃⌥S reste atteignable.
-        // La porte démarre FERMÉE. Depuis S22, ⌥⌘ n'arme que dans la fenêtre cible, et
-        // la cible n'existe qu'à partir de l'ouverture d'une session : hors session, la
-        // porte doit laisser passer, sans quoi elle retiendrait des clics au nom d'une
-        // cible qu'elle n'a pas.
+        // La cible est suivie en CONTINU, et la porte s'active dès que le tap tourne.
+        //
+        // C'est ce que le mode éclair exige (§ 2.1) : il n'ouvre pas de session, ne
+        // produit pas d'état, et doit pourtant armer sur ce que l'utilisateur regarde à
+        // la seconde où il prend ⌥⌘. Une porte fermée hors session le rendrait
+        // inaccessible, alors que c'est le mode majoritaire.
+        //
+        // Ce que le confinement à la fenêtre cible garantit reste entier : hors de cette
+        // fenêtre, ⌥⌘ n'arme pas et le clic part à l'application dessous.
         OptionGate.shared.currentMode = .passthrough
+        TargetWindow.shared.follow()
 
         if TestFlags.visibleCapture {
             Journal.write("⚠ --visible-capture : le calque APPARAÎT dans les captures")
@@ -78,8 +84,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         if EventTap.shared.start() {
             EventTap.shared.startWatchdog()
-            Journal.write("tap démarré — ⌃⌥S pour ouvrir une session")
+            OptionGate.shared.currentMode = .active
+            Journal.write("tap démarré — ⌥⌘ + glisser trace, ⌃⌥S ouvre une session")
         } else {
+            // Sans tap, rien à arbitrer : la porte reste fermée pour que le reste de
+            // l'application ne se croie pas en état de tracer.
+            OptionGate.shared.currentMode = .passthrough
             Journal.write("⚠ tap non démarré : voir le diagnostic (⌃⌥S)")
         }
 

@@ -150,6 +150,8 @@ final class OverlayController {
         } else {
             scheduleHide()
         }
+        // Le mode éclair publie au relâchement du modificateur, et lui seul le sait.
+        SessionCoordinator.shared.modifierChanged(armed: armed || stroking)
     }
 
     private func scheduleHide() {

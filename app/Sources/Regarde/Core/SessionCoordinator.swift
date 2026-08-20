@@ -102,9 +102,8 @@ final class SessionCoordinator {
         let count = MarkStore.shared.count
         transition(to: .finalizing)
 
-        // La porte se ferme AVANT tout le reste. Tant qu'elle est ouverte, un ⌥⌘-clic
-        // pendant la finalisation créerait une marque que personne ne publierait.
-        OptionGate.shared.currentMode = .passthrough
+        // La cible est dégelée, pas relâchée : le mode éclair reprend la main dès la
+        // session close, et ⌥⌘ doit continuer d'armer sur la fenêtre regardée.
         TargetWindow.shared.release()
 
         Journal.section("Marques de la session", MarkStore.shared.describe())
@@ -116,6 +115,12 @@ final class SessionCoordinator {
         for mark in MarkStore.shared.marks { keep[mark.number] = mark.intention?.label }
         let directory = sessionDirectory
         sessionDirectory = nil
+
+        // Le modèle est vidé MAINTENANT, avant toute reprise du mode éclair. Sans cela,
+        // le premier relâchement de ⌥⌘ après la session republierait ses marques, dans
+        // un second dossier, en double.
+        MarkStore.shared.reset()
+        OverlayController.shared.redrawAll()
 
         transition(to: .publishing)
         Task {
@@ -137,6 +142,70 @@ final class SessionCoordinator {
                 HUDWindow.shared.announce(
                     "Session terminée — \(count) marque\(count > 1 ? "s" : "")",
                     detail: directory?.lastPathComponent ?? "aucun artefact", duration: 4)
+            }
+        }
+    }
+
+    // MARK: - Mode éclair (§ 2.1)
+
+    private var flashWorkItem: DispatchWorkItem?
+
+    /// Délai de grâce entre le relâchement de ⌥⌘ et la publication.
+    ///
+    /// Il existe pour la RAFALE : poser deux marques d'affilée demande de relâcher entre
+    /// les deux, et publier au premier relâchement couperait l'observation en deux
+    /// dossiers dont aucun ne serait complet. Assez long pour enchaîner sans y penser,
+    /// assez court pour que le dossier soit là quand on va le chercher.
+    static let flashGrace: TimeInterval = 0.8
+
+    /// Le modificateur vient d'être pris ou relâché.
+    func modifierChanged(armed: Bool) {
+        // Une session explicite publie à ⌃⌥F, jamais au relâchement : c'est toute la
+        // différence entre les deux modes.
+        guard state == .idle else { return }
+
+        if armed {
+            flashWorkItem?.cancel()
+            flashWorkItem = nil
+            return
+        }
+
+        guard MarkStore.shared.count > 0 else { return }
+        flashWorkItem?.cancel()
+        let item = DispatchWorkItem { MainActor.assumeIsolated { self.publishFlash() } }
+        flashWorkItem = item
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.flashGrace, execute: item)
+    }
+
+    /// Publie une observation isolée : recadrages gravés, sans session ouverte.
+    private func publishFlash() {
+        flashWorkItem = nil
+        let marks = MarkStore.shared.marks
+        guard !marks.isEmpty else { return }
+
+        var keep: [Int: String?] = [:]
+        for mark in marks { keep[mark.number] = mark.intention?.label }
+        let count = marks.count
+        MarkStore.shared.reset()
+        OverlayController.shared.redrawAll()
+
+        Task {
+            var written = 0
+            var directory: URL?
+            do {
+                let dir = try SessionPaths.makeSessionDirectory()
+                directory = dir
+                written = try await MarkCapture.shared.finalize(
+                    keeping: keep, into: SessionPaths.frames(of: dir)).count
+            } catch {
+                await MainActor.run { Journal.write("⚠ mode éclair : \(error)") }
+            }
+            await MainActor.run {
+                Journal.write("éclair — \(count) marque(s), \(written) image(s)"
+                              + (directory.map { " dans \($0.lastPathComponent)" } ?? ""))
+                HUDWindow.shared.announce(
+                    "\(count) marque\(count > 1 ? "s" : "") publiée\(count > 1 ? "s" : "")",
+                    detail: directory?.lastPathComponent ?? "aucun artefact", duration: 3)
             }
         }
     }
