@@ -24,6 +24,7 @@ final class HUDWindow {
 
     private var panel: NSPanel?
     private var forced = false
+    private var announceTimer: Timer?
 
     private func makePanel() -> NSPanel {
         let panel = NSPanel(
@@ -86,10 +87,38 @@ final class HUDWindow {
     }
 
     var isForced: Bool { forced }
+
+    /// Affiche un message temporaire, indépendamment de l'état de session.
+    ///
+    /// Sert quand la barre de menus fait défaut : sur un portable à encoche dont la
+    /// barre est saturée, l'icône devient introuvable et l'utilisateur n'a plus aucun
+    /// signe que l'application tourne. Le HUD est un panneau flottant — il ne dépend ni
+    /// de la barre de menus ni d'une autorisation de notification.
+    func announce(_ title: String, detail: String, duration: TimeInterval = 8) {
+        NotificationCenter.default.post(
+            name: .hudAnnouncement,
+            object: HUDAnnouncement(title: title, detail: detail)
+        )
+        show()
+        announceTimer?.invalidate()
+        announceTimer = Timer.scheduledTimer(withTimeInterval: duration, repeats: false) { _ in
+            MainActor.assumeIsolated {
+                NotificationCenter.default.post(name: .hudAnnouncement, object: nil)
+                HUDWindow.shared.follow(SessionCoordinator.shared.state)
+            }
+        }
+    }
+}
+
+/// Message temporaire du HUD.
+struct HUDAnnouncement: Sendable {
+    let title: String
+    let detail: String
 }
 
 private struct HUDView: View {
     @State private var state = SessionCoordinator.shared.state
+    @State private var announcement: HUDAnnouncement?
 
     var body: some View {
         HStack(spacing: 10) {
@@ -97,9 +126,9 @@ private struct HUDView: View {
                 .fill(color)
                 .frame(width: 10, height: 10)
             VStack(alignment: .leading, spacing: 1) {
-                Text(title)
+                Text(announcement?.title ?? title)
                     .font(.system(size: 13, weight: .medium))
-                Text("le lot 2 y ajoutera le projet et les marques")
+                Text(announcement?.detail ?? "le lot 2 y ajoutera le projet et les marques")
                     .font(.system(size: 10))
                     .foregroundStyle(.secondary)
             }
@@ -111,6 +140,9 @@ private struct HUDView: View {
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
         .onReceive(NotificationCenter.default.publisher(for: .sessionStateChanged)) { note in
             if let s = note.object as? SessionState { state = s }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .hudAnnouncement)) { note in
+            announcement = note.object as? HUDAnnouncement
         }
     }
 
@@ -128,16 +160,18 @@ private struct HUDView: View {
     }
 
     private var color: Color {
+        if announcement != nil { return .orange }
         switch state.indicator {
-        case .ready: .secondary
-        case .active: .red
-        case .working: .orange
-        case .suspended: .gray
-        case .fault: .red
+        case .ready: return .secondary
+        case .active: return .red
+        case .working: return .orange
+        case .suspended: return .gray
+        case .fault: return .red
         }
     }
 }
 
 extension Notification.Name {
     static let sessionStateChanged = Notification.Name("dev.tfoutrein.regarde.sessionStateChanged")
+    static let hudAnnouncement = Notification.Name("dev.tfoutrein.regarde.hudAnnouncement")
 }

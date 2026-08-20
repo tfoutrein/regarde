@@ -127,6 +127,7 @@ reste un chantier délimité plutôt qu’une reprise à zéro. Voir
 | | |
 |---|---|
 | **Rien n’est utilisable aujourd’hui** | Le prototype valide le geste, rien d’autre : pas de numérotation, pas de voix, pas de rapport, pas d’intégration agent. |
+| **L'icône de barre de menus n'est pas garantie** | Sur un portable à encoche dont la barre est chargée, macOS place l'icône **sous l'encoche** : elle existe, le système la déclare visible, et elle est introuvable. Constaté sur la machine de développement. C'est la raison d'être des raccourcis Carbon : **⌃⌥S ouvre le diagnostic sans dépendre ni de la barre de menus ni d'aucune autorisation.** L'application le détecte et le signale. |
 | **Quatre autorisations système** | Enregistrement de l’écran, Surveillance de la saisie, Accessibilité, Micro. Les deux du milieu sont **obligatoires** : sans elles, rien ne fonctionne. macOS redemande par ailleurs l’autorisation de capture d’écran chaque mois. |
 | **Pas encore distribuable** | La notarisation exige un compte Apple Developer, qui n'est pas ouvert à ce jour. L'application se construit et s'utilise en local avec un certificat auto-signé ; elle ne s'installe pas encore sur une autre machine sans avertissement Gatekeeper. |
 | **Hors Mac App Store** | L’Accessibilité et un tap qui consomme des événements sont incompatibles avec le bac à sable et avec la revue App Store. Distribution en Developer ID notarisé. |

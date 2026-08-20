@@ -68,7 +68,23 @@ final class StatusItemController {
         // la fenêtre de l'élément rapporte une hauteur nulle. Un diagnostic prématuré
         // est un diagnostic qui ment — c'est ce que tout ce lot cherche à éviter.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-            MainActor.assumeIsolated { self?.reportGeometry() }
+            MainActor.assumeIsolated { self?.reportGeometry(trigger: "démarrage") }
+        }
+
+        // L'élément migre d'un écran à l'autre avec la barre de menus active. Une mesure
+        // prise une seule fois au démarrage devient fausse dès qu'un écran est débranché,
+        // et c'est précisément le moment où l'utilisateur a besoin de savoir où il est.
+        NotificationCenter.default.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification,
+            object: nil, queue: .main
+        ) { _ in
+            MainActor.assumeIsolated {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+                    MainActor.assumeIsolated {
+                        StatusItemController.shared.reportGeometry(trigger: "changement d'écrans")
+                    }
+                }
+            }
         }
     }
 
@@ -77,18 +93,25 @@ final class StatusItemController {
     /// Sur un portable à encoche dont la barre est saturée, le système peut placer un
     /// élément hors de portée : il existe, l'accessibilité le voit, et l'utilisateur ne
     /// le trouve pas. Ce cas doit se diagnostiquer, pas se deviner.
-    private func reportGeometry() {
+    /// Vrai quand l'utilisateur ne peut pas atteindre l'icône, quoi qu'en dise le système.
+    private(set) var isUnreachable = false
+
+    private func reportGeometry(trigger: String) {
         guard let button = item?.button else {
             Journal.write("⚠ élément de barre de menus : aucun bouton")
             return
         }
         let visible = item?.isVisible ?? false
-        var lines: [String] = ["visible    \(visible)", "image      \(button.image != nil ? "construite" : "ABSENTE")"]
+        var lines: [String] = ["raison     \(trigger)",
+                               "visible    \(visible)",
+                               "image      \(button.image != nil ? "construite" : "ABSENTE")"]
+        var unreachable = false
         if let frame = button.window?.frame {
             lines.append(String(format: "position   x=%.0f y=%.0f", frame.minX, frame.minY))
             lines.append(String(format: "taille     %.0f × %.0f", frame.width, frame.height))
             if frame.width < 1 || frame.height < 1 {
                 lines.append("⚠ dimension nulle — l'élément ne sera pas visible")
+                unreachable = true
             }
         }
         if let screen = button.window?.screen {
@@ -106,10 +129,27 @@ final class StatusItemController {
                 if notch.intersects(frame) {
                     lines.append("⚠ L'ÉLÉMENT EST SOUS L'ENCOCHE — invisible malgré isVisible=true.")
                     lines.append("  Libère de la place dans la barre de menus, ou retire une icône.")
+                    unreachable = true
                 }
             }
         }
+        if unreachable {
+            lines.append("→ ⌃⌥S reste le chemin d'accès garanti : les raccourcis Carbon ne")
+            lines.append("  dépendent ni de la barre de menus ni d'aucune autorisation.")
+        }
         Journal.section("Barre de menus", lines)
+
+        // Prévenir par un canal qui ne dépend PAS de la barre de menus, puisque c'est
+        // elle qui fait défaut. Le HUD est un panneau flottant : il s'affiche même quand
+        // l'icône est introuvable, et c'est le seul moyen de dire à l'utilisateur que
+        // l'application tourne toujours et comment l'atteindre.
+        if unreachable && !isUnreachable {
+            HUDWindow.shared.announce(
+                "Icône introuvable dans la barre de menus",
+                detail: "⌃⌥S ouvre le diagnostic"
+            )
+        }
+        isUnreachable = unreachable
     }
 
     private func render(_ state: SessionState) {
