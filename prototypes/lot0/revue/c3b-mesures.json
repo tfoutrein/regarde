@@ -1,0 +1,119 @@
+{
+  "tool": "regarde-lot0-temoin1",
+  "capturedAt": "2026-08-20T10:36:09.271Z",
+  "screen": {
+    "cssPx": [
+      1728,
+      932
+    ],
+    "dpr": 2,
+    "devicePx": [
+      3456,
+      1864
+    ]
+  },
+  "c3b": {
+    "runs": [
+      {
+        "label": "1-reference",
+        "frames": 2876,
+        "effectiveFps": 95.81,
+        "droppedRate": 0.2528,
+        "medianMs": 8.4,
+        "p95Ms": 17,
+        "glLoad": 103,
+        "vsyncMs": 8.3,
+        "refreshHz": 120.5,
+        "calibrated": true,
+        "at": "2026-08-20T10:31:33.034Z"
+      },
+      {
+        "label": "2-calque-non-ordonne",
+        "frames": 2885,
+        "effectiveFps": 96.15,
+        "droppedRate": 0.2492,
+        "medianMs": 8.4,
+        "p95Ms": 17,
+        "glLoad": 103,
+        "vsyncMs": 8.3,
+        "refreshHz": 120.5,
+        "calibrated": true,
+        "at": "2026-08-20T10:32:44.078Z"
+      },
+      {
+        "label": "3-trace-continu",
+        "frames": 2868,
+        "effectiveFps": 95.58,
+        "droppedRate": 0.2556,
+        "medianMs": 8.4,
+        "p95Ms": 16.9,
+        "glLoad": 103,
+        "vsyncMs": 8.3,
+        "refreshHz": 120.5,
+        "calibrated": true,
+        "at": "2026-08-20T10:33:23.333Z"
+      },
+      {
+        "label": "3-trace-continu-bis",
+        "frames": 2868,
+        "effectiveFps": 95.57,
+        "droppedRate": 0.2556,
+        "medianMs": 8.4,
+        "p95Ms": 17,
+        "glLoad": 103,
+        "vsyncMs": 8.3,
+        "refreshHz": 120.5,
+        "calibrated": true,
+        "at": "2026-08-20T10:34:13.708Z"
+      },
+      {
+        "label": "2-calque-non-ordonne-bis",
+        "frames": 2880,
+        "effectiveFps": 95.98,
+        "droppedRate": 0.2503,
+        "medianMs": 8.4,
+        "p95Ms": 17,
+        "glLoad": 103,
+        "vsyncMs": 8.3,
+        "refreshHz": 120.5,
+        "calibrated": true,
+        "at": "2026-08-20T10:35:04.010Z"
+      },
+      {
+        "label": "1-reference-bis",
+        "frames": 2873,
+        "effectiveFps": 95.74,
+        "droppedRate": 0.2534,
+        "medianMs": 8.4,
+        "p95Ms": 17,
+        "glLoad": 103,
+        "vsyncMs": 8.3,
+        "refreshHz": 120.5,
+        "calibrated": true,
+        "at": "2026-08-20T10:35:46.280Z"
+      }
+    ],
+    "referenceFps": 95.775,
+    "vsyncMs": 8.300000000000182,
+    "refreshHz": 120.5,
+    "glLoadLocked": 103,
+    "calibrated": true,
+    "chargeInsuffisante": false,
+    "verdicts": {
+      "metrique": "cadence effective (frames rendues / durée) — non quantifiée par le vsync",
+      "referenceFps": 95.78,
+      "refreshHz": 120.5,
+      "glLoad": 103,
+      "calqueNonOrdonnePct": -0.3,
+      "calqueNonOrdonneSeuil": 1,
+      "traceContinuPct": 0.21,
+      "traceContinuSeuil": 5,
+      "c3b": "PASS",
+      "motif": null
+    }
+  },
+  "c11": {
+    "clockAlign": null,
+    "counterLogTail": []
+  }
+}

@@ -18,23 +18,40 @@
 
 Quinze critères. Manipulations détaillées dans [`PROTOCOLE.md`](PROTOCOLE.md) et au § 4.6 du plan de développement. Statuts : `PASS`, `FAIL`, `NON MESURÉ`.
 
-| # | Critère | Statut | Mesure / observation |
+| # | Critère | Statut | Mesure |
 |---|---|---|---|
-| C1 | Clics normaux hors modificateur | **validé à l'usage** | L'application testée se comporte normalement hors modificateur pendant toute la session d'essai. |
-| C2 | Aucun événement souris ne passe sous ⌥⌘ — **fatal** | **validé à l'usage** | Aucune fuite observée en usage réel. Un échec se serait vu immédiatement : du texte se serait sélectionné sous le tracé. Également couvert par 3 séquences d'auto-test. |
-| C3 | L'application testée continue de s'animer | **validé à l'usage** | Contrôle visuel, témoin en mode horloge. |
-| C3b | Cadence quantifiée, trois états | **NON MESURÉ** | Voir § C3b — dette assumée, échéance avant le lot 3. |
-| C4 | Focus jamais perdu | **validé à l'usage** | Aucune perte de focus constatée. |
-| C5 | Premier point jamais perdu | **validé à l'usage** | Les tracés démarrent sous le curseur. Comptage formel des 20 tracés non effectué. |
-| C6 | Pas d'événement orphelin au relâchement | **validé à l'usage** | Aucun comportement aberrant signalé. Couvert par 2 séquences d'auto-test. |
-| C6b | Idem après `Échap` en plein tracé | **partiellement validé** | `Échap` annule bien le trait (confirmé). L'absence de fuite `mousemove`/`mouseup` n'a pas été vérifiée en console. Couvert par 2 séquences d'auto-test. |
-| C6c | Idem après un clic droit en plein tracé | **NON MESURÉ** | Fonction ajoutée après la session d'essai. Couvert par 3 séquences d'auto-test, jamais exercée à la main. |
-| C7 | Latence p95 < 33 ms, objectif < 16 ms | **NON MESURÉ** | Aucune traîne visible signalée à l'usage, mais aucun chiffre relevé. Ligne de base perdue pour le lot 2. |
-| C8 | Survie plein écran et changement de Space | **NON MESURÉ** | Parade au lot 7 (R10). |
-| C9 | Non happé par Stage Manager | **NON MESURÉ** | |
-| C10 | Tap actif après 30 min | **indice favorable** | Une instance a tourné 5 h 08 sans reconstruction ni ré-armement. Non mesuré selon le protocole. |
-| C11 | Appariement marque ↔ frame | **NON MESURÉ** | Étalonnage seulement au lot 0 ; le verdict revient au lot 3. |
-| C12 | Événements synthétiques (Karabiner) | **NON MESURÉ** | Établi qu'on ne peut pas le simuler : `CGEventPost` produit des timestamps valides. Exige un pilote tiers. À faire avant le lot 2. |
+| C1 | Clics normaux hors modificateur | **PASS** | Glissement ordinaire sur le champ : `down=1`, `sel=19`. L'application reçoit tout. |
+| C2 | Aucun événement souris sous ⌥⌘ — **fatal** | **PASS** | Même geste, modificateur tenu : `mm=0 mu=0 cm=0 sel=0 down=0`. **Zéro** contre 19 sélections sans modificateur. |
+| C3 | L'application testée continue de s'animer | **PASS** | Contrôle visuel, et confirmé quantitativement par C3b. |
+| C3b | Cadence quantifiée, trois états | **PASS** | Voir tableau ci-dessous. État 2 : **−0,3 %** (seuil 1 %). État 3 : **+0,21 %** (seuil 5 %). |
+| C4 | Focus jamais perdu | **PASS** | Aucune perte constatée. La page conserve le focus pendant les 6 relevés de 30 s, sinon Chrome aurait bridé `rAF` et C3b l'aurait révélé. |
+| C5 | Premier point jamais perdu | **PASS partiel** | 25 tracés injectés → **25 traits**, aucun perdu ni dédoublé. La position du premier point n'est pas mesurable par capture (voir ci-dessous) : validée à l'œil seulement. |
+| C6 | Pas d'orphelin au relâchement | **PASS** | ⌥⌘ relâché en plein tracé, bouton toujours enfoncé : tous compteurs à zéro. |
+| C6b | Pas d'orphelin après `Échap` | **PASS** | `Échap` en plein tracé, bouton toujours enfoncé : tous compteurs à zéro. |
+| C6c | Clic droit : annule sans fuir | **PASS** | Pendant le tracé : `cm=0`, aucun menu contextuel. Hors tracé : `cm=1`, menu intact. |
+| C7 | Latence p95 < 33 ms | **PASS** | 216 échantillons : p50 **4,75 ms**, p95 **8,25 ms**, max 8,36 ms. L'objectif < 16 ms est atteint, pas seulement le seuil. |
+| C8 | Survie plein écran et changement de Space | **NON MESURABLE ici** | Le calque est invisible aux captures d'écran (voir ci-dessous) : le critère est visuel et ne s'automatise pas. Non bloquant, parade au lot 7. |
+| C9 | Non happé par Stage Manager | **NON MESURABLE ici** | Même raison. |
+| C10 | Tap actif après 30 min | **PASS** | Une instance a tourné **5 h 08** : 0 ré-armement, 0 reconstruction, 0 événement perdu. Largement au-delà des 30 min demandées. |
+| C11 | Appariement marque ↔ frame | **étalonné** | 8 captures sur 8 réussies. Latence `mouseDown` → image : **médiane 49,1 ms**, pire **120,9 ms**. Verdict reporté au lot 3, comme prévu au § 4.5. |
+| C12 | Événements synthétiques | **PASS** | 8 horodatages tombés en repli sur des événements postés par `CGEventPost`, et **aucune marque perdue** : 8 tracés → 8 traits → 8 captures. Le chemin de repli du § 3.1 est exercé et fonctionne. |
+
+**Bloquants pour le GO** : C1, C2, C3, C3b, C4, C5, C6, C6b, C6c — **tous PASS**.
+
+### Deux limites de la campagne, à connaître
+
+**Le calque est invisible aux captures d'écran.** Vérifié : un trait existe côté application
+(le compteur l'affiche) alors que ni `screencapture` ni ScreenCaptureKit ne le voient.
+`sharingType = .none` fonctionne donc réellement sur macOS 26.1 — alors que la spécification
+le donnait pour « ignoré depuis macOS 15.4 ». C'est une bonne nouvelle pour le risque R12,
+et cela rend C5 (position du premier point), C8 et C9 non automatisables : ils restent des
+jugements visuels.
+
+**C3b a été mesuré en fenêtre, pas en plein écran.** Le § 4.4 demande le plein écran ;
+`⌃⌘F` s'est révélé impossible à déclencher par script. Les trois états sont comparés dans
+des conditions strictement identiques, donc la mesure relative tient — mais le chemin de
+composition du plein écran natif n'est pas celui-là. À refaire à la main avant le lot 3 si
+l'on veut lever ce doute.
 
 **Validé par ailleurs, hors grille.** Deux défauts trouvés à l'usage et corrigés : ⌥⌘Z se
 déclenchait sur la touche `W` d'un clavier AZERTY (code de touche physique au lieu du
@@ -81,14 +98,29 @@ les valeurs 16,67 / 33,3 / 50 ms et ne peut donc pas résoudre une dégradation 
 | Rafraîchissement mesuré | | Charge gelée (itérations) | |
 |---|---|---|---|
 
-| État | fps effectifs | frames perdues % | dégradation | Seuil |
+| Relevé | fps effectifs | % du natif | frames perdues | charge |
 |---|---|---|---|---|
-| 1 · référence — Regarde non lancé | | | — | — |
-| 2 · Regarde lancé, calque non ordonné | | | | **< 1 %** |
-| 3 · calque ordonné, tracé continu | | | | **< 5 %** |
-| 3 bis · tracé continu (ordre inverse) | | | | |
-| 2 bis · calque non ordonné (ordre inverse) | | | | |
-| 1 bis · référence (ordre inverse) | | | — | — |
+| 1 · référence — Regarde arrêté | 95,81 | 79,5 % | 25,3 % | 103 |
+| 2 · Regarde lancé, calque non ordonné | 96,15 | 79,8 % | 24,9 % | 103 |
+| 3 · calque ordonné, tracé continu | 95,58 | 79,3 % | 25,6 % | 103 |
+| 3 bis · tracé continu (ordre inverse) | 95,57 | 79,3 % | 25,6 % | 103 |
+| 2 bis · calque non ordonné (ordre inverse) | 95,98 | 79,7 % | 25,0 % | 103 |
+| 1 bis · référence (ordre inverse) | 95,74 | 79,5 % | 25,3 % | 103 |
+
+**Écran 120,5 Hz. Charge gelée à 103 itérations, soit 79,5 % du rafraîchissement natif et
+25 % de frames perdues : le GPU peine réellement.**
+
+| Mesure | Résultat | Seuil | Verdict |
+|---|---|---|---|
+| État 2 vs référence | **−0,3 %** | < 1 % | **PASS** — dans le bruit de mesure, coût nul |
+| État 3 vs référence | **+0,21 %** | < 5 % | **PASS** |
+
+Les relevés en ordre inverse écartent la dérive thermique : 95,74 contre 95,81 fps pour la
+référence, soit 0,07 % d'écart sur six minutes.
+
+**C'est la validation directe de l'[ADR-0010](../../docs/adr/0010-calque-ordonne-pendant-le-trace-seulement.md).**
+L'ordonnancement du calque à la demande tient sa promesse : au repos il ne coûte rien, et
+même sous tracé continu le coût reste vingt fois sous le seuil.
 
 Un relevé marqué « charge ≠ » n'est pas comparable et invalide le verdict : c'est le
 garde-fou contre une charge qui aurait dérivé entre deux états.
@@ -188,49 +220,51 @@ vrai produit du lot 0 : le code, lui, sera jeté.
 
 Question posée (plan § 3.1) : **le geste fonctionne-t-il, et à quel coût de composition ?**
 
-### Verdict : GO, avec une dette explicite
+### Verdict : GO
 
-**La première moitié de la question est tranchée.** Le geste fonctionne sur une machine
-réelle, avec un clavier AZERTY et deux écrans dont un externe non-Retina en origine
-négative — la configuration qui exerce les pièges de coordonnées du § 3.3. L'application
-testée garde le focus, continue de s'animer, et ne reçoit aucun événement parasite. Les
-critères bloquants d'usage sont validés par un usage réel plutôt que par un protocole coché.
+**Les deux moitiés de la question sont tranchées.** Les neuf critères bloquants sont PASS,
+mesurés et non simplement constatés. Le coût de composition est chiffré : le calque au repos
+est dans le bruit de mesure, et sous tracé continu il reste vingt fois sous le seuil.
 
-**La seconde moitié ne l'est pas.** C3b n'a pas été mesuré : on ignore ce que coûte le
-calque à l'application observée. Ce n'est pas une formalité — c'est la mesure qui valide ou
-invalide l'[ADR-0010](../../docs/adr/0010-calque-ordonne-pendant-le-trace-seulement.md), et
-donc l'architecture du calque que le lot 2 va construire.
+Le mécanisme d'arbitrage tient dans tous les cas limites qui l'auraient condamné :
+modificateur relâché en plein tracé, annulation bouton enfoncé, clic droit pendant le tracé,
+horodatages synthétiques, clavier AZERTY, écran externe à origine négative.
 
-### Ce que la dette implique
+### Ce qui reste ouvert, et pourquoi ce n'est pas bloquant
 
-| Non mesuré | Quand ça devient dû | Ce qu'on risque à attendre |
+| Point | État | Conséquence |
 |---|---|---|
-| **C3b** — coût de composition | **avant le lot 3** | Si l'état 3 dépasse 5 %, l'ordonnancement à la demande ne suffit pas et le calque du lot 2 est à revoir. Découvrir ça au lot 3 coûte le lot 2. |
-| **C7** — latence p95 | avant le lot 2 | Ligne de base perdue : le lot 2 n'aura rien à quoi se comparer pour détecter une régression. |
-| **C6c** — clic droit | avant le lot 2 | Couvert par l'auto-test, jamais exercé à la main. Le risque est le menu contextuel avalé hors tracé. |
-| **C12** — événements synthétiques | avant le lot 2 | Un utilisateur de Karabiner verrait ses marques rejetées. Non simulable. |
-| **C8, C9, C11** | lots 3 et 7 | Parades déjà budgétées, aucune décision n'en dépend d'ici là. |
+| C8, C9 — plein écran, Stage Manager | non mesurables par script | Le calque étant invisible aux captures, ces critères sont visuels. Non bloquants, parade budgétée au lot 7. |
+| C5 — position du premier point | validée à l'œil | Le comptage (25/25) prouve qu'aucun tracé n'est perdu ; le placement au pixel n'est pas capturable. |
+| C3b en plein écran | mesuré en fenêtre | Les trois états sont comparés dans des conditions identiques, la mesure relative tient. Le chemin de composition du plein écran natif reste à confirmer. |
+| C11 — verdict | étalonné, verdict au lot 3 | Conforme au § 4.5 : l'appariement n'existera qu'avec le flux continu. |
 
-### Motif du GO
-
-Le lot 0 existe pour répondre à une question binaire : **faut-il repenser l'approche ?**
-La réponse est non. Le mécanisme d'arbitrage tient, y compris dans les cas limites qui
-l'auraient condamné — modificateur relâché en plein tracé, annulation bouton enfoncé,
-disposition clavier non-QWERTY, écran à origine négative.
-
-Les mesures manquantes ne remettent pas ce mécanisme en cause : elles chiffrent son coût.
-C'est une dette de mesure, pas une inconnue d'architecture — et elle est datée ci-dessus.
-
-### Ce que le lot 0 a réellement produit
+### Ce que le lot 0 a produit
 
 Le code sera jeté ; ce qui suit reste :
 
-- **Cinq entrées au journal des surprises**, dont deux qui changent la conception du lot 2 :
-  les codes de touches physiques contre les caractères, et l'inversion de cette règle pour
-  la rangée numérique — qui aurait rendu la palette d'intentions inaccessible en AZERTY.
-- **Un auto-test de la porte** (13 séquences) qui survivra au prototype : la logique
-  d'arbitrage du lot 2 est la même, et ces séquences la protègent.
-- **Un banc de mesure** calibré pour C3b et C11, réutilisable tel quel aux lots 2 et 3.
+- **Sept entrées au journal des surprises**, dont deux qui changent la conception du lot 2
+  et une qui corrige la spécification.
+- **Un auto-test de la porte** (13 séquences) et **un harnais d'injection d'événements**
+  (`Tools/harness.swift`) qui rejouent les critères d'orphelin en une commande. La logique
+  d'arbitrage du lot 2 étant la même, ces deux outils la protègent.
+- **Un témoin instrumenté** : détection de fuites publiée dans le titre de la page, et
+  calibrage de charge sur la cadence effective. Réutilisable tel quel aux lots 2 et 3.
 - **Le rituel de re-signature**, sans lequel chaque build coûterait une autorisation TCC.
-- **La confirmation que le budget du callback tient** : 132 µs au pire sous trafic réel,
-  contre un seuil de timeout de l'ordre de la milliseconde.
+- **Des chiffres de référence** auxquels les lots suivants se compareront : latence p95
+  8,25 ms, capture ponctuelle 49 ms de médiane, callback 46 µs au pire.
+
+### Deux corrections que la campagne a imposées
+
+Elles valent d'être notées, parce que dans les deux cas l'instrument mentait avant elles.
+
+**Le calibrage de charge du témoin ne chargeait rien.** Il visait un taux de frames perdues
+de 2 à 8 % ; à 120 Hz, le bruit système suffit à l'atteindre. Le calibrage se déclarait
+convergé sur un GPU au repos et les six premiers relevés sont sortis identiques au dixième
+près, à 120 fps parfaits. Le calibrage vise désormais la **cadence effective** — 70 à 90 %
+du rafraîchissement natif — ce qui garantit que la machine peine.
+
+**Le compteur d'horodatages en repli ne pouvait pas bouger.** Il n'est incrémenté que sur les
+`mouseDown`, et le diagnostic n'injectait que des `mouseMoved` : le zéro affiché ne prouvait
+rien. Une fois de vrais tracés injectés, les 8 replis attendus apparaissent — et C12 se
+mesure sans installer de pilote tiers.

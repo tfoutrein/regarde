@@ -136,7 +136,7 @@
 
   <div id="hint">
     <kbd>H</kbd> masque ce panneau · <kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> mode ·
-    <kbd>R</kbd> relevé · <kbd>A</kbd> aligner
+    <kbd>R</kbd> relevé · <kbd>A</kbd> aligner · <kbd>Z</kbd> reset fuites
   </div>
 </div>
 
@@ -161,8 +161,11 @@ const SAMPLE_MS  = 30000;  // § 4.4 : 30 s par état
 // de quantification, aucun état atteignable ne la satisfait, et la charge s'effondre au
 // plancher — le GPU se repose, une couche de composition supplémentaire ne coûte plus
 // rien de mesurable, et C3b est déclaré PASS sans avoir jamais été mesuré.
-const DROP_MIN = 0.02;
-const DROP_MAX = 0.08;
+// Cadence effective visée, en fraction du rafraîchissement natif. En dessous de 90 %,
+// le GPU peine assez pour qu'une couche de composition supplémentaire se voie ; en
+// dessous de 70 %, la page rame au point que la mesure devient instable.
+const CHARGE_HI = 0.90;
+const CHARGE_LO = 0.70;
 
 const state = {
   mode: 'clock',
@@ -178,6 +181,7 @@ const state = {
   calWindow: [],       // deltas accumulés pour la mesure ou le calibrage
   calibrated: false,   // la charge a convergé dans la fenêtre visée
   glLoadLocked: null,  // charge gelée : tous les relevés doivent partager la même
+  chargeInsuffisante: false,  // butée atteinte sans charger la machine
 };
 
 const $ = (id) => document.getElementById(id);
@@ -299,30 +303,41 @@ function frame(now) {
       gl.drawArrays(gl.TRIANGLES, 0, 3);
     }
 
-    // Phase 2 — calibrer sur le taux de frames perdues, jamais pendant un relevé, et
-    // une seule fois : recalibrer entre deux relevés ferait varier la charge d'un état
-    // à l'autre, et la différence mesurée deviendrait la somme du coût de composition
-    // et de l'allègement du shader — deux effets de signes opposés.
+    // Phase 2 — calibrer sur la CADENCE EFFECTIVE, pas sur le taux de frames perdues.
+    //
+    // Viser un taux de frames perdues ne fonctionne pas : à 120 Hz, le bruit système
+    // suffit à faire dépasser le seuil à 2-8 % des frames, et le calibrage se déclare
+    // convergé sur un GPU au repos — exactement le défaut qu'il devait empêcher.
+    // Mesuré sur cette machine : `glLoad` restait à sa valeur initiale et les six
+    // relevés sortaient identiques au dixième près, à 120 fps parfaits.
+    //
+    // La cadence effective, elle, ne ment pas : tant que la page rend le
+    // rafraîchissement natif, le GPU a de la marge. On charge jusqu'à lui en retirer.
     if (!state.sampling && state.glLoadLocked === null && dt > 0) {
       state.calWindow.push(dt);
       if (state.calWindow.length >= 120) {
-        const dropped = state.calWindow.filter(d => d > state.vsyncMs * 1.5).length / 120;
+        const total = state.calWindow.reduce((a, b) => a + b, 0);
+        const fps = 1000 * state.calWindow.length / total;
+        const ratio = fps / (1000 / state.vsyncMs);
         const prev = state.glLoad;
-        if (dropped < DROP_MIN)      state.glLoad = Math.min(512, Math.ceil(state.glLoad * 1.35));
-        else if (dropped > DROP_MAX) state.glLoad = Math.max(8, Math.floor(state.glLoad / 1.20));
+
+        if (ratio > CHARGE_HI)      state.glLoad = Math.min(4096, Math.ceil(state.glLoad * 1.6));
+        else if (ratio < CHARGE_LO) state.glLoad = Math.max(8, Math.floor(state.glLoad / 1.3));
         else {
           state.calibrated = true;
           state.glLoadLocked = state.glLoad;
-          setStatus(`Charge calibrée et gelée : ${state.glLoad} itérations, ` +
-                    `${(dropped * 100).toFixed(1)} % de frames perdues. Prêt pour les relevés.`);
+          setStatus(`Charge calibrée : ${state.glLoad} itérations, ` +
+                    `${fps.toFixed(1)} fps soit ${(ratio * 100).toFixed(0)} % du natif. Prêt.`);
         }
-        // Butée atteinte sans convergence : la machine est trop rapide ou trop lente
-        // pour la plage. On gèle quand même, en le signalant.
+
+        // Butée : la machine est trop rapide pour la plage. On gèle en le SIGNALANT,
+        // parce qu'un relevé sur charge insuffisante ne mesure rien.
         if (!state.calibrated && state.glLoad === prev) {
           state.calibrated = true;
           state.glLoadLocked = state.glLoad;
-          setStatus(`Charge gelée en butée : ${state.glLoad} itérations, ` +
-                    `${(dropped * 100).toFixed(1)} % de frames perdues — hors plage visée.`, true);
+          state.chargeInsuffisante = ratio > CHARGE_HI;
+          setStatus(`Charge en butée : ${state.glLoad} itérations, ${(ratio * 100).toFixed(0)} % du natif` +
+                    (state.chargeInsuffisante ? ' — CHARGE INSUFFISANTE, la mesure ne vaudra rien.' : '.'), true);
         }
         state.calWindow = [];
       }
@@ -361,15 +376,9 @@ function startRun() {
     setStatus('Charge pas encore calibrée — laisse tourner quelques secondes en mode charge.', true);
     return;
   }
-  const label = prompt(
-    'Étiquette du relevé (§ 4.4) :\n' +
-    '  1-reference        Regarde non lancé\n' +
-    '  2-calque-non-ordonne  Regarde lancé, rien à l\'écran\n' +
-    '  3-trace-continu    ⌥⌘ maintenu, tracé sans discontinuer\n\n' +
-    'Refaire ensuite dans l\'ordre inverse (dérive thermique).',
-    suggestLabel()
-  );
-  if (!label) return;
+  // Pas de prompt() : il bloque l'automatisation et fige toute extension de
+  // pilotage. L'étiquette suit la séquence du § 4.4, dans l'ordre.
+  const label = suggestLabel();
   state.deltas = [];
   state.sampling = true;
   state.sampleStart = performance.now();
@@ -494,6 +503,7 @@ function payload() {
       refreshHz: state.vsyncMs ? +(1000 / state.vsyncMs).toFixed(1) : null,
       glLoadLocked: state.glLoadLocked,
       calibrated: state.calibrated,
+      chargeInsuffisante: state.chargeInsuffisante,
       verdicts: verdicts(),
     },
     c11: {
@@ -521,7 +531,9 @@ function verdicts() {
   const deg = (fps) => fps === null ? null : +((1 - fps / refFps) * 100).toFixed(2);
 
   let c3b = 'NON MESURÉ', motif = 'relevé « 3-trace-continu » manquant';
-  if (notCalibrated.length) {
+  if (state.chargeInsuffisante) {
+    motif = 'charge GPU insuffisante — le calibrage a atteint sa butée sans faire peiner la machine';
+  } else if (notCalibrated.length) {
     motif = `${notCalibrated.length} relevé(s) pris avant calibrage de la charge`;
   } else if (incomparable.length) {
     motif = `${incomparable.length} relevé(s) sur une charge ou une fréquence différente`;
@@ -543,6 +555,53 @@ function verdicts() {
     motif,
   };
 }
+
+// ── Détecteur de fuites (C2, C6, C6b, C6c) ───────────────────────────────────
+//
+// Les critères d'orphelin se constatent depuis l'application TESTÉE : c'est elle
+// qui reçoit — ou ne reçoit pas — ce qui a fuité. La page compte donc elle-même,
+// et publie le total dans `document.title`, lisible de l'extérieur par un simple
+// AppleScript. Aucun dialogue, aucune permission, aucune extension.
+const leaks = {
+  mousemoveWithButton: 0,   // un drag est arrivé alors qu'aucun mouseDown n'a été vu
+  mouseup: 0,               // un relâchement sans pression correspondante
+  contextmenu: 0,           // le clic droit du tracé a atteint la page
+  selection: 0,             // du texte s'est sélectionné sous un tracé
+  ownMouseDown: 0,          // pressions légitimement reçues, pour distinguer C1 de C2
+};
+
+function publishLeaks() {
+  const total = leaks.mousemoveWithButton + leaks.mouseup + leaks.contextmenu + leaks.selection;
+  document.title = `T1 · fuites=${total} · mm=${leaks.mousemoveWithButton} mu=${leaks.mouseup} ` +
+                   `cm=${leaks.contextmenu} sel=${leaks.selection} down=${leaks.ownMouseDown}`;
+}
+
+// `capture: true` : on veut voir l'événement avant tout autre gestionnaire.
+addEventListener('mousedown', () => { leaks.ownMouseDown++; publishLeaks(); }, true);
+
+addEventListener('mousemove', (e) => {
+  // Un bouton enfoncé alors que la page n'a jamais reçu le mouseDown correspondant :
+  // c'est le milieu d'un clic qui ne lui appartient pas.
+  if (e.buttons && leaks.ownMouseDown === 0) { leaks.mousemoveWithButton++; publishLeaks(); }
+}, true);
+
+addEventListener('mouseup', () => {
+  if (leaks.ownMouseDown === 0) { leaks.mouseup++; publishLeaks(); }
+}, true);
+
+addEventListener('contextmenu', () => { leaks.contextmenu++; publishLeaks(); }, true);
+
+document.addEventListener('selectionchange', () => {
+  const sel = document.getSelection();
+  if (sel && String(sel).length > 0) { leaks.selection++; publishLeaks(); }
+}, true);
+
+function resetLeaks() {
+  for (const k of Object.keys(leaks)) leaks[k] = 0;
+  const sel = document.getSelection(); if (sel) sel.removeAllRanges();
+  publishLeaks();
+}
+publishLeaks();
 
 // ── Interface ────────────────────────────────────────────────────────────────
 function setMode(m) {
@@ -608,6 +667,8 @@ addEventListener('keydown', (e) => {
   else if (k === 'r') startRun();
   else if (k === 'a') alignClock();
   else if (k === 'h') $('hud').classList.toggle('hidden');
+  else if (k === 'z') { resetLeaks(); setStatus('Compteurs de fuites remis à zéro.'); }
+  else if (k === 'f') { $('probe').focus(); $('probe').setSelectionRange(0, 0); }
 });
 
 // Un clic dans la scène aligne aussi l'horloge : plus pratique que la touche
