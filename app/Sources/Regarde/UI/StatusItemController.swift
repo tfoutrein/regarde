@@ -44,6 +44,21 @@ final class StatusItemController {
         add(to: menu, "Afficher / masquer le HUD", key: "") {
             HUDWindow.shared.toggleForced()
         }
+        add(to: menu, "Épingler / libérer le calque", key: "o") {
+            if OverlayController.shared.isShowing {
+                OverlayController.shared.hidePanels()
+            } else {
+                OverlayController.shared.showPanels()
+                OverlayController.shared.redrawAll()
+            }
+        }
+        add(to: menu, "Effacer les marques", key: "k") {
+            MarkStore.shared.clear()
+            OverlayController.shared.redrawAll()
+        }
+        add(to: menu, "Lister les marques", key: "") {
+            Journal.section("Marques", MarkStore.shared.describe())
+        }
         add(to: menu, "Vérifier les panneaux", key: "") {
             Journal.section("Panneaux — vérification", OverlayController.shared.audit())
         }

@@ -16,6 +16,13 @@ import os
 // l'application n'a encore rien à capturer.
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Auto-test de la porte à verrou : 13 séquences d'événements, sans permission ni écran.
+// Reprises telles quelles du lot 0, où elles ont été vérifiées comme détectant
+// réellement les défauts qu'elles couvrent.
+if CommandLine.arguments.contains("--selftest") {
+    exit(GateSelfTest.runAll() == 0 ? 0 : 1)
+}
+
 // La table de cas de la conversion de coordonnées tourne sans écran, sans permission
 // et sans interface : elle vérifie des dispositions qu'on n'a pas sous la main.
 if CommandLine.arguments.contains("--geometry-test") {
@@ -42,6 +49,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         HotKeyCenter.shared.onAction = { action in
             MainActor.assumeIsolated { AppDelegate.handle(action) }
         }
+        // Le tap alimente le ring que le contrôleur draine. Sans les deux autorisations
+        // d'entrée, il ne démarre pas — le doctor le dit, et ⌃⌥S reste atteignable.
+        if EventTap.shared.start() {
+            EventTap.shared.startWatchdog()
+            Journal.write("tap démarré — ⌥⌘ + glisser trace")
+        } else {
+            Journal.write("⚠ tap non démarré : voir le diagnostic (⌃⌥S)")
+        }
+
         HotKeyCenter.shared.install()
         Journal.section("Raccourcis", HotKeyCenter.shared.describe())
 

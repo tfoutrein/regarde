@@ -29,6 +29,12 @@ final class InkView: NSView {
     /// Rendu gelé : le panneau est masqué, commiter ne servirait à rien.
     private(set) var isFrozen = false
 
+    private var link: CADisplayLink?
+
+    /// Appelé à chaque cycle du display link. Seule la vue élue par le contrôleur y
+    /// branche le drainage — voir `OverlayController.electPump`.
+    var onFrame: (() -> Void)?
+
     override init(frame: CGRect) {
         super.init(frame: frame)
         wantsLayer = true
@@ -86,6 +92,30 @@ final class InkView: NSView {
         CATransaction.setDisableActions(true)
         body()
         CATransaction.commit()
+    }
+
+    // MARK: - Display link
+
+    /// Démarre la cadence de rendu.
+    ///
+    /// `CADisplayLink` synchronise sur le rafraîchissement de l'écran, là où un `Timer`
+    /// dériverait. Il ne tire que lorsque la fenêtre est à l'écran, ce qui est exactement
+    /// le comportement voulu : hors tracé, les panneaux sont retirés (ADR-0010) et rien
+    /// ne tourne.
+    func startRendering() {
+        guard link == nil else { return }
+        let l = displayLink(target: self, selector: #selector(step(_:)))
+        l.add(to: .main, forMode: .common)
+        link = l
+    }
+
+    func stopRendering() {
+        link?.invalidate()
+        link = nil
+    }
+
+    @objc private func step(_ sender: CADisplayLink) {
+        onFrame?()
     }
 
     // MARK: - Gel sur occlusion (S18)

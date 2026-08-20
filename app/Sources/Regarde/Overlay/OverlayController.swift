@@ -57,6 +57,75 @@ final class OverlayController {
         ) { _ in
             MainActor.assumeIsolated { OverlayController.shared.refreshOcclusion() }
         }
+
+        // Le tap notifie les transitions d'armement, jamais chaque point : c'est ce qui
+        // permet d'ordonner le calque AVANT le premier mouseDown, sans aucun polling au
+        // repos. Le § 6.4 interdit un réveil du thread principal par point, pas à la
+        // pression du modificateur.
+        OptionGate.shared.onStateChanged = { armed, stroking in
+            DispatchQueue.main.async {
+                OverlayController.shared.gateStateChanged(armed: armed, stroking: stroking)
+            }
+        }
+
+        // Le verrou remis à plat doit entraîner l'abandon du trait vivant, sinon il
+        // réapparaît au geste suivant et suit le curseur sans bouton enfoncé.
+        OptionGate.shared.onResetRequested = {
+            DispatchQueue.main.async {
+                MarkStore.shared.cancelStroke()
+                OverlayController.shared.redrawAll()
+            }
+        }
+
+        EventTap.shared.onControlKey = { key in
+            DispatchQueue.main.async {
+                switch key {
+                case .escape:
+                    MarkStore.shared.cancelStroke()
+                case .undo:
+                    if let removed = MarkStore.shared.undoLast() {
+                        Journal.write("marque \(removed.number) supprimée — le numéro n'est pas réattribué")
+                    }
+                }
+                OverlayController.shared.redrawAll()
+            }
+        }
+    }
+
+    // MARK: - Ordonnancement à la demande (ADR-0010)
+
+    /// Délai de grâce avant retrait.
+    ///
+    /// Sans lui, relâcher ⌥⌘ une fraction de seconde pour le represser ferait
+    /// disparaître puis réapparaître le calque, avec un clignotement visible et un coût
+    /// de composition à chaque aller-retour.
+    private static let hideGrace: TimeInterval = 0.35
+    private var hideWorkItem: DispatchWorkItem?
+
+    private func gateStateChanged(armed: Bool, stroking: Bool) {
+        if armed || stroking {
+            hideWorkItem?.cancel()
+            hideWorkItem = nil
+            showPanels()
+        } else {
+            scheduleHide()
+        }
+    }
+
+    private func scheduleHide() {
+        hideWorkItem?.cancel()
+        let item = DispatchWorkItem { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                // Remis à nil AVANT les gardes : sans cela, un retrait annulé laisse un
+                // élément consommé en place et le filet est désarmé pour la suite.
+                self.hideWorkItem = nil
+                guard !OptionGate.shared.isArmed, !OptionGate.shared.isStroking else { return }
+                self.hidePanels()
+            }
+        }
+        hideWorkItem = item
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.hideGrace, execute: item)
     }
 
     /// Relit l'état d'occlusion de chaque panneau et gèle ceux qui ne sont pas visibles.
@@ -64,6 +133,108 @@ final class OverlayController {
         for panel in panels.values {
             panel.inkView.setFrozen(!panel.occlusionState.contains(.visible))
         }
+    }
+
+    // MARK: - Drainage et rendu
+
+    /// Vue dont le display link pilote le drainage. Une seule, quel que soit le nombre
+    /// de panneaux : `InkRing` est un ring à consommateur unique, et `drain` avance la
+    /// queue. Avec un display link par écran, le premier déclenché emporterait tout et
+    /// l'autre trouverait la file vide — un tracé sur deux ne dessinerait rien. C'est le
+    /// défaut que la revue du lot 0 avait relevé.
+    private var pumpDisplayID: CGDirectDisplayID?
+
+    /// Instants d'entrée des événements drainés, pour la mesure de latence. Réservé une
+    /// fois : le chemin de rendu ne doit pas réallouer par frame.
+    private var stamps: [UInt64] = []
+    private(set) var latencyFallbacks: UInt64 = 0
+
+    /// Désigne le panneau dont le display link draine le ring.
+    ///
+    /// Réélu à chaque reconstruction : si le pilote était porté par un écran débranché,
+    /// son display link a été invalidé et le drainage s'arrêterait sans le moindre message.
+    private func electPump() {
+        for panel in panels.values { panel.inkView.onFrame = nil }
+        let elected = panels[CGMainDisplayID()] ?? panels.values.first
+        pumpDisplayID = elected?.displayID
+        elected?.inkView.startRendering()
+        elected?.inkView.onFrame = { [weak self] in
+            MainActor.assumeIsolated { self?.pump() }
+        }
+    }
+
+    /// Unique consommateur du ring : draine, applique, publie.
+    private func pump() {
+        stamps.removeAll(keepingCapacity: true)
+        var touched = Set<CGDirectDisplayID>()
+
+        InkRing.shared.drain { event in
+            self.apply(event, touched: &touched)
+            self.stamps.append(self.latencyOrigin(of: event))
+        }
+
+        guard !stamps.isEmpty else { return }
+
+        // Un seul commit par écran touché, après tout le lot d'événements : c'est ce qui
+        // remplace les mille réveils par seconde qu'un `async` par point produirait.
+        for id in touched { redraw(id) }
+
+        let committedAt = SessionClock.hostTicksNow()
+        for origin in stamps {
+            LatencyHistogram.shared.record(millis: SessionClock.millis(from: origin, to: committedAt))
+        }
+    }
+
+    private func apply(_ event: InkEvent, touched: inout Set<CGDirectDisplayID>) {
+        let store = MarkStore.shared
+        switch event.eventKind {
+        case .down:
+            store.beginStroke(at: event.point, geometry: geometry)
+        case .drag:
+            // Un `mouseMoved` sans tracé en cours ne doit rien allonger : il n'y a pas
+            // de bouton enfoncé, c'est de la visée.
+            guard store.hasLiveStroke else { return }
+            store.extendStroke(to: event.point, geometry: geometry)
+        case .up:
+            guard store.hasLiveStroke else { return }
+            store.extendStroke(to: event.point, geometry: geometry)
+            if let mark = store.endStroke() {
+                Journal.write("marque \(mark.number) — \(mark.tool.label) sur display \(mark.displayID)")
+            }
+        }
+        if let id = store.liveDisplayID ?? store.marks.last?.displayID { touched.insert(id) }
+    }
+
+    /// Origine de la mesure de latence.
+    ///
+    /// `CGEvent.timestamp` inclut le segment matériel → livraison au tap, précisément
+    /// celui qu'un tap inséré en tête peut allonger. Mais un horodatage synthétique peut
+    /// valoir zéro ou pointer vers le futur : sans ce garde, la mesure renverrait 0 ms et
+    /// flatterait le p95. Le lot 0 l'a établi.
+    private func latencyOrigin(of event: InkEvent) -> UInt64 {
+        guard event.hostTicks != 0, event.hostTicks <= event.enqueuedTicks else {
+            latencyFallbacks &+= 1
+            return event.enqueuedTicks
+        }
+        return event.hostTicks
+    }
+
+    /// Recompose les chemins d'un écran depuis le modèle.
+    ///
+    /// Le rendu dérive entièrement de `MarkStore` : la vue ne conserve aucun état propre,
+    /// donc elle ne peut pas diverger du modèle.
+    func redraw(_ displayID: CGDirectDisplayID) {
+        guard let panel = panels[displayID] else { return }
+        let size = panel.inkView.bounds.size
+        let store = MarkStore.shared
+        panel.inkView.setCommittedPath(
+            store.committedPath(for: displayID, size: size, lineWidth: InkStyle.width))
+        panel.inkView.setLivePath(
+            store.livePath(for: displayID, size: size, lineWidth: InkStyle.width))
+    }
+
+    func redrawAll() {
+        for id in panels.keys { redraw(id) }
     }
 
     // MARK: - Reconstruction
@@ -109,7 +280,11 @@ final class OverlayController {
         }
         panels = kept
         rebuildCount += 1
+        electPump()
 
+        // Les marques sont en coordonnées normalisées : elles suivent le changement de
+        // résolution sans transformation.
+        redrawAll()
         if visible { showPanels() }
 
         var lines = ["raison     \(reason)",
