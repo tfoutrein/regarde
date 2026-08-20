@@ -13,10 +13,18 @@ Le code de ce dossier sera **jeté**. Ce qui survit, ce sont les nombres de
 ## Démarrage
 
 ```bash
-./Tools/make-cert.sh          # une seule fois — demande sudo, voir plus bas
-./Tools/build-app.sh --run    # build, signature, installation, lancement
-./Tools/serve-temoin.sh       # le témoin 1 dans Chrome
+./Tools/make-cert.sh    # une seule fois — demande sudo, voir plus bas
+./Tools/start.sh        # tout le reste
 ```
+
+`start.sh` enchaîne l'auto-test de la porte, la construction signée, le lancement de
+l'application et du témoin, puis affiche l'état réel. `--quick` saute la reconstruction.
+
+```bash
+./Tools/status.sh       # le tap est-il vivant ? à tout moment, sans rien interrompre
+```
+
+Le protocole de test complet est dans [`PROTOCOLE.md`](PROTOCOLE.md).
 
 Au premier lancement, macOS demandera **Surveillance de la saisie** et **Accessibilité**.
 Les deux sont requises : sans elles, `CGEvent.tapCreate` renvoie `nil` — sans erreur, sans
