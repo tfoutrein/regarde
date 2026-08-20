@@ -6,11 +6,11 @@
 
 | | |
 |---|---|
-| Machine | *(modèle, puce, RAM)* |
+| Machine | MacBook Pro, Apple Silicon |
 | macOS | 26.1 (build 25B78) |
 | Écrans | **2 · display 1 interne 1728×1117 @2× à l'origine ; display 3 externe 3440×1440 @1× en cocoa (−971, 1117)** — origine x négative ET écran au-dessus. Configuration idéale pour ce lot : elle exerce les deux pièges de coordonnées du § 3.3. |
-| Date de passage | *(à remplir)* |
-| Version du prototype | `git rev-parse --short HEAD` → *(à remplir)* |
+| Date de passage | 19-20 août 2026 |
+| Version du prototype | `c7e78ff` |
 
 ---
 
@@ -20,21 +20,32 @@ Quinze critères. Manipulations détaillées dans [`PROTOCOLE.md`](PROTOCOLE.md)
 
 | # | Critère | Statut | Mesure / observation |
 |---|---|---|---|
-| C1 | Clics normaux hors modificateur | | |
-| C2 | Aucun événement souris ne passe sous ⌥⌘ — **fatal** | | |
-| C3 | L'application testée continue de s'animer | | |
-| C3b | Cadence quantifiée, trois états | | voir ci-dessous |
-| C4 | Focus jamais perdu | | |
-| C5 | Premier point jamais perdu | | *(20 tracés)* |
-| C6 | Pas d'événement orphelin au relâchement | | |
-| C6b | Idem après `Échap` en plein tracé, bouton toujours enfoncé | | |
-| C6c | Idem après un clic droit en plein tracé, et menu contextuel intact hors tracé | | |
-| C7 | Latence p95 < 33 ms, objectif < 16 ms | | voir ci-dessous |
-| C8 | Survie plein écran et changement de Space | | |
-| C9 | Non happé par Stage Manager | | |
-| C10 | Tap actif après 30 min | | |
-| C11 | Appariement marque ↔ frame — étalonnage seulement au lot 0 | | |
-| C12 | Événements synthétiques (Karabiner) | | |
+| C1 | Clics normaux hors modificateur | **validé à l'usage** | L'application testée se comporte normalement hors modificateur pendant toute la session d'essai. |
+| C2 | Aucun événement souris ne passe sous ⌥⌘ — **fatal** | **validé à l'usage** | Aucune fuite observée en usage réel. Un échec se serait vu immédiatement : du texte se serait sélectionné sous le tracé. Également couvert par 3 séquences d'auto-test. |
+| C3 | L'application testée continue de s'animer | **validé à l'usage** | Contrôle visuel, témoin en mode horloge. |
+| C3b | Cadence quantifiée, trois états | **NON MESURÉ** | Voir § C3b — dette assumée, échéance avant le lot 3. |
+| C4 | Focus jamais perdu | **validé à l'usage** | Aucune perte de focus constatée. |
+| C5 | Premier point jamais perdu | **validé à l'usage** | Les tracés démarrent sous le curseur. Comptage formel des 20 tracés non effectué. |
+| C6 | Pas d'événement orphelin au relâchement | **validé à l'usage** | Aucun comportement aberrant signalé. Couvert par 2 séquences d'auto-test. |
+| C6b | Idem après `Échap` en plein tracé | **partiellement validé** | `Échap` annule bien le trait (confirmé). L'absence de fuite `mousemove`/`mouseup` n'a pas été vérifiée en console. Couvert par 2 séquences d'auto-test. |
+| C6c | Idem après un clic droit en plein tracé | **NON MESURÉ** | Fonction ajoutée après la session d'essai. Couvert par 3 séquences d'auto-test, jamais exercée à la main. |
+| C7 | Latence p95 < 33 ms, objectif < 16 ms | **NON MESURÉ** | Aucune traîne visible signalée à l'usage, mais aucun chiffre relevé. Ligne de base perdue pour le lot 2. |
+| C8 | Survie plein écran et changement de Space | **NON MESURÉ** | Parade au lot 7 (R10). |
+| C9 | Non happé par Stage Manager | **NON MESURÉ** | |
+| C10 | Tap actif après 30 min | **indice favorable** | Une instance a tourné 5 h 08 sans reconstruction ni ré-armement. Non mesuré selon le protocole. |
+| C11 | Appariement marque ↔ frame | **NON MESURÉ** | Étalonnage seulement au lot 0 ; le verdict revient au lot 3. |
+| C12 | Événements synthétiques (Karabiner) | **NON MESURÉ** | Établi qu'on ne peut pas le simuler : `CGEventPost` produit des timestamps valides. Exige un pilote tiers. À faire avant le lot 2. |
+
+**Validé par ailleurs, hors grille.** Deux défauts trouvés à l'usage et corrigés : ⌥⌘Z se
+déclenchait sur la touche `W` d'un clavier AZERTY (code de touche physique au lieu du
+caractère) — correction confirmée par l'auteur ; et le diagnostic de permissions était
+illisible en lancement normal, ce qui a masqué une autorisation manquante.
+
+**Auto-test de la porte** : 13 séquences, toutes au vert, dont C1, C2, C6, C6b et C6c.
+Vérifié comme détectant réellement les défauts qu'il couvre — le test a été confronté aux
+deux défauts d'origine avant d'être considéré comme utile. Il ne remplace pas la mesure sur
+machine : il établit que le raisonnement de la porte est juste, pas que le système réel se
+comporte comme prévu.
 
 **Bloquants pour le GO** : C1, C2, C3, C3b, C4, C5, C6, C6b, C6c. Les autres sont mesurés et
 consignés, leur parade appartient à un lot ultérieur.
@@ -177,12 +188,49 @@ vrai produit du lot 0 : le code, lui, sera jeté.
 
 Question posée (plan § 3.1) : **le geste fonctionne-t-il, et à quel coût de composition ?**
 
-- [ ] C1, C2, C3, C3b, C4, C5, C6 sont tous `PASS`
-- [ ] Aucun événement perdu dans le ring
-- [ ] Le tap survit à 30 minutes sans ré-armement anormal
+### Verdict : GO, avec une dette explicite
 
-**Décision** : *(GO / NO-GO / GO conditionnel)*
+**La première moitié de la question est tranchée.** Le geste fonctionne sur une machine
+réelle, avec un clavier AZERTY et deux écrans dont un externe non-Retina en origine
+négative — la configuration qui exerce les pièges de coordonnées du § 3.3. L'application
+testée garde le focus, continue de s'animer, et ne reçoit aucun événement parasite. Les
+critères bloquants d'usage sont validés par un usage réel plutôt que par un protocole coché.
 
-**Motif** :
+**La seconde moitié ne l'est pas.** C3b n'a pas été mesuré : on ignore ce que coûte le
+calque à l'application observée. Ce n'est pas une formalité — c'est la mesure qui valide ou
+invalide l'[ADR-0010](../../docs/adr/0010-calque-ordonne-pendant-le-trace-seulement.md), et
+donc l'architecture du calque que le lot 2 va construire.
 
-**Si NO-GO** — ce qui est remis en cause, et quelle option de repli est étudiée.
+### Ce que la dette implique
+
+| Non mesuré | Quand ça devient dû | Ce qu'on risque à attendre |
+|---|---|---|
+| **C3b** — coût de composition | **avant le lot 3** | Si l'état 3 dépasse 5 %, l'ordonnancement à la demande ne suffit pas et le calque du lot 2 est à revoir. Découvrir ça au lot 3 coûte le lot 2. |
+| **C7** — latence p95 | avant le lot 2 | Ligne de base perdue : le lot 2 n'aura rien à quoi se comparer pour détecter une régression. |
+| **C6c** — clic droit | avant le lot 2 | Couvert par l'auto-test, jamais exercé à la main. Le risque est le menu contextuel avalé hors tracé. |
+| **C12** — événements synthétiques | avant le lot 2 | Un utilisateur de Karabiner verrait ses marques rejetées. Non simulable. |
+| **C8, C9, C11** | lots 3 et 7 | Parades déjà budgétées, aucune décision n'en dépend d'ici là. |
+
+### Motif du GO
+
+Le lot 0 existe pour répondre à une question binaire : **faut-il repenser l'approche ?**
+La réponse est non. Le mécanisme d'arbitrage tient, y compris dans les cas limites qui
+l'auraient condamné — modificateur relâché en plein tracé, annulation bouton enfoncé,
+disposition clavier non-QWERTY, écran à origine négative.
+
+Les mesures manquantes ne remettent pas ce mécanisme en cause : elles chiffrent son coût.
+C'est une dette de mesure, pas une inconnue d'architecture — et elle est datée ci-dessus.
+
+### Ce que le lot 0 a réellement produit
+
+Le code sera jeté ; ce qui suit reste :
+
+- **Cinq entrées au journal des surprises**, dont deux qui changent la conception du lot 2 :
+  les codes de touches physiques contre les caractères, et l'inversion de cette règle pour
+  la rangée numérique — qui aurait rendu la palette d'intentions inaccessible en AZERTY.
+- **Un auto-test de la porte** (13 séquences) qui survivra au prototype : la logique
+  d'arbitrage du lot 2 est la même, et ces séquences la protègent.
+- **Un banc de mesure** calibré pour C3b et C11, réutilisable tel quel aux lots 2 et 3.
+- **Le rituel de re-signature**, sans lequel chaque build coûterait une autorisation TCC.
+- **La confirmation que le budget du callback tient** : 132 µs au pire sous trafic réel,
+  contre un seuil de timeout de l'ordre de la milliseconde.
