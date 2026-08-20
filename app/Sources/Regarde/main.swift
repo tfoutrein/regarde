@@ -38,18 +38,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         HotKeyCenter.shared.install()
         Journal.section("Raccourcis", HotKeyCenter.shared.describe())
 
-        // Preuve du critère de S10 : les raccourcis Carbon fonctionnent SANS permission
-        // d'entrée. On relève l'état ici, sous la vraie identité de l'application —
-        // depuis un terminal, le binaire hériterait des autorisations du terminal parent
-        // et mesurerait la mauvaise chose. Le doctor complet vient en S11.
-        Journal.section("Permissions d'entrée au démarrage", [
-            "Surveillance de la saisie  \(CGPreflightListenEventAccess() ? "accordée" : "NON accordée")",
-            "Accessibilité              \(AXIsProcessTrusted() ? "accordée" : "NON accordée")",
-            "→ si les raccourcis répondent malgré un « NON accordée », le critère est tenu.",
-        ])
-
-        TCCContact.shared.refresh(trigger: .launch)
-        Task { await TCCContact.shared.startHourlyProbe() }
+        // Diagnostic complet au démarrage, sous la vraie identité de l'application.
+        // Chaque ligne exécute son opération réelle — c'est tout l'objet de S11.
+        Task { await Doctor.shared.runAll() }
     }
 
     /// Aiguillage des raccourcis. Au lot 1, seul le diagnostic a une destination
