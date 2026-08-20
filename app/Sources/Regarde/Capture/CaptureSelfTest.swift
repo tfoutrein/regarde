@@ -287,6 +287,60 @@ enum CaptureSelfTest {
         check(t, "un cadre n'impose aucune exclusion",
               Engraver.designated(.rect(NormRect(bounding: [])), frame: frame) == nil)
 
+        // ── Ce que l'écran montre EST ce que l'image contient ──────────────────
+        //
+        // La règle a manqué au premier essai réel : le calque posait le badge à la queue,
+        // la gravure le posait là où le fond était le plus uni, et le numéro sautait d'un
+        // côté à l'autre entre les deux. Ces vérifications interdisent la divergence.
+        let shapes: [(String, MarkShape)] = [
+            ("d'une flèche", .arrow(from: NormPoint(x: 0.35, y: 0.35), to: NormPoint(x: 0.65, y: 0.62))),
+            ("d'une flèche inversée", .arrow(from: NormPoint(x: 0.65, y: 0.62), to: NormPoint(x: 0.35, y: 0.35))),
+            ("d'un cadre", .rect(NormRect(bounding: [NormPoint(x: 0.30, y: 0.30),
+                                                NormPoint(x: 0.62, y: 0.58)]))),
+            ("d'un point", .point(NormPoint(x: 0.5, y: 0.5))),
+            ("d'un surlignage", .highlight(NormRect(bounding: [NormPoint(x: 0.28, y: 0.44),
+                                                          NormPoint(x: 0.66, y: 0.50)]))),
+        ]
+        for (label, shape) in shapes {
+            let want = MarkGeometry.badgeAnchor(
+                for: shape, offset: Engraver.badgeDiameter(longSide: 400) * 0.64,
+                project: { frame.point($0) })
+            let got = Engraver.place(number: 1, intention: nil,
+                                     around: Engraver.boundingRect(of: shape, frame: frame),
+                                     in: size, avoiding: [], map: nil, frame: frame,
+                                     longSide: 400,
+                                     focus: Engraver.designated(shape, frame: frame),
+                                     preferred: want)
+            let anchored = CGPoint(x: got.minX + got.width * want.anchorX, y: got.midY)
+            check(t, "le badge gravé \(label) est là où le calque l'affiche",
+                  hypot(anchored.x - want.point.x, anchored.y - want.point.y) < 0.6,
+                  "→ calque \(want.point), gravé \(anchored)")
+        }
+
+        // Le repli n'a pas disparu pour autant : une position préférée hors de l'image
+        // doit rendre la main aux huit candidates.
+        let out = Engraver.place(number: 2, intention: nil,
+                                 around: CGRect(x: 150, y: 150, width: 80, height: 60),
+                                 in: size, avoiding: [], map: nil, frame: frame,
+                                 longSide: 400,
+                                 preferred: (CGPoint(x: -900, y: -900), 0))
+        check(t, "une position préférée hors cadre bascule sur les candidates",
+              CGRect(origin: .zero, size: size).contains(out), "→ \(out)")
+
+        // Et deux badges ne se superposent jamais, même si leur position préférée est
+        // la même : le second passe aux candidates.
+        let same = (CGPoint(x: 200, y: 200), CGFloat(0))
+        let first2 = Engraver.place(number: 1, intention: nil,
+                                    around: CGRect(x: 150, y: 150, width: 80, height: 60),
+                                    in: size, avoiding: [], map: nil, frame: frame,
+                                    longSide: 400, preferred: same)
+        let second2 = Engraver.place(number: 2, intention: nil,
+                                     around: CGRect(x: 150, y: 150, width: 80, height: 60),
+                                     in: size, avoiding: [first2], map: nil, frame: frame,
+                                     longSide: 400, preferred: same)
+        check(t, "deux badges de même position préférée ne se superposent pas",
+              !first2.intersects(second2))
+
         // Une marque collée au bord : les positions candidates du dessus sortent toutes,
         // il doit en rester une exploitable.
         let atEdge = Engraver.place(number: 3, intention: nil,

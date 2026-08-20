@@ -87,10 +87,25 @@ enum MarkGeometry {
     /// l'utilisateur parle : un badge posé dessus masquerait précisément le défaut à
     /// montrer. Le badge se range donc à la QUEUE de la flèche, et au coin supérieur
     /// gauche des formes fermées, à l'extérieur du contour.
-    static func badgeAnchor(for shape: MarkShape, in size: CGSize) -> (point: CGPoint, anchorX: CGFloat) {
+    ///
+    /// **Une seule implémentation pour l'écran et pour l'image gravée.** Le calque et la
+    /// gravure ne travaillent pas dans le même repère — l'un dans le cadre de l'écran,
+    /// l'autre dans un recadrage en pixels — d'où le paramètre `project`, qui est la
+    /// seule chose qui les distingue.
+    ///
+    /// Ils avaient chacun leur règle. Le calque posait le badge à la queue, la gravure le
+    /// posait là où le fond était le plus uni : le numéro sautait d'un endroit à l'autre
+    /// entre ce que l'utilisateur voyait en traçant et ce qu'il retrouvait dans l'image.
+    /// Un outil dont on ne peut pas prévoir la sortie en la regardant n'est pas un outil
+    /// de désignation.
+    static func badgeAnchor(for shape: MarkShape, offset: CGFloat,
+                            project: (NormPoint) -> CGPoint) -> (point: CGPoint, anchorX: CGFloat) {
+        let badgeOffset = offset
+        let pointBadgeOffset = offset * 1.15
+
         switch shape {
         case .arrow(let from, let to):
-            let a = from.local(in: size), b = to.local(in: size)
+            let a = project(from), b = project(to)
             // Reculé de quelques points au-delà de la queue, dans l'axe du trait :
             // au contact, la pastille recouvrirait le début du corps.
             let dx = a.x - b.x, dy = a.y - b.y
@@ -103,20 +118,28 @@ enum MarkGeometry {
             // viendrait recouvrir le corps de la flèche du côté où elle pointe.
             return (anchor, dx >= 0 ? 0 : 1)
         case .rect(let r), .highlight(let r):
-            let local = r.local(in: size)
+            let corners = [project(NormPoint(x: r.x, y: r.y)),
+                           project(NormPoint(x: r.x + r.w, y: r.y + r.h))]
+            let local = CGRect(x: min(corners[0].x, corners[1].x),
+                               y: min(corners[0].y, corners[1].y),
+                               width: abs(corners[1].x - corners[0].x),
+                               height: abs(corners[1].y - corners[0].y))
             // Ancrée par son bord gauche sur le coin, donc s'étendant vers la droite
             // au-dessus de la forme, jamais vers la gauche dans le vide.
             return (CGPoint(x: local.minX, y: local.maxY + badgeOffset), 0)
         case .point(let p):
-            let local = p.local(in: size)
+            let local = project(p)
             return (CGPoint(x: local.x + pointBadgeOffset, y: local.y + pointBadgeOffset), 0)
         }
     }
 
-    private static let badgeOffset: CGFloat = 14
-    /// Le point est rond et petit : sa pastille s'écarte un peu plus, en diagonale, pour
-    /// ne pas le couvrir.
-    private static let pointBadgeOffset: CGFloat = 16
+    /// Écart du badge à l'écran, en points.
+    static let screenBadgeOffset: CGFloat = 14
+
+    /// Commodité pour le calque : la projection y est une simple mise à l'échelle.
+    static func badgeAnchor(for shape: MarkShape, in size: CGSize) -> (point: CGPoint, anchorX: CGFloat) {
+        badgeAnchor(for: shape, offset: screenBadgeOffset) { $0.local(in: size) }
+    }
 
     // MARK: - Construction depuis un geste
 

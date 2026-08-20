@@ -121,10 +121,16 @@ enum Engraver {
         var placed: [CGRect] = []
         for item in items {
             let box = boundingRect(of: item.shape, frame: frame)
+            // L'écart est proportionné au badge, donc à l'image : 14 points à l'écran
+            // n'ont pas la même signification dans un recadrage de 896 px.
+            let preferred = MarkGeometry.badgeAnchor(
+                for: item.shape, offset: badgeDiameter(longSide: longSide) * 0.64,
+                project: { frame.point($0) })
             let rect = place(number: item.number, intention: item.intention,
                              around: box, in: CGSize(width: w, height: h),
                              avoiding: placed, map: map, frame: frame, longSide: longSide,
-                             focus: designated(item.shape, frame: frame))
+                             focus: designated(item.shape, frame: frame),
+                             preferred: preferred)
             drawBadge(number: item.number, intention: item.intention, in: rect, ctx: ctx,
                       longSide: longSide)
             placed.append(rect)
@@ -240,20 +246,26 @@ enum Engraver {
 
     // MARK: - Badges
 
-    /// Huit positions candidates autour de la boîte, filtrées puis départagées.
+    /// La position du calque d'abord, huit positions de repli ensuite.
     ///
-    /// Trois contraintes dures : rester dans l'image, ne recouvrir aucun badge déjà posé,
-    /// et **s'écarter du point que la marque désigne**. Cette troisième contrainte a été
-    /// ajoutée après la première gravure de contrôle, où le badge s'était posé du côté de
-    /// la POINTE d'une flèche — le seul endroit qu'elle sert à montrer. Le fond y était
-    /// le plus uni, ce qui est exactement ce qu'on demandait à l'algorithme ; on lui
-    /// demandait la mauvaise chose.
+    /// **L'ordre est le point important.** La position préférée est exactement celle que
+    /// le calque a affichée pendant le tracé : à la queue de la flèche, au coin d'un
+    /// cadre. Tant qu'elle tient dans l'image et ne recouvre rien, c'est elle qui est
+    /// retenue — donc l'image reproduit ce que l'utilisateur a vu en traçant.
     ///
-    /// Le départage entre les positions restantes se fait sur la variance locale de
-    /// luminance : un chiffre posé sur du texte se lit mal quelle que soit sa couleur.
+    /// Les huit candidates ne servent que lorsque cette position ne marche pas : marque
+    /// au bord de l'image, ou deux badges qui se chevauchent. Elles sont alors départagées
+    /// sur la variance locale de luminance, parce qu'un chiffre posé sur du texte se lit
+    /// mal quelle que soit sa couleur.
+    ///
+    /// Cet ordre a été inversé jusqu'à ce que l'auteur compare son écran et ses PNG : la
+    /// variance décidait d'abord, et le numéro sautait d'un côté à l'autre entre les deux.
+    /// Un outil dont on ne peut pas prévoir la sortie en la regardant ne sert pas à
+    /// désigner.
     static func place(number: Int, intention: String?, around box: CGRect, in size: CGSize,
                       avoiding placed: [CGRect], map: LuminanceMap?, frame: Frame,
-                      longSide: CGFloat, focus: CGPoint? = nil) -> CGRect {
+                      longSide: CGFloat, focus: CGPoint? = nil,
+                      preferred: (point: CGPoint, anchorX: CGFloat)? = nil) -> CGRect {
         let badge = badgeSize(number: number, intention: intention, longSide: longSide)
         let gap = badgeDiameter(longSide: longSide) * 0.35
         let hw = badge.width / 2, hh = badge.height / 2
@@ -274,14 +286,29 @@ enum Engraver {
         // positions d'une marque compacte.
         let keepClear = badge.height * 1.5
 
+        func fits(_ rect: CGRect) -> Bool {
+            rect.minX >= 0 && rect.minY >= 0
+                && rect.maxX <= size.width && rect.maxY <= size.height
+                && !placed.contains(where: { $0.intersects(rect) })
+        }
+
+        // La position du calque en PREMIER, et sans départage : si elle tient dans
+        // l'image et ne recouvre aucun badge, c'est elle. L'image reproduit alors ce que
+        // l'utilisateur a vu pendant son tracé, ce qui est la seule façon pour lui de
+        // prévoir ce qu'il produit.
+        if let preferred {
+            let rect = CGRect(x: preferred.point.x - badge.width * preferred.anchorX,
+                              y: preferred.point.y - hh,
+                              width: badge.width, height: badge.height)
+            if fits(rect) { return rect }
+        }
+
         func evaluate(respectingFocus: Bool) -> CGRect? {
             var best: (rect: CGRect, score: Float)?
             for centre in candidates {
                 let rect = CGRect(x: centre.x - hw, y: centre.y - hh,
                                   width: badge.width, height: badge.height)
-                guard rect.minX >= 0, rect.minY >= 0,
-                      rect.maxX <= size.width, rect.maxY <= size.height else { continue }
-                guard !placed.contains(where: { $0.intersects(rect) }) else { continue }
+                guard fits(rect) else { continue }
                 if respectingFocus, let focus,
                    hypot(rect.midX - focus.x, rect.midY - focus.y) < keepClear { continue }
 
