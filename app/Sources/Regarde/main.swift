@@ -36,6 +36,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Journal.section("Clavier", KeyboardLayout.shared.describe())
 
         StatusItemController.shared.setUp()
+        OverlayController.shared.setUp()
         SessionCoordinator.shared.observeSystemState()
 
         HotKeyCenter.shared.onAction = { action in

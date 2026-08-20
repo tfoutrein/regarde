@@ -44,6 +44,16 @@ final class StatusItemController {
         add(to: menu, "Afficher / masquer le HUD", key: "") {
             HUDWindow.shared.toggleForced()
         }
+        add(to: menu, "Vérifier les panneaux", key: "") {
+            Journal.section("Panneaux — vérification", OverlayController.shared.audit())
+        }
+        add(to: menu, "Rejouer une reconstruction de panneaux", key: "") {
+            // Exerce le chemin de reconstruction sans débrancher d'écran. Ne remplace
+            // pas le test physique — un vrai débranchement change aussi la disposition —
+            // mais attrape les régressions du réalignement et du nettoyage.
+            OverlayController.shared.rebuildPanels(reason: "reconstruction manuelle")
+            Journal.section("Panneaux — après reconstruction", OverlayController.shared.audit())
+        }
         menu.addItem(.separator())
         add(to: menu, "Quitter Regarde", key: "q") { NSApp.terminate(nil) }
 
