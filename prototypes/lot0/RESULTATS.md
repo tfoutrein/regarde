@@ -14,9 +14,9 @@
 
 ---
 
-## Les douze critères
+## Les critères
 
-Manipulations détaillées au § 4.6 du plan de développement. Statuts : `PASS`, `FAIL`, `NON MESURÉ`.
+Quinze critères. Manipulations détaillées dans [`PROTOCOLE.md`](PROTOCOLE.md) et au § 4.6 du plan de développement. Statuts : `PASS`, `FAIL`, `NON MESURÉ`.
 
 | # | Critère | Statut | Mesure / observation |
 |---|---|---|---|
@@ -28,6 +28,7 @@ Manipulations détaillées au § 4.6 du plan de développement. Statuts : `PASS`
 | C5 | Premier point jamais perdu | | *(20 tracés)* |
 | C6 | Pas d'événement orphelin au relâchement | | |
 | C6b | Idem après `Échap` en plein tracé, bouton toujours enfoncé | | |
+| C6c | Idem après un clic droit en plein tracé, et menu contextuel intact hors tracé | | |
 | C7 | Latence p95 < 33 ms, objectif < 16 ms | | voir ci-dessous |
 | C8 | Survie plein écran et changement de Space | | |
 | C9 | Non happé par Stage Manager | | |
@@ -35,7 +36,7 @@ Manipulations détaillées au § 4.6 du plan de développement. Statuts : `PASS`
 | C11 | Appariement marque ↔ frame — étalonnage seulement au lot 0 | | |
 | C12 | Événements synthétiques (Karabiner) | | |
 
-**Bloquants pour le GO** : C1, C2, C3, C3b, C4, C5, C6, C6b. Les autres sont mesurés et
+**Bloquants pour le GO** : C1, C2, C3, C3b, C4, C5, C6, C6b, C6c. Les autres sont mesurés et
 consignés, leur parade appartient à un lot ultérieur.
 
 **C6b, ajouté après la revue adversariale.** Manipulation : ⌥⌘-glisser sur le champ de texte
