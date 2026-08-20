@@ -112,6 +112,26 @@ chemin, et la boucle complète au **lot 4**, à peu près à mi-parcours.
 
 ---
 
+## 2.5 Une release GitHub par lot
+
+Chaque lot terminé donne lieu à un tag et à une release sur
+[github.com/tfoutrein/regarde](https://github.com/tfoutrein/regarde/releases).
+
+| Lot | Version | Contenu |
+|---|---|---|
+| 0 | `v0.0.1` | prototype de risque, jeté ensuite |
+| 1 | `v0.1.0` | socle et vérité sur les permissions |
+| 2 | `v0.2.0` | marques et export — premier lot utilisable |
+| … | `v0.N.0` | un mineur par lot |
+| 8 | `v1.0.0` | distribuable |
+
+Les notes de release disent ce que le lot a livré, **ce qu'il a coûté**, et ce qui reste
+ouvert. Un lot dont les notes ne mentionnent aucune difficulté est un lot dont on a oublié
+les difficultés : elles sont la partie réutilisable.
+
+Le tag se pose sur le commit qui atteint le critère de fin du lot, pas sur le dernier
+commit en date — les corrections de documentation qui suivent appartiennent au lot suivant.
+
 ## 3. Les deux points d'arrêt
 
 ### 3.1 GO/NO-GO n°1 — après le lot 0
