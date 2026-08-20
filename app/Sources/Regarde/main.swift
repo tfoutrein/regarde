@@ -1,4 +1,6 @@
 import AppKit
+import ApplicationServices
+import CoreGraphics
 import Foundation
 import os
 
@@ -22,11 +24,50 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Journal.reset()
         Journal.write("démarrage")
 
+        // La disposition du clavier doit être résolue AVANT l'enregistrement des
+        // raccourcis : ils s'appuient sur elle pour trouver la bonne touche.
+        KeyboardLayout.shared.start(resolving: HotKeyAction.allCases.map(\.character))
+        Journal.section("Clavier", KeyboardLayout.shared.describe())
+
         StatusItemController.shared.setUp()
         SessionCoordinator.shared.observeSystemState()
 
+        HotKeyCenter.shared.onAction = { action in
+            MainActor.assumeIsolated { AppDelegate.handle(action) }
+        }
+        HotKeyCenter.shared.install()
+        Journal.section("Raccourcis", HotKeyCenter.shared.describe())
+
+        // Preuve du critère de S10 : les raccourcis Carbon fonctionnent SANS permission
+        // d'entrée. On relève l'état ici, sous la vraie identité de l'application —
+        // depuis un terminal, le binaire hériterait des autorisations du terminal parent
+        // et mesurerait la mauvaise chose. Le doctor complet vient en S11.
+        Journal.section("Permissions d'entrée au démarrage", [
+            "Surveillance de la saisie  \(CGPreflightListenEventAccess() ? "accordée" : "NON accordée")",
+            "Accessibilité              \(AXIsProcessTrusted() ? "accordée" : "NON accordée")",
+            "→ si les raccourcis répondent malgré un « NON accordée », le critère est tenu.",
+        ])
+
         TCCContact.shared.refresh(trigger: .launch)
         Task { await TCCContact.shared.startHourlyProbe() }
+    }
+
+    /// Aiguillage des raccourcis. Au lot 1, seul le diagnostic a une destination
+    /// réelle : les autres actions attendent les lots qui les portent.
+    @MainActor
+    static func handle(_ action: HotKeyAction) {
+        switch action {
+        case .openSession:
+            // ⌃⌥S ouvre le diagnostic tant qu'il n'y a pas de session à ouvrir. C'est
+            // le critère de S10 : ce raccourci doit répondre sans aucune permission.
+            DoctorWindow.shared.show()
+        case .endSession:
+            Journal.write("⌃⌥F — aucune session à terminer (lot 3)")
+        case .toggleMicrophoneLock:
+            Journal.write("⌃⌥M — verrou du micro (lot 5)")
+        case .toggleAnnotationLock:
+            Journal.write("⌃⌥L — mode annotation verrouillé (lot 2)")
+        }
     }
 
     func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool { true }
