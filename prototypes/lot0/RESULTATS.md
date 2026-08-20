@@ -47,11 +47,31 @@ le donnait pour « ignoré depuis macOS 15.4 ». C'est une bonne nouvelle pour l
 et cela rend C5 (position du premier point), C8 et C9 non automatisables : ils restent des
 jugements visuels.
 
-**C3b a été mesuré en fenêtre, pas en plein écran.** Le § 4.4 demande le plein écran ;
-`⌃⌘F` s'est révélé impossible à déclencher par script. Les trois états sont comparés dans
-des conditions strictement identiques, donc la mesure relative tient — mais le chemin de
-composition du plein écran natif n'est pas celui-là. À refaire à la main avant le lot 3 si
-l'on veut lever ce doute.
+**C3b a été mesuré en fenêtre, pas en plein écran.** Le § 4.4 demande le plein écran. Les
+trois états sont comparés dans des conditions strictement identiques, donc la mesure
+relative tient — mais le chemin de composition du plein écran natif n'est pas celui-là.
+
+**Reprise du 20 août 2026, à la fin du lot 2.** Le blocage n'est pas celui qui était noté
+ici. Le plein écran *se déclenche* par script — non par `⌃⌘F` ni par l'attribut
+`AXFullScreen`, mais par le menu *Présentation → Activer le mode plein écran*. Et
+`AXFullScreen` répondait `false` parce qu'en plein écran Chrome expose ses barres comme des
+fenêtres d'accessibilité distinctes : `window 1` était une barre de 33 px, pas la fenêtre.
+La géométrie le dit sans ambiguïté — 33 + 41 + 47 + 996 = 1117, la hauteur de l'écran.
+
+Le vrai blocage est la **lecture des relevés**. Le témoin les publie par un bouton
+« Copier le JSON », et sa cadence n'apparaît pas dans `document.title` — seules les fuites
+y sont. Les lire demande `execute javascript` d'AppleScript, désactivé dans Chrome, dont
+l'activation (*Affichage → Développeur → Autoriser JavaScript dans les événements
+AppleScript*) donnerait à tout script local l'exécution de JavaScript dans les onglets
+authentifiés de l'utilisateur. Ce n'est pas une décision d'outillage, c'est une décision de
+sécurité, et elle appartient à l'auteur.
+
+Deux voies pour lever la dette, au choix :
+
+1. **Autoriser JavaScript dans les événements AppleScript**, le temps de la mesure, et
+   relancer un pilotage complet — le reste du protocole est automatisable.
+2. **À la main** : plein écran, touche `2`, attendre le calibrage, six relevés de 30 s dans
+   l'ordre puis dans l'ordre inverse, « Copier le JSON », coller ici.
 
 **Validé par ailleurs, hors grille.** Deux défauts trouvés à l'usage et corrigés : ⌥⌘Z se
 déclenchait sur la touche `W` d'un clavier AZERTY (code de touche physique au lieu du
