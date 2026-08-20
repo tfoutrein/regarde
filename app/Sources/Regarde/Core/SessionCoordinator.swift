@@ -76,6 +76,29 @@ final class SessionCoordinator {
 
         guard transition(to: .arming) else { return }
 
+        // Le répertoire AVANT la cible, et son échec refuse la session.
+        //
+        // Avant la cible, parce qu'échouer après aurait laissé la cible figée sur une
+        // session qui ne s'ouvre pas — constaté en la refusant pour de bon, avec
+        // `chmod 500` sur ~/Regarde/sessions.
+        //
+        // Et un refus, pas un `try?`. Cette ligne était `sessionDirectory = try? …` : la
+        // session s'ouvrait quand même, l'utilisateur posait ses marques, et à ⌃⌥F le
+        // `if let directory` sautait toute la publication. Le journal disait « 0 image
+        // écrite » sans un mot sur la cause, et quatre marques partaient à la poubelle.
+        // Le mode éclair, lui, journalisait déjà son échec : l'asymétrie suffisait à
+        // montrer que l'omission n'était pas un choix.
+        let directory: URL
+        do {
+            directory = try SessionPaths.makeSessionDirectory()
+        } catch {
+            Journal.write("⚠ répertoire de session impossible : \(error)")
+            HUDWindow.shared.announce("Impossible d'écrire les artefacts",
+                                      detail: SessionPaths.root.path, duration: 5)
+            transition(to: .blocked, reason: "répertoire de session : \(error)")
+            return
+        }
+
         guard let target = TargetWindow.shared.acquire() else {
             HUDWindow.shared.announce("Aucune fenêtre à annoter",
                                       detail: "Mets l'application au premier plan, puis ⌃⌥S",
@@ -85,7 +108,7 @@ final class SessionCoordinator {
         }
 
         MarkStore.shared.reset()
-        sessionDirectory = try? SessionPaths.makeSessionDirectory()
+        sessionDirectory = directory
         Task { await MarkCapture.shared.reset() }
         OptionGate.shared.currentMode = .active
         transition(to: .recording)
@@ -133,6 +156,14 @@ final class SessionCoordinator {
                     written = frames.count
                 } catch {
                     await MainActor.run { Journal.write("⚠ gravure : \(error)") }
+                }
+            } else {
+                // Ne peut plus arriver depuis que l'ouverture refuse un répertoire
+                // manquant, mais se taire ici serait rejouer exactement le défaut qu'on
+                // vient de corriger.
+                await MarkCapture.shared.reset()
+                await MainActor.run {
+                    Journal.write("⚠ aucun répertoire de session — \(keep.count) marque(s) perdue(s)")
                 }
             }
             await MainActor.run {

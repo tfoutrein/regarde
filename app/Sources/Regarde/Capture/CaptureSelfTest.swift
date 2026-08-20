@@ -119,14 +119,65 @@ enum CaptureSelfTest {
               wideCrop.sourceRect.insetBy(dx: -1, dy: -1).contains(wideInPixels),
               "→ marque \(wideInPixels) dans \(wideCrop.sourceRect)")
 
-        // Et la mise à la forme finale la ramène sous la borne, par réduction.
-        let fitted = Cropper.fitToTiles(wideCrop.image)
+        // Le recadrage sort déjà à sa forme finale, réduction comprise.
         check(t, "la forme finale tient sous 896 px de côté long",
-              max(fitted.width, fitted.height) <= 896,
-              "→ \(fitted.width)×\(fitted.height)")
+              max(wideCrop.image.width, wideCrop.image.height) <= 896,
+              "→ \(wideCrop.image.width)×\(wideCrop.image.height)")
         check(t, "la forme finale est alignée sur la tuile",
-              fitted.width % 28 == 0 && fitted.height % 28 == 0,
-              "→ \(fitted.width)×\(fitted.height)")
+              wideCrop.image.width % 28 == 0 && wideCrop.image.height % 28 == 0,
+              "→ \(wideCrop.image.width)×\(wideCrop.image.height)")
+
+        // ── Le facteur rendu est le facteur RÉEL, sur les deux axes ─────────────
+        //
+        // Il était déduit après coup d'un rapport de largeurs qui mélangeait la réduction
+        // et le rognage d'alignement. Sur un recadrage plus haut que large, le graveur
+        // recevait un facteur faux et posait la forme des dizaines de pixels à côté de ce
+        // qu'elle désigne, jusqu'à 18 % trop courte.
+        for (label, box) in [
+            ("large", NormRect(bounding: [NormPoint(x: 0.18, y: 0.48), NormPoint(x: 0.78, y: 0.53)])),
+            ("haut et étroit", NormRect(bounding: [NormPoint(x: 0.48, y: 0.12), NormPoint(x: 0.52, y: 0.88)])),
+            ("petit", NormRect(bounding: [NormPoint(x: 0.45, y: 0.45), NormPoint(x: 0.48, y: 0.47)])),
+        ] {
+            let r = Cropper.crop(image, around: box)
+            let realX = CGFloat(r.image.width) / r.sourceRect.width
+            let realY = CGFloat(r.image.height) / r.sourceRect.height
+            check(t, "le facteur annoncé est le facteur réel — cas \(label)",
+                  abs(r.scaleX - realX) < 0.0001 && abs(r.scaleY - realY) < 0.0001,
+                  "→ annoncés \(r.scaleX)/\(r.scaleY), réels \(realX)/\(realY)")
+            check(t, "les deux axes restent proches — cas \(label)",
+                  abs(realX - realY) / max(realX, realY) < 0.01,
+                  "→ x=\(realX) y=\(realY)")
+            check(t, "les dimensions restent alignées sur la tuile — cas \(label)",
+                  r.image.width % 28 == 0 && r.image.height % 28 == 0,
+                  "→ \(r.image.width)×\(r.image.height)")
+        }
+
+        // ── La flèche se recadre sur sa POINTE, pas sur son trait ───────────────
+        let tail = NormPoint(x: 0.20, y: 0.20), head = NormPoint(x: 0.70, y: 0.70)
+        let arrow = MarkShape.arrow(from: tail, to: head)
+        let focus = arrow.focusBox
+        check(t, "la zone d'intérêt d'une flèche est centrée sur sa pointe",
+              abs(focus.x + focus.w / 2 - head.x) < 0.001
+              && abs(focus.y + focus.h / 2 - head.y) < 0.001,
+              "→ centre (\(focus.x + focus.w / 2), \(focus.y + focus.h / 2)) vs pointe (\(head.x), \(head.y))")
+        check(t, "la zone d'intérêt ne couvre pas tout le trait",
+              focus.w < arrow.boundingBox.w * 0.75)
+        check(t, "la zone d'intérêt grandit avec la flèche",
+              MarkShape.arrow(from: NormPoint(x: 0, y: 0), to: NormPoint(x: 0.8, y: 0)).focusBox.w
+              > MarkShape.arrow(from: NormPoint(x: 0, y: 0), to: NormPoint(x: 0.1, y: 0)).focusBox.w)
+        check(t, "un cadre reste sa propre zone d'intérêt",
+              MarkShape.rect(smallBox).focusBox == smallBox)
+
+        // Le recadrage réel doit mettre la pointe près du centre de l'image.
+        let arrowCrop = Cropper.crop(image, around: focus)
+        let headPx = CGPoint(x: CGFloat(head.x) * CGFloat(image.width),
+                             y: (1 - CGFloat(head.y)) * CGFloat(image.height))
+        let offCentre = hypot(headPx.x - arrowCrop.sourceRect.midX,
+                              headPx.y - arrowCrop.sourceRect.midY)
+        check(t, "la pointe tombe dans le tiers central du recadrage",
+              abs(headPx.x - arrowCrop.sourceRect.midX) < arrowCrop.sourceRect.width / 6
+              && abs(headPx.y - arrowCrop.sourceRect.midY) < arrowCrop.sourceRect.height / 6,
+              "→ écart (\(Int(headPx.x - arrowCrop.sourceRect.midX)), \(Int(headPx.y - arrowCrop.sourceRect.midY))) px sur \(Int(arrowCrop.sourceRect.width))×\(Int(arrowCrop.sourceRect.height))")
 
         let wide = Cropper.crop(image, around: NormRect(bounding: [
             NormPoint(x: 0.05, y: 0.05), NormPoint(x: 0.95, y: 0.95)]))

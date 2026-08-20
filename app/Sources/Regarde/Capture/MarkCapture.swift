@@ -120,27 +120,31 @@ actor MarkCapture {
         let capture = try await ScreenCapture.shared.capture(displayID: mark.displayID)
         let captureSize = CGSize(width: capture.width, height: capture.height)
 
-        let cropped = Cropper.crop(capture, around: mark.shape.boundingBox)
+        // `focusBox` et non `boundingBox` : pour une flèche, le sujet est sa POINTE, pas
+        // le rectangle qui contient le trait. Centrer sur la boîte englobante mettait le
+        // milieu du trait au centre de l'image et laissait l'élément désigné sur un bord,
+        // souvent coupé.
+        let cropped = Cropper.crop(capture, around: mark.shape.focusBox)
 
-        // Mise à la forme finale : côté long ramené sous 896 px par réduction — jamais
-        // par rognage, qui couperait la marque — puis dimensions alignées sur la tuile.
-        //
-        // L'image entière suit un autre palier : son côté long n'a pas à tenir dans 896,
-        // c'est le budget de tuiles qui la borne.
+        // Le recadreur a déjà tout fait pour un recadrage, facteur compris. L'image
+        // entière suit un autre palier : son côté long n'a pas à tenir dans 896, c'est le
+        // budget de tuiles qui la borne.
         var image = cropped.image
+        var scaleX = cropped.scaleX, scaleY = cropped.scaleY
         if cropped.kind == .full {
             let target = Cropper.tileTarget(width: image.width, height: image.height,
                                             budget: Self.standardBudget)
-            image = Cropper.scale(image, toLongSide: max(target.width, target.height))
-        } else {
-            image = Cropper.fitToTiles(image)
+            let reduced = Cropper.scale(image, toLongSide: max(target.width, target.height))
+            scaleX = CGFloat(reduced.width) / CGFloat(image.width)
+            scaleY = CGFloat(reduced.height) / CGFloat(image.height)
+            image = reduced
         }
-        let scale = CGFloat(image.width) / CGFloat(cropped.image.width)
 
         pending.append(Pending(
             number: mark.number, shape: mark.shape, image: image,
             frame: Engraver.Frame(captureSize: captureSize,
-                                  sourceRect: cropped.sourceRect, scale: scale)))
+                                  sourceRect: cropped.sourceRect,
+                                  scaleX: scaleX, scaleY: scaleY)))
         log.notice("marque \(mark.number) capturée — \(cropped.kind.rawValue) \(image.width)×\(image.height)")
     }
 

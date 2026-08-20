@@ -42,12 +42,30 @@ enum Engraver {
         let captureSize: CGSize
         /// Rectangle prélevé, en pixels, origine en HAUT à gauche.
         let sourceRect: CGRect
-        /// Facteur appliqué après le prélèvement.
-        let scale: CGFloat
+        /// Facteurs appliqués après le prélèvement, un par axe.
+        ///
+        /// Deux et non un : l'alignement sur la tuile de facturation et l'arrondi entier
+        /// du prélèvement ne tombent pas juste en même temps, et reporter tout l'écart
+        /// sur un seul axe décale la gravure.
+        let scaleX: CGFloat
+        let scaleY: CGFloat
+
+        init(captureSize: CGSize, sourceRect: CGRect,
+             scaleX: CGFloat, scaleY: CGFloat) {
+            self.captureSize = captureSize
+            self.sourceRect = sourceRect
+            self.scaleX = scaleX
+            self.scaleY = scaleY
+        }
+
+        init(captureSize: CGSize, sourceRect: CGRect, scale: CGFloat) {
+            self.init(captureSize: captureSize, sourceRect: sourceRect,
+                      scaleX: scale, scaleY: scale)
+        }
 
         /// Taille de l'image finale.
         var outputSize: CGSize {
-            CGSize(width: sourceRect.width * scale, height: sourceRect.height * scale)
+            CGSize(width: sourceRect.width * scaleX, height: sourceRect.height * scaleY)
         }
 
         /// Point normalisé écran → point du contexte de dessin (origine en bas à gauche).
@@ -57,8 +75,8 @@ enum Engraver {
             // `sourceRect` compte depuis le haut : son bord bas en repère bas-gauche est
             // à `captureH - maxY`.
             let originBottom = captureSize.height - sourceRect.maxY
-            return CGPoint(x: (xCapture - sourceRect.minX) * scale,
-                           y: (yCaptureBottom - originBottom) * scale)
+            return CGPoint(x: (xCapture - sourceRect.minX) * scaleX,
+                           y: (yCaptureBottom - originBottom) * scaleY)
         }
 
         func rect(_ r: NormRect) -> CGRect {
@@ -266,6 +284,16 @@ enum Engraver {
                       avoiding placed: [CGRect], map: LuminanceMap?, frame: Frame,
                       longSide: CGFloat, focus: CGPoint? = nil,
                       preferred: (point: CGPoint, anchorX: CGFloat)? = nil) -> CGRect {
+        // Les positions candidates s'appuient sur la partie VISIBLE de la forme.
+        //
+        // Depuis que le recadrage se centre sur ce que la marque désigne, une flèche
+        // longue entre dans l'image par un coin : sa boîte englobante est en grande partie
+        // dehors, et des candidates calculées dessus sortent presque toutes du cadre. Le
+        // repli tombait alors sur la seule qui restait — juste sous la pointe, c'est-à-dire
+        // sur le sujet.
+        let box = box.intersection(CGRect(origin: .zero, size: size)).isNull
+            ? box : box.intersection(CGRect(origin: .zero, size: size))
+
         let badge = badgeSize(number: number, intention: intention, longSide: longSide)
         let gap = badgeDiameter(longSide: longSide) * 0.35
         let hw = badge.width / 2, hh = badge.height / 2
@@ -318,9 +346,27 @@ enum Engraver {
             return best?.rect
         }
 
-        // La contrainte d'écart est RELÂCHÉE si elle ne laisse rien : mieux vaut un badge
-        // près de la pointe qu'un badge rabattu dans un coin, sans rapport avec sa marque.
+        // La contrainte d'écart est RELÂCHÉE en dernier recours seulement : un badge posé
+        // sur ce que la marque désigne masque le défaut à montrer, ce qui est pire qu'un
+        // badge un peu loin. On essaie donc d'abord de le poser ailleurs, même sur un fond
+        // chargé — d'où le second passage, qui ignore la variance et se contente de la
+        // première position tenant dans l'image et dégagée du sujet.
         if let rect = evaluate(respectingFocus: true) { return rect }
+
+        if let focus {
+            // Dernier essai avant de renoncer : les huit positions autour du POINT
+            // DÉSIGNÉ lui-même, écartées du rayon de dégagement. Elles existent toujours,
+            // puisque le recadrage est justement centré dessus.
+            let r = badge.height * 1.9
+            for i in 0..<8 {
+                let angle = CGFloat(i) * .pi / 4
+                let centre = CGPoint(x: focus.x + cos(angle) * r, y: focus.y + sin(angle) * r)
+                let rect = CGRect(x: centre.x - hw, y: centre.y - hh,
+                                  width: badge.width, height: badge.height)
+                if fits(rect) { return rect }
+            }
+        }
+
         if let rect = evaluate(respectingFocus: false) { return rect }
 
         // Aucune position candidate ne convient — marque au coin de l'image, ou huit

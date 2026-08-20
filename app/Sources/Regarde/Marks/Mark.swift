@@ -40,6 +40,10 @@ struct NormPoint: Codable, Hashable, Sendable {
 struct NormRect: Codable, Hashable, Sendable {
     var x, y, w, h: Double
 
+    init(x: Double, y: Double, w: Double, h: Double) {
+        self.x = x; self.y = y; self.w = w; self.h = h
+    }
+
     func local(in size: CGSize) -> CGRect {
         CGRect(x: CGFloat(x) * size.width, y: CGFloat(y) * size.height,
                width: CGFloat(w) * size.width, height: CGFloat(h) * size.height)
@@ -74,6 +78,34 @@ enum MarkShape: Codable, Hashable, Sendable {
     }
 
     var boundingBox: NormRect { NormRect(bounding: points) }
+
+    /// Ce sur quoi le recadrage doit se centrer — qui n'est pas toujours la forme.
+    ///
+    /// Une flèche est un CHEMIN vers son sujet, pas le sujet. Centrer sur sa boîte
+    /// englobante met le milieu du trait au centre de l'image et laisse ce qu'elle
+    /// désigne sur un bord, souvent coupé. L'agent reçoit alors un gros plan sur du vide
+    /// traversé par un trait.
+    ///
+    /// La zone retenue est donc un carré autour de la POINTE, dimensionné sur la
+    /// longueur de la flèche : un geste ample désigne une zone, un geste court désigne un
+    /// détail, et la dilatation qui suit rend visible une bonne part du trait dans les
+    /// deux cas.
+    ///
+    /// Les formes fermées, elles, sont leur propre sujet : ce qu'on encadre est ce dont
+    /// on parle.
+    var focusBox: NormRect {
+        switch self {
+        case .arrow(let from, let to):
+            let dx = to.x - from.x, dy = to.y - from.y
+            let length = (dx * dx + dy * dy).squareRoot()
+            // 22 % de la longueur, avec un plancher : une flèche minuscule ne doit pas
+            // produire une zone d'intérêt de quelques pixels.
+            let half = max(length * 0.22, 0.010)
+            return NormRect(x: to.x - half, y: to.y - half, w: half * 2, h: half * 2)
+        case .point, .rect, .highlight:
+            return boundingBox
+        }
+    }
 
     /// Comment la forme est peinte.
     ///

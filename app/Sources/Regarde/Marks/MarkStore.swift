@@ -163,6 +163,13 @@ final class MarkStore {
         clear()
         nextNumber = 1
         tool = .arrow
+
+        // Les recadrages en attente partent avec le modèle. Sans cela, une session
+        // abandonnée laisserait ses items 1 à 4 dans le pot alors que la numérotation
+        // repart à 1 : la publication suivante ferait correspondre l'item périmé 1 à la
+        // marque neuve 1 et graverait les deux dans `marque-01.png`, dernier écrivain
+        // gagnant. Une image d'une session morte ressortirait dans un dossier vivant.
+        Task { await MarkCapture.shared.reset() }
     }
 
     // MARK: - Rendu
