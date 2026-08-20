@@ -2,12 +2,10 @@ import AppKit
 import SwiftUI
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Fenêtre de diagnostic — coquille posée en S9, remplie en S11 et S12.
+// Fenêtre de diagnostic — S12
 //
-// Elle existe dès maintenant pour une raison : c'est la seule fenêtre que l'application
-// ouvre, et le raccourci qui l'appelle (S10) doit fonctionner AVANT que toute permission
-// soit accordée. Poser sa place tôt évite d'avoir à démêler plus tard son activation de
-// celle du reste de l'interface.
+// C'est la seule fenêtre que l'application ouvre, et le raccourci qui l'appelle (S10)
+// fonctionne AVANT que toute permission soit accordée — c'est même sa raison d'être.
 // ─────────────────────────────────────────────────────────────────────────────
 
 @MainActor
@@ -45,19 +43,5 @@ final class DoctorWindow {
     private func bringToFront(_ window: NSWindow) {
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
-    }
-}
-
-private struct DoctorView: View {
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Diagnostic")
-                .font(.title2.weight(.semibold))
-            Text("Le moteur du doctor arrive en S11, son interface en S12.")
-                .foregroundStyle(.secondary)
-            Spacer()
-        }
-        .padding(20)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 }
