@@ -18,9 +18,13 @@ final class BadgeLayer: CALayer {
 
     private let label = CATextLayer()
 
-    /// Diamètre de la pastille. Assez grand pour rester lisible après le recadrage du
-    /// lot 2, qui peut réduire l'image.
+    /// Diamètre de la pastille, en POINTS. Référence unique : le graveur la reprend et la
+    /// convertit à l'échelle de l'image, au lieu d'avoir sa propre formule.
     static let diameter: CGFloat = 22
+
+    /// Corps du chiffre, en fraction du diamètre. Partagé avec la gravure pour la même
+    /// raison.
+    static let fontRatio: CGFloat = 13.0 / 22.0
 
     override init() {
         super.init()
@@ -49,7 +53,7 @@ final class BadgeLayer: CALayer {
 
         label.alignmentMode = .center
         label.foregroundColor = NSColor.white.cgColor
-        label.fontSize = 13
+        label.fontSize = Self.diameter * Self.fontRatio
         label.font = Self.font
         label.actions = ["contents": NSNull(), "bounds": NSNull(), "position": NSNull()]
         addSublayer(label)
@@ -68,7 +72,7 @@ final class BadgeLayer: CALayer {
     /// Propriété CALCULÉE et non stockée : `NSFont` n'est pas `Sendable`, donc Swift 6
     /// refuse un `static let`. La recréer à chaque appel ne coûte rien, AppKit met les
     /// fontes en cache.
-    private static var font: NSFont { .systemFont(ofSize: 13, weight: .semibold) }
+    private static var font: NSFont { .systemFont(ofSize: diameter * fontRatio, weight: .semibold) }
 
     /// Renseigne le contenu. Sans intention, la pastille est ronde ; avec, elle s'allonge
     /// en gélule pour porter le libellé.

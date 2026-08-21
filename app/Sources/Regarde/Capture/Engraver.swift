@@ -81,6 +81,23 @@ enum Engraver {
             max(1.2, InkStyle.width * pointScale * min(scaleX, scaleY))
         }
 
+        /// Diamètre du badge, en pixels de l'image finale.
+        ///
+        /// **Celui du calque, exactement**, pour la même raison que l'épaisseur du trait :
+        /// `BadgeLayer.diameter` points font `× pointScale` pixels natifs, que la
+        /// réduction ramène à `× scale`.
+        ///
+        /// La formule précédente — `max(26 px, 2,2 % du côté long)` — donnait 39 px sur
+        /// une image de 1792 px là où l'écran en montrait 23 : la pastille faisait
+        /// presque le double. Même défaut que le trait, même origine, relevé par l'auteur
+        /// dans la foulée.
+        ///
+        /// Le plancher de 16 px protège la lisibilité du chiffre sur un recadrage très
+        /// réduit — c'est le seul écart toléré, et il ne joue qu'aux échelles extrêmes.
+        var badgeDiameter: CGFloat {
+            max(16, BadgeLayer.diameter * pointScale * min(scaleX, scaleY))
+        }
+
         /// Taille de l'image finale.
         var outputSize: CGSize {
             CGSize(width: sourceRect.width * scaleX, height: sourceRect.height * scaleY)
@@ -113,9 +130,6 @@ enum Engraver {
     }
 
     // MARK: - Dimensions, calculées sur l'image finale
-
-    /// Diamètre du badge : `max(26 px, 2,2 % du côté long)`.
-    static func badgeDiameter(longSide: CGFloat) -> CGFloat { max(26, longSide * 0.022) }
 
     static let ink = CGColor(srgbRed: 1.0, green: 0.231, blue: 0.188, alpha: 1.0)
     static let washAlpha: CGFloat = 0.22
@@ -174,15 +188,16 @@ enum Engraver {
             // L'écart est proportionné au badge, donc à l'image : 14 points à l'écran
             // n'ont pas la même signification dans un recadrage de 896 px.
             let preferred = MarkGeometry.badgeAnchor(
-                for: item.shape, offset: badgeDiameter(longSide: longSide) * 0.64,
+                for: item.shape, offset: frame.badgeDiameter * 0.64,
                 project: { frame.point($0) })
             let rect = place(number: item.number, intention: item.intention,
                              around: box, in: CGSize(width: w, height: h),
-                             avoiding: placed, map: map, frame: frame, longSide: longSide,
+                             avoiding: placed, map: map, frame: frame,
+                             diameter: frame.badgeDiameter,
                              focus: designated(item.shape, frame: frame),
                              preferred: preferred)
             drawBadge(number: item.number, intention: item.intention, in: rect, ctx: ctx,
-                      longSide: longSide)
+                      diameter: frame.badgeDiameter)
             placed.append(rect)
         }
 
@@ -322,7 +337,7 @@ enum Engraver {
     /// désigner.
     static func place(number: Int, intention: String?, around box: CGRect, in size: CGSize,
                       avoiding placed: [CGRect], map: LuminanceMap?, frame: Frame,
-                      longSide: CGFloat, focus: CGPoint? = nil,
+                      diameter: CGFloat, focus: CGPoint? = nil,
                       preferred: (point: CGPoint, anchorX: CGFloat)? = nil) -> CGRect {
         // Les positions candidates s'appuient sur la partie VISIBLE de la forme.
         //
@@ -334,8 +349,8 @@ enum Engraver {
         let box = box.intersection(CGRect(origin: .zero, size: size)).isNull
             ? box : box.intersection(CGRect(origin: .zero, size: size))
 
-        let badge = badgeSize(number: number, intention: intention, longSide: longSide)
-        let gap = badgeDiameter(longSide: longSide) * 0.35
+        let badge = badgeSize(number: number, intention: intention, diameter: diameter)
+        let gap = diameter * 0.35
         let hw = badge.width / 2, hh = badge.height / 2
 
         let candidates: [CGPoint] = [
@@ -420,11 +435,10 @@ enum Engraver {
                       width: badge.width, height: badge.height)
     }
 
-    static func badgeSize(number: Int, intention: String?, longSide: CGFloat) -> CGSize {
-        let d = badgeDiameter(longSide: longSide)
+    static func badgeSize(number: Int, intention: String?, diameter d: CGFloat) -> CGSize {
         if let intention {
             let text = "\(number) · \(intention)"
-            let width = textWidth(text, size: d * 0.62) + d * 0.9
+            let width = textWidth(text, size: d * BadgeLayer.fontRatio) + d * 0.9
             return CGSize(width: max(d, width), height: d)
         }
         // Capsule ×1,45 dès deux chiffres : un « 12 » dans un disque rond déborderait ou
@@ -433,8 +447,7 @@ enum Engraver {
     }
 
     private static func drawBadge(number: Int, intention: String?, in rect: CGRect,
-                                  ctx: CGContext, longSide: CGFloat) {
-        let d = badgeDiameter(longSide: longSide)
+                                  ctx: CGContext, diameter d: CGFloat) {
         ctx.saveGState()
 
         // Disque ou capsule plein vermillon, cerné de blanc : le cerne détache le badge
@@ -450,7 +463,7 @@ enum Engraver {
         ctx.strokePath()
 
         let text = intention.map { "\(number) · \($0)" } ?? "\(number)"
-        drawText(text, in: rect, size: d * 0.62, ctx: ctx)
+        drawText(text, in: rect, size: d * BadgeLayer.fontRatio, ctx: ctx)
         ctx.restoreGState()
     }
 

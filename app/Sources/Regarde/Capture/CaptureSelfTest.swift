@@ -356,8 +356,18 @@ enum CaptureSelfTest {
                                   sourceRect: CGRect(x: 0, y: 0, width: 3000, height: 2000),
                                   scaleX: 0.08, scaleY: 0.08, pointScale: 2)
         check(t, "le trait ne descend jamais sous un pixel et demi", tiny.inkWidth >= 1.2)
-        check(t, "le badge ne descend jamais sous 26 px",
-              Engraver.badgeDiameter(longSide: 100) == 26)
+        // ── Le badge gravé fait la taille de celui du calque ───────────────────
+        //
+        // Il suivait « max(26 px, 2,2 % du côté long » : 39 px sur une image de 1792 là
+        // où l'écran en montrait 23, soit presque le double. Même défaut que l'épaisseur
+        // du trait, même origine — une formule qui ignore l'échelle.
+        check(t, "sur Retina réduit de moitié, le badge fait la taille du calque",
+              abs(retinaHalf.badgeDiameter - BadgeLayer.diameter) < 0.01,
+              "→ \(retinaHalf.badgeDiameter) contre \(BadgeLayer.diameter) au calque")
+        check(t, "sans réduction, le badge fait ses pixels natifs",
+              abs(retinaFull.badgeDiameter - BadgeLayer.diameter * 2) < 0.01,
+              "→ \(retinaFull.badgeDiameter)")
+        check(t, "le badge ne descend jamais sous 16 px", tiny.badgeDiameter >= 16)
 
         // Le halo est pris SUR l'épaisseur, jamais ajouté autour : l'encombrement total
         // du trait gravé doit être celui du calque, au pixel près. Mesuré à l'usage, un
@@ -370,13 +380,13 @@ enum CaptureSelfTest {
               "→ \(Engraver.minWidthForHalo - Engraver.haloEdge * 2) px d'encre au minimum")
 
         // Une capsule à deux chiffres : un « 12 » dans un disque rond déborderait.
-        let one = Engraver.badgeSize(number: 9, intention: nil, longSide: 896)
-        let two = Engraver.badgeSize(number: 12, intention: nil, longSide: 896)
+        let one = Engraver.badgeSize(number: 9, intention: nil, diameter: 22)
+        let two = Engraver.badgeSize(number: 12, intention: nil, diameter: 22)
         check(t, "un chiffre seul donne un disque rond", one.width == one.height)
         check(t, "deux chiffres donnent une capsule ×1,45",
               abs(two.width / two.height - 1.45) < 0.01, "→ \(two.width / two.height)")
         let labelled = Engraver.badgeSize(number: 3, intention: "texte à corriger",
-                                          longSide: 896)
+                                          diameter: 22)
         check(t, "une intention allonge le badge", labelled.width > two.width)
 
         // Le halo bascule sur la luminance du fond. Sur fond blanc il doit être sombre,
@@ -404,13 +414,13 @@ enum CaptureSelfTest {
         let size = CGSize(width: 400, height: 400)
         let box = CGRect(x: 150, y: 150, width: 100, height: 80)
         let first = Engraver.place(number: 1, intention: nil, around: box, in: size,
-                                   avoiding: [], map: nil, frame: frame, longSide: 400)
+                                   avoiding: [], map: nil, frame: frame, diameter: 22)
         check(t, "le premier badge reste dans l'image",
               CGRect(origin: .zero, size: size).contains(first))
         check(t, "le premier badge ne recouvre pas la forme", !first.intersects(box))
 
         let second = Engraver.place(number: 2, intention: nil, around: box, in: size,
-                                    avoiding: [first], map: nil, frame: frame, longSide: 400)
+                                    avoiding: [first], map: nil, frame: frame, diameter: 22)
         check(t, "le second badge évite le premier", !second.intersects(first))
 
         // Le badge ne se pose PAS du côté de la pointe. C'est arrivé sur la première
@@ -422,7 +432,7 @@ enum CaptureSelfTest {
         let away = Engraver.place(number: 4, intention: nil,
                                   around: Engraver.boundingRect(of: shape, frame: frame),
                                   in: size, avoiding: [], map: nil, frame: frame,
-                                  longSide: 400, focus: head)
+                                   diameter: 22, focus: head)
         check(t, "le badge s'écarte de la pointe",
               hypot(away.midX - head!.x, away.midY - head!.y) >= 26 * 1.5,
               "→ distance \(hypot(away.midX - head!.x, away.midY - head!.y))")
@@ -448,12 +458,12 @@ enum CaptureSelfTest {
         ]
         for (label, shape) in shapes {
             let want = MarkGeometry.badgeAnchor(
-                for: shape, offset: Engraver.badgeDiameter(longSide: 400) * 0.64,
+                for: shape, offset: 22 * 0.64,
                 project: { frame.point($0) })
             let got = Engraver.place(number: 1, intention: nil,
                                      around: Engraver.boundingRect(of: shape, frame: frame),
                                      in: size, avoiding: [], map: nil, frame: frame,
-                                     longSide: 400,
+                                   diameter: 22,
                                      focus: Engraver.designated(shape, frame: frame),
                                      preferred: want)
             let anchored = CGPoint(x: got.minX + got.width * want.anchorX, y: got.midY)
@@ -467,7 +477,7 @@ enum CaptureSelfTest {
         let out = Engraver.place(number: 2, intention: nil,
                                  around: CGRect(x: 150, y: 150, width: 80, height: 60),
                                  in: size, avoiding: [], map: nil, frame: frame,
-                                 longSide: 400,
+                                   diameter: 22,
                                  preferred: (CGPoint(x: -900, y: -900), 0))
         check(t, "une position préférée hors cadre bascule sur les candidates",
               CGRect(origin: .zero, size: size).contains(out), "→ \(out)")
@@ -478,11 +488,11 @@ enum CaptureSelfTest {
         let first2 = Engraver.place(number: 1, intention: nil,
                                     around: CGRect(x: 150, y: 150, width: 80, height: 60),
                                     in: size, avoiding: [], map: nil, frame: frame,
-                                    longSide: 400, preferred: same)
+                                   diameter: 22, preferred: same)
         let second2 = Engraver.place(number: 2, intention: nil,
                                      around: CGRect(x: 150, y: 150, width: 80, height: 60),
                                      in: size, avoiding: [first2], map: nil, frame: frame,
-                                     longSide: 400, preferred: same)
+                                   diameter: 22, preferred: same)
         check(t, "deux badges de même position préférée ne se superposent pas",
               !first2.intersects(second2))
 
@@ -491,7 +501,7 @@ enum CaptureSelfTest {
         let atEdge = Engraver.place(number: 3, intention: nil,
                                     around: CGRect(x: 2, y: 370, width: 40, height: 28),
                                     in: size, avoiding: [], map: nil, frame: frame,
-                                    longSide: 400)
+                                    diameter: 22)
         check(t, "une marque au bord garde son badge dans l'image",
               CGRect(origin: .zero, size: size).contains(atEdge), "→ \(atEdge)")
 
