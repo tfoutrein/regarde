@@ -32,11 +32,42 @@ enum Cropper {
     /// Facteur de dilatation de la boîte englobante.
     static let dilation: CGFloat = 2.5
 
-    /// Bornes du côté long, en pixels natifs.
-    static let longSideRange: ClosedRange<CGFloat> = 640...896
+    /// Bornes du côté long de l'image écrite, en pixels.
+    ///
+    /// La borne haute était 896, reprise de la spécification. Elle a été écrite avant
+    /// d'avoir vu un résultat, et elle écrasait les zones plates sans rien économiser :
+    /// un cadre tracé autour d'un paragraphe sortait en 896×112, soit **128 tuiles** de
+    /// facturation quand le palier standard en autorise 1568. Le texte y était réduit au
+    /// quart de sa taille native — illisible — pour un dixième du budget disponible.
+    ///
+    /// C'est la SURFACE qui coûte, pas le côté long. La borne haute passe donc à 1792 px
+    /// et le vrai frein devient le budget de tuiles ci-dessous.
+    static let longSideRange: ClosedRange<CGFloat> = 640...1792
+
+    /// Budget de tuiles d'un recadrage.
+    ///
+    /// 1024 est exactement ce qu'occupait une image carrée de 896 px sous l'ancienne
+    /// règle : les recadrages compacts gardent donc leur coût, seules les zones plates ou
+    /// allongées gagnent la place qu'elles laissaient perdue.
+    static let cropTileBudget: CGFloat = 1024
 
     /// Au-delà, l'image entière coûte moins cher en contexte perdu qu'en jetons gagnés.
     static let fullThreshold: CGFloat = 0.40
+
+    /// Réduction maximale tolérée avant que le sujet ne devienne illisible.
+    ///
+    /// Sur un écran Retina, un facteur de 0,5 rend exactement la densité que l'utilisateur
+    /// a sous les yeux : le texte de l'image est lisible comme il l'était à l'écran.
+    /// En dessous, il devient plus petit que ce qu'il regardait — et l'agent reçoit une
+    /// bouillie de pixels là où il faut lire un libellé mal aligné.
+    ///
+    /// Sans ce plancher, une marque large entraînait une zone dilatée de 3500 px ramenée
+    /// à 896 : un quart de la taille native, la moitié de la taille logique. Le premier
+    /// cadre tracé autour d'un paragraphe est ressorti flou.
+    ///
+    /// Le contexte cède avant la netteté : quand les deux ne tiennent pas ensemble, on
+    /// resserre le cadrage plutôt que d'écraser les pixels.
+    static let minScale: CGFloat = 0.5
 
     enum Kind: String, Sendable {
         case crop, full
@@ -104,8 +135,30 @@ enum Cropper {
         // la marque : un surlignage de 1037 px natifs se retrouvait dans un recadrage de
         // 896 px, dont il débordait des deux côtés. La borne haute ne concerne pas la
         // ZONE prélevée mais l'image FINALE, et c'est la réduction qui l'y amène.
-        let rect = align(growToMinimum(dilated, in: full), in: full)
+        let tightened = tighten(dilated, around: box, in: full)
+        let rect = align(growToMinimum(tightened, in: full), in: full)
         return finish(image, prelevement: rect, in: full)
+    }
+
+    /// Resserre un prélèvement trop large pour rester net, sans jamais couper la marque.
+    ///
+    /// L'ordre des priorités est ici : la marque entière d'abord, la netteté ensuite, le
+    /// contexte en dernier. Une marque plus large que ce que le plancher autorise force
+    /// donc une réduction plus forte — mieux vaut un sujet flou qu'un sujet tronqué.
+    static func tighten(_ dilated: CGRect, around box: CGRect, in bounds: CGRect) -> CGRect {
+        let maxSpan = longSideRange.upperBound / minScale
+        let long = max(dilated.width, dilated.height)
+        guard long > maxSpan else { return dilated }
+
+        // La marque, plus une marge d'un huitième de part et d'autre : sans elle, le
+        // cadre toucherait le bord de l'image et l'on ne verrait plus ce qu'il entoure.
+        let needed = max(box.width, box.height) * 1.25
+        let target = max(min(long, maxSpan), needed)
+        let factor = target / long
+
+        let w = dilated.width * factor, h = dilated.height * factor
+        return CGRect(x: dilated.midX - w / 2, y: dilated.midY - h / 2, width: w, height: h)
+            .intersection(bounds)
     }
 
     // MARK: - Étapes
@@ -216,9 +269,17 @@ enum Cropper {
         let t = CGFloat(tile)
         let long = max(prelevement.width, prelevement.height)
 
-        // Facteur de réduction. Jamais d'agrandissement : Lanczos rendrait un flou
-        // propre, mais un flou quand même, et le détail annoté est ce qui compte.
-        let factor = long > longSideRange.upperBound ? longSideRange.upperBound / long : 1
+        // Deux freins, et l'on retient le plus serré :
+        //
+        //   le côté long, pour qu'une image ne devienne pas absurdement grande ;
+        //   la SURFACE en tuiles, qui est ce que le modèle facture réellement.
+        //
+        // Jamais d'agrandissement : Lanczos rendrait un flou propre, mais un flou quand
+        // même, et le détail annoté est ce qui compte.
+        let bySide = longSideRange.upperBound / long
+        let area = prelevement.width * prelevement.height
+        let byBudget = (cropTileBudget * t * t / max(area, 1)).squareRoot()
+        let factor = min(1, min(bySide, byBudget))
 
         // Dimensions finales, multiples de la tuile de facturation.
         var outW = ((prelevement.width * factor) / t).rounded(.down) * t

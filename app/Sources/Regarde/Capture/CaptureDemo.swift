@@ -30,6 +30,9 @@ enum CaptureDemo {
         // c'est celui qui ne produisait aucune image. Toutes les marques de cette
         // démonstration en portaient une, ce qui masquait le défaut.
         (.arrow, NormRect(bounding: [NormPoint(x: 0.62, y: 0.30), NormPoint(x: 0.78, y: 0.42)]), nil),
+        // Un cadre LARGE autour d'un bloc de texte : le cas qui sortait illisible, parce
+        // que le plafond du côté long écrasait une zone plate sans rien économiser.
+        (.rect, NormRect(bounding: [NormPoint(x: 0.12, y: 0.20), NormPoint(x: 0.72, y: 0.27)]), .textToFix),
     ]
 
     static func run() {

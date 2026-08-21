@@ -120,9 +120,14 @@ enum CaptureSelfTest {
               "→ marque \(wideInPixels) dans \(wideCrop.sourceRect)")
 
         // Le recadrage sort déjà à sa forme finale, réduction comprise.
-        check(t, "la forme finale tient sous 896 px de côté long",
-              max(wideCrop.image.width, wideCrop.image.height) <= 896,
+        check(t, "la forme finale tient sous le plafond du côté long",
+              CGFloat(max(wideCrop.image.width, wideCrop.image.height))
+              <= Cropper.longSideRange.upperBound,
               "→ \(wideCrop.image.width)×\(wideCrop.image.height)")
+        let tiles = (wideCrop.image.width / Cropper.tile) * (wideCrop.image.height / Cropper.tile)
+        check(t, "la forme finale tient dans le budget de tuiles",
+              CGFloat(tiles) <= Cropper.cropTileBudget,
+              "→ \(tiles) tuiles pour un budget de \(Int(Cropper.cropTileBudget))")
         check(t, "la forme finale est alignée sur la tuile",
               wideCrop.image.width % 28 == 0 && wideCrop.image.height % 28 == 0,
               "→ \(wideCrop.image.width)×\(wideCrop.image.height)")
@@ -144,12 +149,60 @@ enum CaptureSelfTest {
             check(t, "le facteur annoncé est le facteur réel — cas \(label)",
                   abs(r.scaleX - realX) < 0.0001 && abs(r.scaleY - realY) < 0.0001,
                   "→ annoncés \(r.scaleX)/\(r.scaleY), réels \(realX)/\(realY)")
+            // 2 % : les deux dimensions finales sont arrondies au multiple de 28
+            // indépendamment l'une de l'autre, et l'écart résiduel est d'autant plus
+            // visible que le côté court est petit.
             check(t, "les deux axes restent proches — cas \(label)",
-                  abs(realX - realY) / max(realX, realY) < 0.01,
+                  abs(realX - realY) / max(realX, realY) < 0.02,
                   "→ x=\(realX) y=\(realY)")
             check(t, "les dimensions restent alignées sur la tuile — cas \(label)",
                   r.image.width % 28 == 0 && r.image.height % 28 == 0,
                   "→ \(r.image.width)×\(r.image.height)")
+        }
+
+        // ── La netteté passe avant le contexte ─────────────────────────────────
+        //
+        // Une marque large entraînait une zone dilatée de 3500 px ramenée à 896 : un quart
+        // de la taille native, la moitié de ce que l'utilisateur voyait à l'écran. Le
+        // premier cadre tracé autour d'un paragraphe est ressorti flou.
+        for (label, box) in [
+            ("paragraphe large", NormRect(bounding: [NormPoint(x: 0.10, y: 0.46),
+                                                     NormPoint(x: 0.85, y: 0.54)])),
+            ("bloc moyen", NormRect(bounding: [NormPoint(x: 0.30, y: 0.35),
+                                               NormPoint(x: 0.62, y: 0.55)])),
+        ] {
+            let r = Cropper.crop(image, around: box)
+            // Le plancher est VISÉ, pas atteint au millième : l'alignement final sur la
+            // tuile de 28 rogne jusqu'à une tuile sur le côté long, soit 3 % au plus.
+            let floorWithTile = Cropper.minScale * (1 - CGFloat(Cropper.tile) / 896)
+            check(t, "la réduction reste au-dessus du plancher — \(label)",
+                  r.scaleX >= floorWithTile,
+                  "→ \(r.scaleX), plancher \(Cropper.minScale) moins une tuile = \(floorWithTile)")
+
+            // Resserrer ne doit jamais couper la marque.
+            let px = CGRect(x: CGFloat(box.x) * CGFloat(image.width),
+                            y: (1 - CGFloat(box.y) - CGFloat(box.h)) * CGFloat(image.height),
+                            width: CGFloat(box.w) * CGFloat(image.width),
+                            height: CGFloat(box.h) * CGFloat(image.height))
+            check(t, "la marque tient entière dans le prélèvement — \(label)",
+                  r.sourceRect.insetBy(dx: -1, dy: -1).contains(px),
+                  "→ marque \(px) dans \(r.sourceRect)")
+        }
+
+        // Une marque PLUS LARGE que ce que le plancher autorise force quand même la
+        // réduction : mieux vaut un sujet flou qu'un sujet tronqué.
+        let huge2 = NormRect(bounding: [NormPoint(x: 0.02, y: 0.40),
+                                        NormPoint(x: 0.98, y: 0.60)])
+        let r2 = Cropper.crop(image, around: huge2)
+        if r2.kind == .crop {
+            let px2 = CGRect(x: CGFloat(huge2.x) * CGFloat(image.width),
+                             y: (1 - CGFloat(huge2.y) - CGFloat(huge2.h)) * CGFloat(image.height),
+                             width: CGFloat(huge2.w) * CGFloat(image.width),
+                             height: CGFloat(huge2.h) * CGFloat(image.height))
+            check(t, "une marque très large reste entière, quitte à être plus réduite",
+                  r2.sourceRect.insetBy(dx: -1, dy: -1).contains(px2))
+        } else {
+            check(t, "une marque très large bascule sur l'image entière", true)
         }
 
         // ── La flèche se recadre sur sa POINTE, pas sur son trait ───────────────

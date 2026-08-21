@@ -427,14 +427,22 @@ Filet universel : toute marque conserve sa frame RAM. Test de non-régression ob
 
 | Étape | Règle |
 |---|---|
-| Recadrage | `bbox` dilatée ×2,5, côté long dans `[640, 896]` px, dimensions alignées sur des multiples de 28, **à l'échelle native**. Si la boîte dilatée dépasse 40 % de la surface, bascule sur `full`. |
+| Recadrage | Zone d'intérêt dilatée ×2,5, côté long dans `[640, 1792]` px, **surface plafonnée à 1024 tuiles**, dimensions alignées sur des multiples de 28. Si la boîte dilatée dépasse 40 % de la surface de l'écran, bascule sur `full`. |
+
+**Correction du lot 2 — trois règles réécrites après le premier usage réel.**
+
+*La zone d'intérêt n'est pas la boîte englobante.* Pour une flèche, c'est un carré autour de sa **pointe**, dimensionné sur la longueur du trait. Centrer sur la boîte englobante mettait le milieu du trait au centre de l'image et laissait l'élément désigné sur un bord, souvent coupé : l'agent recevait un gros plan sur du vide traversé par un trait.
+
+*Le côté long ne borne plus à 896 px, c'est la SURFACE qui coûte.* Un cadre tracé autour d'un paragraphe sortait en 896×112 — soit **128 tuiles** quand le palier standard en autorise 1568 — avec un texte réduit au quart de sa taille native, illisible, pour un dixième du budget disponible. La borne haute passe à 1792 px et le frein devient le budget de tuiles, calé à 1024 : exactement ce qu'occupait une image carrée de 896 px sous l'ancienne règle, si bien que les recadrages compacts gardent leur coût et que seules les zones plates gagnent la place qu'elles laissaient perdre.
+
+*Un plancher de netteté à 0,5.* Sur un écran Retina, ce facteur rend exactement la densité que l'utilisateur a sous les yeux. En dessous, le sujet devient plus petit que ce qu'il regardait en le désignant. Quand contexte et netteté ne tiennent pas ensemble, on resserre le cadrage — le contexte cède avant la netteté, et l'intégrité de la marque avant les deux.
 | Vue `full` | **Recadrée sur le cadre de la fenêtre cible par défaut**, pas sur le display. La vue display entière est une option explicite. |
 | Masquage | Toute fenêtre n'appartenant pas à l'application cible et se superposant à la zone exportée est noircie, notifications comprises (`kCGStatusWindowLevel` et au-dessus). La liste des fenêtres et leurs cadres sont lus par `CGWindowListCopyWindowInfo` à l'instant de la marque. |
 | Réduction | Lanczos (`CILanczosScaleTransform`, 106 ms vers 2 576 px, 24 ms vers 1 568 px). Jamais d'interpolation linéaire. |
 | Dimensionnement | `hp = floor(sqrt(B/r))`, `wp = min(92, floor(hp·r))`, cible `28·wp × 28·hp`. Palier standard `B = 1568` pour la vue `full`, haute résolution `B = 4784` pour `full_hires`. |
 | **Gravure** | **Après le redimensionnement**, jamais avant : un trait de 3 px gravé avant une réduction ×0,42 devient une tache grise. |
 
-**Spécification de gravure.** Encre vermillon `#FF3B30`, constante d'un rapport à l'autre. Halo de 2× l'épaisseur du trait, dont la couleur bascule selon la luminance moyenne sous un anneau dilaté du tracé : `L* > 55` → halo `#0B0B0D` à 70 % d'alpha, sinon `#FFFFFF` à 80 %. Contraste garanti ≥ 4,5:1 sur thème clair comme sombre. Épaisseur `max(3 px, 0,22 % du côté long)`. Badge : disque plein, diamètre `max(26 px, 2,2 % du côté long)`, chiffre SF Pro Rounded Bold blanc à 62 % du diamètre ; capsule de largeur ×1,45 à deux chiffres. Placement parmi huit positions candidates autour de la `bbox`, retenue celle qui reste dans l'image, ne chevauche aucun badge déjà placé, et minimise la variance locale de luminance du fond. Formes d'abord, badges ensuite : un badge n'est jamais recouvert.
+**Spécification de gravure.** Encre vermillon `#FF3B30`, constante d'un rapport à l'autre. Halo de **1,5×** l'épaisseur du trait, dont la couleur bascule selon la luminance moyenne sous un anneau dilaté du tracé : `L* > 55` → halo `#0B0B0D` à **50 %** d'alpha, sinon `#FFFFFF` à 75 %. *Les valeurs d'origine — 2× et 70 % — ont été mesurées à l'usage : le halo triplait l'épaisseur perçue du trait, au point qu'un cadre fin tracé à quelques pixels d'un paragraphe ressortait épais et collé au texte.* Contraste garanti ≥ 4,5:1 sur thème clair comme sombre. Épaisseur `max(3 px, 0,22 % du côté long)`. Badge : disque plein, diamètre `max(26 px, 2,2 % du côté long)`, chiffre SF Pro Rounded Bold blanc à 62 % du diamètre ; capsule de largeur ×1,45 à deux chiffres. Placement parmi huit positions candidates autour de la `bbox`, retenue celle qui reste dans l'image, ne chevauche aucun badge déjà placé, et minimise la variance locale de luminance du fond. Formes d'abord, badges ensuite : un badge n'est jamais recouvert.
 
 ### 5.7 La déduplication perceptuelle est retirée du MVP
 

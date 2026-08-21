@@ -108,8 +108,16 @@ enum Engraver {
     /// Seuil de bascule du halo, en L*. Au-dessus, le fond est clair et le halo doit être
     /// sombre ; au-dessous, l'inverse.
     static let haloThreshold: Float = 55
-    static let haloDark = CGColor(srgbRed: 0.043, green: 0.043, blue: 0.051, alpha: 0.70)
-    static let haloLight = CGColor(srgbRed: 1, green: 1, blue: 1, alpha: 0.80)
+    static let haloDark = CGColor(srgbRed: 0.043, green: 0.043, blue: 0.051, alpha: 0.50)
+    static let haloLight = CGColor(srgbRed: 1, green: 1, blue: 1, alpha: 0.75)
+
+    /// Débordement du halo, en multiples de l'épaisseur du trait.
+    ///
+    /// 1,5 et non 2 : le halo était le vrai responsable de l'épaisseur perçue. Le trait
+    /// gravé fait la même épaisseur qu'à l'écran, mais un halo à deux fois cette largeur
+    /// le triplait à l'œil — au point qu'un cadre fin tracé à quelques pixels d'un
+    /// paragraphe ressortait épais et collé au texte. Rapporté au premier usage réel.
+    static let haloSpread: CGFloat = 1.5
 
     // MARK: - Gravure
 
@@ -170,11 +178,10 @@ enum Engraver {
 
         switch shape.rendering {
         case .stroke:
-            // Le halo est tracé À DEUX FOIS l'épaisseur de l'encre, donc il déborde d'une
-            // demi-épaisseur de chaque côté. C'est assez pour détacher le trait d'un fond
-            // de couleur voisine, sans l'épaissir au point de masquer ce qu'il désigne.
+            // Le halo déborde d'un quart d'épaisseur de chaque côté : assez pour détacher
+            // le trait d'un fond de couleur voisine, trop peu pour l'épaissir à l'œil.
             ctx.setStrokeColor(halo)
-            ctx.setLineWidth(width * 2)
+            ctx.setLineWidth(width * haloSpread)
             ctx.addPath(path)
             ctx.strokePath()
 
@@ -202,7 +209,7 @@ enum Engraver {
             // fond clair devient un halo aux bords indécis, et l'agent ne peut pas dire
             // où commence la zone désignée.
             ctx.setStrokeColor(halo)
-            ctx.setLineWidth(width * 1.6)
+            ctx.setLineWidth(width * 1.3)
             ctx.addPath(path)
             ctx.strokePath()
 
