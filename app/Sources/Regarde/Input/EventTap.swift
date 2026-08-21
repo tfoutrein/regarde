@@ -247,6 +247,15 @@ final class EventTap: @unchecked Sendable {
              .rightMouseDown, .rightMouseUp, .rightMouseDragged:
             switch OptionGate.shared.decide(type: type, flags: flags, location: location) {
             case .pass:
+                // Le banc C11 observe ici, et seulement ici : le PONT D'HORLOGE se
+                // construit sur des clics NUS, ceux que la porte laisse passer.
+                //
+                // Deux écritures atomiques derrière un drapeau, et rien d'autre :
+                // aucune allocation, aucun verrou, aucun appel AppKit, et surtout
+                // le chemin de retour est inchangé — l'événement repart exactement
+                // comme avant. C1, C2 et C5 ne sont pas concernés, et le budget de
+                // latence du § C7 non plus.
+                if type == .leftMouseDown { C11Tap.shared.noterClicNu(event.timestamp) }
                 return Unmanaged.passUnretained(event)
             case .swallow:
                 return nil

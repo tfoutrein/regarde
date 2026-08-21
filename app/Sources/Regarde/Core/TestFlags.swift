@@ -19,4 +19,8 @@ enum TestFlags {
     /// démarrage, pour qu'une session menée par erreur dans ce mode ne passe pas
     /// inaperçue — ses captures porteraient l'encre en double, gravée ET incrustée.
     static let visibleCapture = CommandLine.arguments.contains("--visible-capture")
+
+    /// Arme le banc C11 : les clics nus sont horodatés, et un `c11.json` est déposé
+    /// à côté des images à la publication. Aucun effet sur le chemin nominal.
+    static let c11Bench = CommandLine.arguments.contains("--c11-bench")
 }

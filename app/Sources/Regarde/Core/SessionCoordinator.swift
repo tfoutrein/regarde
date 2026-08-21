@@ -91,6 +91,13 @@ final class SessionCoordinator {
         // « 6 marques », le dossier ne contiendrait rien.
         SessionClock.shared.rearm()
 
+        // Le banc C11 s'arme avec la session, pas avant : son pont d'horloge doit
+        // partager l'origine des marques qu'il mesure.
+        if TestFlags.c11Bench {
+            C11Bench.shared.marquerDebut()
+            C11Bench.shared.demarrer()
+        }
+
         // Le répertoire AVANT la cible, et son échec refuse la session.
         //
         // Avant la cible, parce qu'échouer après aurait laissé la cible figée sur une
@@ -190,6 +197,12 @@ final class SessionCoordinator {
                 do {
                     let frames = try await MarkCapture.shared.finalize(
                         keeping: keep, into: SessionPaths.frames(of: directory))
+                    if TestFlags.c11Bench {
+                        await MainActor.run {
+                            C11Bench.shared.arreter()
+                            try? C11Bench.shared.ecrire(dans: SessionPaths.frames(of: directory))
+                        }
+                    }
                     // Comptés à part : une vue d'ensemble n'est pas le recadrage d'une
                     // marque, et les additionner déclencherait l'avertissement
                     // « marque sans image » à contresens.

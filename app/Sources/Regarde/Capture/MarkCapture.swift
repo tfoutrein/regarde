@@ -238,6 +238,15 @@ actor MarkCapture {
                                   scaleX: scaleX, scaleY: scaleY,
                                   pointScale: shot.pointScale)))
         log.notice("marque \(mark.number) capturée — \(cropped.kind.rawValue) \(image.width)×\(image.height)")
+
+        // Le banc C11 date l'ARRIVÉE de l'image. La différence avec `mark.t`, pris
+        // au `mouseDown`, est la latence propre du chemin ponctuel — celle que le
+        // lot 0 a mesurée à 49,1 ms de médiane et 120,9 ms au pire, et qui est la
+        // raison pour laquelle cette chaîne ne peut pas rendre un verdict C11.
+        await MainActor.run {
+            guard C11Bench.shared.actif else { return }
+            C11Bench.shared.noterArrivee(numero: mark.number, t: mark.t, origine: mark.timeOrigin)
+        }
     }
 
     /// Grave et écrit les marques encore présentes dans le modèle.
