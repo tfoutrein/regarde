@@ -289,3 +289,65 @@ du rafraîchissement natif — ce qui garantit que la machine peine.
 `mouseDown`, et le diagnostic n'injectait que des `mouseMoved` : le zéro affiché ne prouvait
 rien. Une fois de vrais tracés injectés, les 8 replis attendus apparaissent — et C12 se
 mesure sans installer de pilote tiers.
+
+---
+
+## Ce que S29 change, et pourquoi la ligne de base est périmée
+
+**`glLoad = 103` n'est plus la référence.** Le comparer à un relevé postérieur à S29
+produirait une dégradation apparente qui ne mesure rien.
+
+Trois raisons, dont deux sont des corrections de l'instrument lui-même.
+
+**La boucle du fragment shader plafonne à 512 itérations** — `for (int i = 0; i < 512; i++)`
+— alors que le calibrage montait jusqu'à 4096. Au-delà de 512, il croyait ajouter de la
+charge et n'en ajoutait aucune : quatre tours pour rien, et une butée qui ne se signalait pas
+comme telle. Le plafond du calibrage est ramené à 512, sa borne réelle. La campagne du lot 0
+n'en a pas souffert — elle a convergé à 103 — mais une machine plus rapide serait sortie de
+la fenêtre sans que rien ne le dise.
+
+**La réglette est dessinée à chaque frame.** Un quad de 2176 × 384 pixels et un téléversement
+de 204 octets s'ajoutent à la passe de charge. Le coût est petit et il est désormais MESURÉ,
+pas postulé : `lot3-temoin.sh` relève une paire réglette éteinte / réglette allumée au même
+`glLoadLocked`, et publie l'écart.
+
+**Les modes charge et compteur ont fusionné.** Ils étaient exclusifs, ce qui était le défaut
+de fond du témoin : le compteur ne tournait que sur un écran calme, c'est-à-dire précisément
+là où B1 est invisible. Un banc C11 qui ne mesure que sur écran au repos ne mesure rien de ce
+qui justifie le produit. La charge tourne maintenant sous le compteur.
+
+**C3b en plein écran, la dernière dette du lot 0.** Ce qui bloquait n'était pas la mesure mais
+la LECTURE des relevés : la seule voie pour les sortir de la page était `execute javascript`,
+qui exige d'activer « Autoriser JavaScript depuis les Apple Events » dans Chrome — une
+permission qui donne l'exécution de JavaScript dans tous les onglets, y compris ceux où l'on
+est authentifié. La refuser était juste. La page dépose désormais elle-même par POST sur un
+serveur local à quatre routes, et le pilotage passe par des frappes clavier, qui n'exigent que
+l'Accessibilité. Le verdict C3b se rend en S41.
+
+### Ce que la première passe sur machine a donné, et ce qui reste ouvert
+
+**21 août 2026, passe partielle.** Les frappes traversent réellement — `osascript` → System
+Events → Chrome → page — et le témoin démarre son relevé sur `⌃⌥R` **sans qu'aucune session
+Regarde ne s'ouvre** : le choix de `⌃⌥X` plutôt que `⌃⌥S` est validé en vivo, contre
+l'application lancée.
+
+**Un relevé sort hors de la fenêtre de charge, et la cause n'est pas tranchée.**
+
+```
+« 2-calque-non-ordonne » : 70,07 fps effectifs · 42,7 % de frames perdues · méd. 10,5 ms
+```
+
+Sur 120 Hz cela fait 58 % du natif, sous le plancher de 70 %. La forme de la distribution est
+ce qui intrigue : médiane 10,5 ms pour une moyenne de 14,3 ms, donc une traîne — la plupart
+des frames passent, quelques-unes coûtent très cher. Cela ressemble à de la dérive thermique
+plutôt qu'à une charge mal calibrée, et une hypothèse se tient : **le calibrage converge sur
+une fenêtre de 120 frames, soit une seconde, alors que le relevé dure soixante fois plus.**
+Ce qui tient une seconde sur Apple Silicon ne tient pas forcément une minute.
+
+Deux choses manquent pour trancher, et elles sont dans les dépôts : `refreshHz`, et le relevé
+apparié pris sans réglette. À reprendre avant S41, qui rend le verdict C3b.
+
+**L'étiquette de ce relevé était fausse**, et c'est corrigé : `suggestLabel()` ne connaissait
+que la séquence C3b, si bien qu'un relevé de coût de réglette sortait nommé
+« 2-calque-non-ordonne » — le fichier disait mesurer le calque de Regarde alors qu'il mesurait
+la réglette du témoin. Les étiquettes suivent désormais le plan demandé dans l'URL.

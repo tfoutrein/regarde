@@ -40,3 +40,6 @@ notarization-*.json
 *.log
 .env
 .env.*
+
+# Cache de compilation Python (Tools/temoin-serveur.py)
+__pycache__/

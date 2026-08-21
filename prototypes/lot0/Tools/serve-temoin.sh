@@ -1,25 +1,48 @@
 #!/usr/bin/env bash
 # Sert le temoin 1 en local et l'ouvre dans Chrome.
 #
-# Servi en HTTP plutot qu'ouvert en file:// pour deux raisons : navigator.clipboard
-# exige un contexte securise (localhost en est un, file:// non), et le comportement
-# de requestAnimationFrame sous file:// n'est pas garanti identique.
+# Servi en HTTP plutot qu'ouvert en file:// pour trois raisons : navigator.clipboard
+# exige un contexte securise (127.0.0.1 en est un, file:// non), le comportement de
+# requestAnimationFrame sous file:// n'est pas garanti identique, et depuis S29 la
+# page DEPOSE son etat par POST — ce qu'un file:// ne peut pas faire.
+#
+# Ce script est desormais un enrobage de `temoin-serveur.py`. `python3 -m http.server`
+# ne convient plus : il ne definit que do_GET et do_HEAD, donc un POST recoit 501. Le
+# piege n'est pas qu'il refuse, c'est qu'il reste JOIGNABLE — la page se charge
+# normalement et seul le depot echoue, en fin de mesure, sans rien dire.
+#
+# Pour une campagne automatisee, prefere `app/Tools/lot3-temoin.sh`, qui pilote tout.
+# Celui-ci reste la voie manuelle.
 
 set -euo pipefail
-cd "$(dirname "$0")/../temoins"
+ICI="$(cd "$(dirname "$0")" && pwd)"
+LOT0="$(cd "${ICI}/.." && pwd)"
 
 PORT="${1:-8765}"
-URL="http://localhost:${PORT}/index.html"
+DEPOT="${REGARDE_DEPOT:-$HOME/Regarde-lot0/temoin}"
+URL="http://127.0.0.1:${PORT}/index.html"
 
-if lsof -nP -iTCP:"${PORT}" -sTCP:LISTEN >/dev/null 2>&1; then
-    echo "→ Un serveur ecoute deja sur ${PORT}, reutilisation."
+mkdir -p "${DEPOT}"
+chmod 700 "${DEPOT}"
+
+# 127.0.0.1 et non localhost : sur macOS `localhost` resout ::1 en premier alors que
+# le serveur ecoute en IPv4, ce qui ajoute un aller-retour de repli a chaque requete.
+SIGNATURE="$(curl -s --max-time 1 "http://127.0.0.1:${PORT}/sante" 2>/dev/null || true)"
+if [[ "${SIGNATURE}" == *'"serveur":"regarde-temoin"'* || "${SIGNATURE}" == *'"serveur": "regarde-temoin"'* ]]; then
+    echo "→ Serveur du temoin deja en place sur ${PORT}, reutilisation."
+elif [[ -n "${SIGNATURE}" ]]; then
+    echo "✗ Un serveur repond sur ${PORT}, mais ce n'est pas celui du temoin."
+    echo "  Sa reponse : ${SIGNATURE:0:120}"
+    echo "  Choisis un autre port : $0 <port>"
+    exit 2
 else
-    echo "→ Serveur sur ${PORT} (Ctrl-C pour arreter)"
-    python3 -m http.server "${PORT}" --bind 127.0.0.1 >/dev/null 2>&1 &
+    echo "→ Serveur sur ${PORT} (Ctrl-C pour arreter) — depot dans ${DEPOT}"
+    python3 "${ICI}/temoin-serveur.py" --port "${PORT}" \
+            --racine "${LOT0}/temoins" --depot "${DEPOT}" --duree-max 7200 &
     SRV=$!
     trap 'kill ${SRV} 2>/dev/null || true' EXIT
-    for _ in $(seq 1 30); do
-        lsof -nP -iTCP:"${PORT}" -sTCP:LISTEN >/dev/null 2>&1 && break
+    for _ in $(seq 1 50); do
+        curl -s --max-time 1 "http://127.0.0.1:${PORT}/sante" >/dev/null 2>&1 && break
         sleep 0.1
     done
 fi
@@ -35,14 +58,27 @@ fi
 cat <<EOF
 
 Temoin 1 : ${URL}
+Depot    : ${DEPOT}
 
   1  horloge   C3   la trotteuse doit tourner pendant le trace
   2  charge    C3b  relever 3 etats, puis les 3 memes en ordre inverse
-  3  compteur  C11  lire le numero grave dans l'image
-  R  releve de 30 s        A  aligner l'horloge        H  masquer le panneau
+  3  compteur  C11  la reglette porte le numero, lisible par machine
 
-Passer en plein ecran (⌃⌘F) avant toute mesure : le mode fenetre n'emprunte pas
-le meme chemin de composition.
+Les modes 2 et 3 sont un SEUL moteur depuis S29 : le compteur tourne desormais
+par-dessus la charge. Un banc C11 qui ne mesurait que sur ecran au repos ne
+mesurait rien de ce qui justifie le produit.
+
+Verbes de pilotage — tous en Controle+Option, apparies sur la touche PHYSIQUE :
+
+  ⌃⌥R  relever        ⌃⌥D  deposer        ⌃⌥X  fin de plan
+  ⌃⌥G  reglette       ⌃⌥N  chiffres       ⌃⌥A  aligner l'horloge
+  ⌃⌥H  panneau        ⌃⌥Z  reset fuites   ⌃⌥1/2/3  mode
+
+⌃⌥S, ⌃⌥F, ⌃⌥M et ⌃⌥L sont INTERDITS ici : Regarde les enregistre en raccourcis
+globaux, et ils ne parviendraient jamais a la page.
+
+Passer en plein ecran AVANT toute mesure, par le menu Presentation — le mode
+fenetre n'emprunte pas le meme chemin de composition, et ⌃⌘F ne suffit pas.
 EOF
 
 wait 2>/dev/null || true

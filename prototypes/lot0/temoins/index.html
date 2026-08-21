@@ -167,6 +167,81 @@ const SAMPLE_MS  = 30000;  // § 4.4 : 30 s par état
 const CHARGE_HI = 0.90;
 const CHARGE_LO = 0.70;
 
+// ─────────────────────────────────────────────────────────────────────────────
+// La réglette — S29
+//
+// Le numéro de frame écrit en modules noirs et blancs, lisible par un décodeur
+// trivial. Les gros chiffres décoratifs demandaient de l'OCR ou un œil humain ;
+// ils ne pouvaient pas rendre un verdict C11 automatique.
+//
+// La contrainte qui gouverne toute la géométrie n'est pas le PNG, c'est le HEVC.
+// En S39 le même numéro devra être relu dans une frame extraite d'un fichier
+// encodé en 4:2:0 avec pertes. D'où trois décisions :
+//
+//   module de 64 px NATIFS   le plus grand bloc de transformation luma de HEVC
+//                            fait 32×32 ; un module de 2×32 contient toujours
+//                            entièrement le bloc qui porte son centre, quelle que
+//                            soit la position de la grille.
+//   noir et blanc PURS       en BT.709, Y = 16 et Y = 235 ont tous deux
+//                            Cb = Cr = 128. Décimer un plan constant est sans
+//                            perte : zéro bit sur 28 ne vit dans un plan
+//                            sous-échantillonné. C'est la réponse au 4:2:0 par
+//                            construction, pas par marge.
+//   deux rangées complémentaires
+//                            le bit et son inverse dans la même colonne. Le
+//                            décodeur ne lit pas contre un seuil, il compare deux
+//                            cases distantes de 64 px — décision invariante à tout
+//                            décalage commun : plage limitée, gamma, SAO, dérive
+//                            du fond WebGL. Et la moyenne de l'aire de données est
+//                            constante, donc la régulation de débit de l'encodeur
+//                            ne voit jamais la réglette respirer.
+//
+// Le code de Gray fait basculer 4,1 bits par incrément en moyenne au lieu d'une
+// pointe à 20 bits une fois tous les 2^19 — une frame vingt fois plus chère à un
+// instant imprévisible, au pire moment pour la régulation de débit.
+// ─────────────────────────────────────────────────────────────────────────────
+const RG = {
+  M: 64, COLS: 34, ROWS: 6,
+  DONNEES: 20, CRC: 8, BITS: 28,
+  MASQUE: 0xFFFFF, POLY: 0x2F, INIT: 0xA5,
+};
+
+// 2^17 : masque au lieu de modulo, et 18,2 minutes à 120 Hz. Un relevé de 60 s
+// en consomme 7 200.
+const LOG_CAP = 131072;
+
+// ── Paramètres d'URL ─────────────────────────────────────────────────────────
+//
+// C'est l'URL qui fixe la SESSION — durée, plan, panneau, dépôt — et les frappes
+// clavier qui en sont les VERBES. La page n'est ouverte qu'une fois par campagne :
+// un rechargement perd `vsyncMs` et `glLoadLocked`, le calibrage repart, la charge
+// n'est plus la même, et `comparable()` marque tous les relevés suivants
+// « charge ≠ ». Pour C3b, six relevés doivent partager une seule vie de page.
+const qs = new URLSearchParams(location.search);
+const entier = (cle, def, min, max) => {
+  const v = parseInt(qs.get(cle) ?? '', 10);
+  return Number.isFinite(v) && v >= min && v <= max ? v : def;
+};
+const params = {
+  run:      qs.get('run') || null,
+  plan:     ['c11', 'c3b', 'cout', 'libre'].includes(qs.get('plan')) ? qs.get('plan') : 'libre',
+  mode:     ({ horloge: 'clock', charge: 'load', compteur: 'counter' })[qs.get('mode')] || 'clock',
+  reglette: qs.get('reglette') !== '0',
+  chiffres: qs.get('chiffres') === '1',
+  duree:    entier('duree', SAMPLE_MS / 1000, 1, 600) * 1000,
+  stab:     entier('stab', SETTLE_MS / 1000, 0, 60) * 1000,
+  hud:      qs.get('hud') !== '0',
+  auto:     ['0', 'armer', '1'].includes(qs.get('auto')) ? qs.get('auto') : '0',
+  depot:    ['0', 'run', 'fin'].includes(qs.get('depot')) ? qs.get('depot') : '0',
+  etat:     qs.get('etat') || null,
+};
+
+// Identifiant de VIE DE PAGE. Le banc l'exige identique dans tous les dépôts d'une
+// campagne : deux relevés issus de deux vies de page ne sont pas comparables, et
+// c'est ce champ qui rend un rechargement détectable après coup.
+const sessionId = (crypto.randomUUID ? crypto.randomUUID()
+                                     : String(Date.now()) + '-' + Math.random().toString(36).slice(2));
+
 const state = {
   mode: 'clock',
   frame: 0,
@@ -174,15 +249,41 @@ const state = {
   sampling: false,
   sampleStart: 0,
   runs: [],            // relevés nommés, dans l'ordre de saisie
-  counterLog: [],      // { frame, now } — journal C11
-  clockAlign: null,    // { pageNow, wallMs } — pont performance.now() ↔ horloge hôte
+  clockAligns: [],     // ponts performance.now() ↔ horloge hôte — une LISTE : un clic
+                       // de scène ne doit pas écraser le précédent en silence
   glLoad: 32,          // itérations dans le fragment shader
   vsyncMs: null,       // période de rafraîchissement mesurée à vide
   calWindow: [],       // deltas accumulés pour la mesure ou le calibrage
   calibrated: false,   // la charge a convergé dans la fenêtre visée
   glLoadLocked: null,  // charge gelée : tous les relevés doivent partager la même
   chargeInsuffisante: false,  // butée atteinte sans charger la machine
+  chargeHorsFenetre: false,   // la cadence a quitté [70 %, 90 %] PENDANT un relevé
+  focusPerdu: false,          // la page a perdu le focus pendant un relevé
+  reglette: true,      // la réglette est-elle dessinée
+  regletteRefus: null, // motif de refus, publié dans chaque dépôt
+  chiffres: false,     // gros chiffres décoratifs — éteints par défaut
+  depotsFaits: [],     // noms déposés, pour l'index de fin
+  depotEnCours: false,
 };
+
+// Journal C11 en ANNEAU de tableaux typés.
+//
+// Deux propriétés, l'une de mesure et l'autre d'honnêteté. Aucune allocation dans
+// la boucle rAF : l'ancien code poussait un objet par frame dans un tableau
+// croissant, soit 7 200 objets par minute et une pression de ramasse-miettes dans
+// le chemin même dont on mesure la cadence à 0,1 % près. Et `n` n'est JAMAIS remis
+// à zéro, si bien que `jetees = max(0, n − LOG_CAP)` se déduit toujours — la
+// troncature ne peut plus être muette, ce que le « fini quand » de S29 exige.
+const journal = {
+  f: new Int32Array(LOG_CAP),
+  t: new Float64Array(LOG_CAP),
+  n: 0,
+};
+
+function journalPousser(f, now) {
+  const i = journal.n & (LOG_CAP - 1);
+  journal.f[i] = f; journal.t[i] = now; journal.n++;
+}
 
 const $ = (id) => document.getElementById(id);
 
@@ -250,14 +351,144 @@ function initGL() {
   gl.useProgram(prog);
   uLoad = gl.getUniformLocation(prog, 'uLoad');
   uTime = gl.getUniformLocation(prog, 'uTime');
+  rgInitGL();
   glReady = true;
   return true;
 }
 
+// ── La réglette ──────────────────────────────────────────────────────────────
+let rgProg = null, rgTexture = null, rgUTex = null;
+const rgTex = new Uint8Array(RG.COLS * RG.ROWS);   // 204 texels ; 0 = noir, 255 = blanc
+
+function rgInitGL() {
+  const vs = `#version 300 es
+  out vec2 vUV;
+  void main() {
+    vec2 p = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2);
+    vUV = p;
+    gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
+  }`;
+  // Aucun calcul, aucune interpolation : NEAREST sur une texture de 204 texels.
+  // Le module couvre un nombre ENTIER de pixels, donc chaque pixel sort
+  // franchement noir ou franchement blanc — jamais un gris d'anticrénelage, qui
+  // serait un bit dans la bande d'ambiguïté du décodeur.
+  const fs = `#version 300 es
+  precision highp float;
+  uniform sampler2D uTex;
+  in vec2 vUV;
+  out vec4 fragColor;
+  void main() {
+    // La rangée 0 de rgTex est le HAUT de la réglette, or GL place la première
+    // rangée téléversée en BAS de la texture : on retourne ici. S'en passer
+    // échangerait le bit et son complément — le décodeur lirait tout inversé.
+    float v = texture(uTex, vec2(vUV.x, 1.0 - vUV.y)).r;
+    fragColor = vec4(v, v, v, 1.0);
+  }`;
+  const mk = (type, src) => {
+    const sh = gl.createShader(type);
+    gl.shaderSource(sh, src); gl.compileShader(sh);
+    if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(sh));
+    return sh;
+  };
+  rgProg = gl.createProgram();
+  gl.attachShader(rgProg, mk(gl.VERTEX_SHADER, vs));
+  gl.attachShader(rgProg, mk(gl.FRAGMENT_SHADER, fs));
+  gl.linkProgram(rgProg);
+  if (!gl.getProgramParameter(rgProg, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(rgProg));
+  rgUTex = gl.getUniformLocation(rgProg, 'uTex');
+
+  rgTexture = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, rgTexture);
+  // La largeur de rangée vaut 34 octets, qui n'est pas un multiple de 4 :
+  // sans cet alignement à 1, chaque rangée serait lue décalée.
+  gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, RG.COLS, RG.ROWS, 0, gl.RED, gl.UNSIGNED_BYTE, null);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  rgInit();
+}
+
+/// Le cadre localisateur et les zones de silence, posés une fois pour toutes.
+function rgInit() {
+  rgTex.fill(255);                                                // silence + colonnes témoins
+  const set = (j, i, v) => { rgTex[i * RG.COLS + j] = v; };
+  for (let j = 1; j <= 32; j++) { set(j, 1, 0); set(j, 4, 0); }   // barres du cadre
+  for (let i = 1; i <= 4;  i++) { set(1, i, 0); set(32, i, 0); }  // montants du cadre
+}
+
+function rgCrc8(g) {
+  let c = RG.INIT;                                    // 0xA5 : numéro de VERSION du format,
+  for (const b of [g & 0xFF, (g >>> 8) & 0xFF, (g >>> 16) & 0x0F]) {   // pas la valeur normalisée.
+    c ^= b;                                           // Un décodeur d'une autre génération
+    for (let i = 0; i < 8; i++)                       // refuse au lieu de rendre un nombre
+      c = (c & 0x80) ? ((c << 1) ^ RG.POLY) & 0xFF : (c << 1) & 0xFF;  // plausible.
+  }
+  return c;
+}
+
+function rgEcrire(V) {
+  const G = V ^ (V >>> 1), c = rgCrc8(G);
+  for (let k = 0; k < RG.BITS; k++) {
+    const bit = k < RG.DONNEES ? (G >>> k) & 1 : (c >>> (k - RG.DONNEES)) & 1;
+    const j = 3 + k;                                  // colonne d'empreinte 3..30
+    rgTex[2 * RG.COLS + j] = bit ? 255 : 0;           // rangée 0 : le bit
+    rgTex[3 * RG.COLS + j] = bit ? 0 : 255;           // rangée 1 : son complément
+  }
+}
+
+function rgDessiner() {
+  const cw = $('gl').width, ch = $('gl').height;
+  const w = RG.COLS * RG.M, h = RG.ROWS * RG.M;
+  gl.useProgram(rgProg);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, rgTexture);
+  gl.uniform1i(rgUTex, 0);
+  gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+  gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, RG.COLS, RG.ROWS, gl.RED, gl.UNSIGNED_BYTE, rgTex);
+  // Centrée horizontalement — une frame boîtée rogne par les bords. Collée en
+  // bas : le haut de l'écran interne porte l'encoche, la barre de menus, les
+  // notifications, et les barres que Chrome expose en plein écran.
+  gl.viewport(Math.round((cw - w) / 2), RG.M, w, h);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  gl.viewport(0, 0, cw, ch);                          // rendre le cadre entier à la charge
+}
+
+/// Origine de la réglette en pixels du tampon, coin haut-gauche, publiée au dépôt.
+function rgOrigine() {
+  const cv = $('gl');
+  const w = RG.COLS * RG.M, h = RG.ROWS * RG.M;
+  return { x: Math.round((cv.width - w) / 2), y: cv.height - RG.M - h, w, h, module: RG.M };
+}
+
+function rgRefuser(motif) {
+  if (state.regletteRefus === motif) return;
+  state.reglette = false; state.regletteRefus = motif;
+  setStatus(`Réglette refusée — ${motif}. Aucun verdict C11 ne peut être rendu.`, true);
+}
+
+function dessinerCharge(now, iterations) {
+  gl.useProgram(prog);
+  gl.uniform1i(uLoad, iterations);
+  gl.uniform1f(uTime, now * 0.001);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+}
+
 function resizeGL() {
   const cv = $('gl');
-  const dpr = Math.min(window.devicePixelRatio || 1, 2);
-  const w = Math.floor(innerWidth * dpr), h = Math.floor(innerHeight * dpr);
+  // `Math.min(dpr, 2)` était un piège : sur un écran à dpr > 2 le tampon serait
+  // plus petit que l'écran, le compositeur l'agrandirait, et les arêtes des
+  // modules seraient rééchantillonnées — en silence. Un instrument qui se
+  // dégrade sans le dire est exactement ce que ce projet chasse.
+  const dpr = window.devicePixelRatio || 1;
+  const w = Math.round(innerWidth * dpr), h = Math.round(innerHeight * dpr);
+
+  if (dpr > 2)                                     rgRefuser(`devicePixelRatio = ${dpr} > 2`);
+  else if (Math.abs(innerWidth * dpr - w) > 0.01
+        || Math.abs(innerHeight * dpr - h) > 0.01) rgRefuser('tampon non entier — zoom ≠ 100 %');
+  else if (w < (RG.COLS + 2) * RG.M)               rgRefuser(`tampon ${w} px trop étroit`);
+
   if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; if (gl) gl.viewport(0, 0, w, h); }
 }
 addEventListener('resize', resizeGL);
@@ -274,18 +505,30 @@ function frame(now) {
   if (state.mode === 'clock') {
     const s = (now / 1000) % 60;
     $('hand').setAttribute('transform', `rotate(${s * 6})`);
-  } else if (state.mode === 'load') {
+  } else {
+    // Les modes « charge » et « compteur » ne sont plus exclusifs : c'est UN SEUL
+    // moteur, et ils ne diffèrent que par les gros chiffres décoratifs.
+    //
+    // Les séparer était le défaut de fond du témoin du lot 0. Le compteur ne
+    // tournait que sur un écran calme — c'est-à-dire précisément là où B1 est
+    // invisible. Un banc C11 qui ne mesure que sur écran au repos ne mesure rien
+    // de ce qui justifie le produit.
     resizeGL();
+    const V = state.frame & RG.MASQUE;
 
     // Phase 1 — mesurer la période de rafraîchissement réelle, à charge minimale.
     // Sans cette référence, « frame perdue » n'a pas de définition sur une machine
     // dont on ignore si l'écran tourne à 60 ou à 120 Hz.
+    //
+    // La réglette est dessinée DÈS CETTE PHASE : le contrôleur doit converger sur
+    // l'état exact qui sera mesuré, et le journal doit être continu depuis la
+    // toute première frame.
     if (state.vsyncMs === null) {
       if (glReady) {
-        gl.uniform1i(uLoad, 1);
-        gl.uniform1f(uTime, now * 0.001);
-        gl.drawArrays(gl.TRIANGLES, 0, 3);
+        dessinerCharge(now, 1);
+        if (state.reglette) { rgEcrire(V); rgDessiner(); }
       }
+      journalPousser(state.frame, now);
       if (dt > 0) state.calWindow.push(dt);
       if (state.calWindow.length >= 60) {
         const s = state.calWindow.slice().sort((a, b) => a - b);
@@ -298,10 +541,18 @@ function frame(now) {
     }
 
     if (glReady) {
-      gl.uniform1i(uLoad, state.glLoad);
-      gl.uniform1f(uTime, now * 0.001);
-      gl.drawArrays(gl.TRIANGLES, 0, 3);
+      dessinerCharge(now, state.glLoad);
+      if (state.reglette) { rgEcrire(V); rgDessiner(); }
     }
+    // L'ordre est contraignant : rgEcrire, puis rgDessiner, puis journalPousser.
+    // Les trois portent le MÊME state.frame et le MÊME now, et les commandes GL
+    // sont présentées ensemble à la fin du callback.
+    journalPousser(state.frame, now);
+
+    // Les gros chiffres décoratifs, quand ils sont allumés, une frame sur huit :
+    // leur mise en page à font-size: min(34vw, 30rem) coûte un temps CPU variable
+    // selon le nombre de chiffres. C'est pourquoi startRun les refuse.
+    if (state.chiffres && (state.frame & 7) === 0) $('frameNo').textContent = V;
 
     // Phase 2 — calibrer sur la CADENCE EFFECTIVE, pas sur le taux de frames perdues.
     //
@@ -321,7 +572,11 @@ function frame(now) {
         const ratio = fps / (1000 / state.vsyncMs);
         const prev = state.glLoad;
 
-        if (ratio > CHARGE_HI)      state.glLoad = Math.min(4096, Math.ceil(state.glLoad * 1.6));
+        // 512 et non 4096 : c'est la borne RÉELLE de la boucle du fragment shader
+        // (`for (int i = 0; i < 512; i++)`). Au-delà, le calibrage croyait ajouter
+        // de la charge et n'en ajoutait aucune — quatre tours pour rien, sur
+        // l'instrument même de C3b, et une butée qui ne se signalait pas comme telle.
+        if (ratio > CHARGE_HI)      state.glLoad = Math.min(512, Math.ceil(state.glLoad * 1.6));
         else if (ratio < CHARGE_LO) state.glLoad = Math.max(8, Math.floor(state.glLoad / 1.3));
         else {
           state.calibrated = true;
@@ -342,18 +597,24 @@ function frame(now) {
         state.calWindow = [];
       }
     }
-  } else if (state.mode === 'counter') {
-    $('frameNo').textContent = state.frame;
-    state.counterLog.push({ frame: state.frame, now: +now.toFixed(3) });
-    if (state.counterLog.length > 20000) state.counterLog.splice(0, 10000);
   }
 
   if (state.sampling) {
     const elapsed = now - state.sampleStart;
-    if (elapsed > SETTLE_MS && dt > 0) state.deltas.push(dt);
-    if (elapsed >= SETTLE_MS + SAMPLE_MS) finishRun(now);
+    if (elapsed > params.stab && dt > 0) state.deltas.push(dt);
+    if (elapsed >= params.stab + params.duree) finishRun(now);
     else if ((state.frame & 15) === 0) {
-      const left = Math.max(0, Math.ceil((SETTLE_MS + SAMPLE_MS - elapsed) / 1000));
+      // Surveillance en cours de relevé : la cadence peut quitter la fenêtre
+      // pendant la mesure — thermique, autre application qui démarre — et un
+      // relevé pris hors fenêtre ne mesure pas ce qu'il prétend. On ne l'annule
+      // pas, on le MARQUE : c'est au banc de refuser, pas à la page.
+      if (state.vsyncMs && state.deltas.length > 30) {
+        const n = state.deltas.length;
+        const fps = 1000 * n / state.deltas.reduce((a, b) => a + b, 0);
+        const ratio = fps / (1000 / state.vsyncMs);
+        if (ratio > CHARGE_HI || ratio < CHARGE_LO) state.chargeHorsFenetre = true;
+      }
+      const left = Math.max(0, Math.ceil((params.stab + params.duree - elapsed) / 1000));
       setStatus(`Relevé en cours — ${left} s · ${state.deltas.length} frames`, true);
     }
   }
@@ -368,7 +629,25 @@ const quantile = (sorted, q) => {
 };
 
 function startRun() {
-  if (state.mode !== 'load') { setStatus('Passe en mode charge (2) avant un relevé.', true); return; }
+  if (state.mode === 'clock') { setStatus('Passe en mode charge (2) ou compteur (3) avant un relevé.', true); return; }
+  // Quatre refus, tous à la SOURCE. Un relevé pris hors conditions est
+  // indiscernable d'un relevé valide une fois dans le fichier : c'est ici qu'il
+  // faut le refuser, pas au dépouillement.
+  if (state.chiffres) {
+    setStatus('Relevé refusé — les gros chiffres sont allumés (⌃⌥N). Leur mise en page coûte ' +
+              'un temps CPU variable selon le nombre de chiffres, incompatible avec une mesure ' +
+              'de cadence à 0,1 %.', true);
+    return;
+  }
+  if (!state.reglette) {
+    setStatus(`Relevé refusé — réglette inactive : ${state.regletteRefus}.`, true);
+    return;
+  }
+  if (params.plan === 'c11' && !(innerHeight >= screen.height - 2)) {
+    setStatus('Relevé refusé — plan c11 hors plein écran. Le mode fenêtre n\'emprunte pas le ' +
+              'même chemin de composition, et C11 s\'y mesurerait sur autre chose.', true);
+    return;
+  }
   // Ce garde vaut plus que le contrôleur lui-même : sans lui, un relevé pris avant
   // convergence est indiscernable d'un relevé valide, et C3b — critère bloquant —
   // peut être déclaré PASS sur une charge nulle.
@@ -378,19 +657,31 @@ function startRun() {
   }
   // Pas de prompt() : il bloque l'automatisation et fige toute extension de
   // pilotage. L'étiquette suit la séquence du § 4.4, dans l'ordre.
-  const label = suggestLabel();
+  const label = params.plan === 'libre' && params.etat ? params.etat : suggestLabel();
   state.deltas = [];
+  state.chargeHorsFenetre = false;
   state.sampling = true;
   state.sampleStart = performance.now();
   state.pendingLabel = label.trim();
   $('run').disabled = true;
-  setStatus(`Relevé « ${state.pendingLabel} » — stabilisation 2 s…`, true);
+  setStatus(`Relevé « ${state.pendingLabel} » — stabilisation ${params.stab / 1000} s…`, true);
 }
 
+/// L'étiquette suit le PLAN, pas une séquence unique.
+///
+/// Elle ne suivait que la séquence C3b, si bien qu'un relevé de coût de réglette
+/// sortait étiqueté « 2-calque-non-ordonne » : le fichier disait mesurer le calque
+/// de Regarde alors qu'il mesurait la réglette du témoin. Une étiquette fausse est
+/// pire qu'une étiquette absente — elle survit au dépôt et personne ne la corrige.
 function suggestLabel() {
   const n = state.runs.length;
-  return ['1-reference', '2-calque-non-ordonne', '3-trace-continu',
-          '3-trace-continu-bis', '2-calque-non-ordonne-bis', '1-reference-bis'][n] || `releve-${n + 1}`;
+  const sequences = {
+    c3b:  ['1-reference', '2-calque-non-ordonne', '3-trace-continu',
+           '3-trace-continu-bis', '2-calque-non-ordonne-bis', '1-reference-bis'],
+    cout: ['sans-reglette', 'avec-reglette'],
+    c11:  ['sans-reglette', 'avec-reglette', 'compteur'],
+  };
+  return (sequences[params.plan] || [])[n] || `releve-${n + 1}`;
 }
 
 function finishRun(now) {
@@ -421,6 +712,16 @@ function finishRun(now) {
   renderResults();
   setStatus(`« ${run.label} » : ${run.effectiveFps} fps effectifs · ` +
             `${(run.droppedRate * 100).toFixed(1)} % de frames perdues · méd. ${run.medianMs} ms`);
+
+  // `depot=run` est le réglage recommandé : un rechargement de page ne coûte
+  // alors que le relevé en cours, pas la campagne entière.
+  if (params.depot === 'run') {
+    // Fenêtre du relevé, élargie de 2 s de part et d'autre : le banc doit pouvoir
+    // regarder juste avant et juste après sans avoir à redemander.
+    const fenetre = journalFenetre(state.sampleStart - 2000, now + 2000);
+    const numero = String(state.runs.length + 3).padStart(2, '0');
+    deposer(`${numero}-${run.label.replace(/[^a-z0-9-]/gi, '-').toLowerCase().slice(0, 31)}`, fenetre);
+  }
 }
 
 /// Un relevé n'est comparable à la référence que s'il partage sa charge et son écran.
@@ -482,20 +783,105 @@ function renderResults() {
 // l'offset performance.now() ↔ CMClockGetHostTimeClock() (ADR-0007).
 function alignClock() {
   const pageNow = performance.now();
-  state.clockAlign = { pageNow: +pageNow.toFixed(3), wallMs: Date.now(), frame: state.frame };
-  setStatus(`Alignement : performance.now()=${state.clockAlign.pageNow} ms · frame ${state.frame} · ` +
-            `wall=${state.clockAlign.wallMs}. Note le SessionTime affiché par Regarde au même instant.`);
+  // Une LISTE, pas un champ unique. Un clic dans la scène aligne aussi l'horloge :
+  // avec un champ unique, le second clic écrasait le premier en silence, et le
+  // pont d'horloge sur lequel repose tout C11 disparaissait sans laisser de trace.
+  const pont = { pageNow: +pageNow.toFixed(3), wallMs: Date.now(), frame: state.frame };
+  state.clockAligns.push(pont);
+  setStatus(`Alignement ${state.clockAligns.length} : performance.now()=${pont.pageNow} ms · ` +
+            `frame ${pont.frame} · wall=${pont.wallMs}.`);
 }
 
-function payload() {
+// Au-delà, le JSON dépasserait 3 Mio. On décime alors, DÉTERMINISTE, et on le dit.
+const MAX_ENTREES = 90000;
+
+/// Extrait du journal en anneau la fenêtre [t0, t1], et rend compte de tout ce
+/// qui a été perdu — par l'anneau comme par la décimation.
+function journalFenetre(t0, t1) {
+  const ecrites = journal.n;
+  const jetees = Math.max(0, ecrites - LOG_CAP);
+  const depuis = jetees;                              // premier indice encore lisible
+  const f = [], t = [];
+  let candidats = 0;
+  for (let k = depuis; k < ecrites; k++) {
+    const i = k & (LOG_CAP - 1);
+    if (journal.t[i] < t0 || journal.t[i] > t1) continue;
+    candidats++;
+    f.push(journal.f[i]); t.push(+journal.t[i].toFixed(3));
+  }
+  let decimation = 1, jeteesDepot = 0;
+  if (f.length > MAX_ENTREES) {
+    decimation = Math.ceil(f.length / MAX_ENTREES);
+    const gf = [], gt = [];
+    for (let k = 0; k < f.length; k += decimation) { gf.push(f[k]); gt.push(t[k]); }
+    jeteesDepot = f.length - gf.length;
+    f.length = 0; t.length = 0; f.push(...gf); t.push(...gt);
+  }
+  const motif = jetees > 0 ? 'anneau' : (decimation > 1 ? 'taille' : null);
+  return {
+    capacite: LOG_CAP, ecrites, jetees,
+    premiereFrame: f.length ? f[0] : null,
+    derniereFrame: f.length ? f[f.length - 1] : null,
+    entrees: f.length,
+    // Faux signale un TROU : anneau bouclé pendant la fenêtre, ou décimation.
+    continu: f.length > 0 && (f[f.length - 1] - f[0] + 1) === candidats && decimation === 1,
+    decimation, jeteesDepot, motifTroncature: motif,
+    masque: RG.MASQUE,
+    f, t,
+  };
+}
+
+/// Les huit vecteurs de contrôle du format, publiés par la page.
+/// Le banc les compare à ceux que le décodeur Swift produit de son côté : deux
+/// implémentations, une seule table, et l'accord se constate au lieu de s'espérer.
+function rgVecteurs() {
+  return [0, 1, 2, 3, 1023, 1024, 524287, 1048575].map((V) => {
+    const G = V ^ (V >>> 1);
+    return { V, G, crc: rgCrc8(G) };
+  });
+}
+
+const VERBES_TABLE = [
+  ['KeyR', 'ctrl+alt+R', 'relevé'], ['KeyD', 'ctrl+alt+D', 'déposer'],
+  ['KeyX', 'ctrl+alt+X', 'fin de plan'], ['KeyG', 'ctrl+alt+G', 'réglette'],
+  ['KeyN', 'ctrl+alt+N', 'chiffres'], ['KeyA', 'ctrl+alt+A', 'aligner'],
+  ['KeyH', 'ctrl+alt+H', 'panneau'], ['KeyZ', 'ctrl+alt+Z', 'reset fuites'],
+  ['Digit1', 'ctrl+alt+1', 'horloge'], ['Digit2', 'ctrl+alt+2', 'charge'],
+  ['Digit3', 'ctrl+alt+3', 'compteur'],
+];
+
+function payload(fenetre) {
+  const cv = $('gl');
+  const dpr = window.devicePixelRatio || 1;
   return {
     tool: 'regarde-lot0-temoin1',
+    protocole: 2,
+    sessionId, run: params.run,
     capturedAt: new Date().toISOString(),
-    screen: {
+    ecran: {
       cssPx: [innerWidth, innerHeight],
-      dpr: window.devicePixelRatio,
-      devicePx: [Math.round(innerWidth * devicePixelRatio), Math.round(innerHeight * devicePixelRatio)],
+      dpr,
+      devicePx: [Math.round(innerWidth * dpr), Math.round(innerHeight * dpr)],
+      tampon: [cv.width, cv.height],
+      natif: [screen.width * dpr, screen.height * dpr],
     },
+    // Le plein écran est constaté par la GÉOMÉTRIE et non par l'API : Chrome
+    // expose ses barres comme des fenêtres d'accessibilité distinctes, et
+    // `document.fullscreenElement` reste nul quand on passe par le menu
+    // Présentation — qui est pourtant le seul chemin vers le plein écran NATIF,
+    // celui dont on veut mesurer la composition. Constaté le 20 août.
+    pleinEcran: innerHeight >= screen.height - 2,
+    probeFocalise: document.activeElement === $('probe'),
+    chiffresVisibles: state.chiffres,
+    reglette: {
+      active: state.reglette, refus: state.regletteRefus,
+      module: RG.M, cols: RG.COLS, rows: RG.ROWS, bits: RG.BITS,
+      poly: RG.POLY, init: RG.INIT, masque: RG.MASQUE,
+      origineNatifPx: rgOrigine(),
+      vecteurs: rgVecteurs(),
+    },
+    verbes: VERBES_TABLE.map(([code, combo, role]) => ({ code, combo, role })),
+    journal: fenetre || journalFenetre(-Infinity, Infinity),
     c3b: {
       runs: state.runs,
       referenceFps: referenceFps(),
@@ -506,11 +892,43 @@ function payload() {
       chargeInsuffisante: state.chargeInsuffisante,
       verdicts: verdicts(),
     },
-    c11: {
-      clockAlign: state.clockAlign,
-      counterLogTail: state.counterLog.slice(-4000),
+    c11: { clockAligns: state.clockAligns, plan: params.plan, duree: params.duree },
+    drapeaux: {
+      chargeHorsFenetre: state.chargeHorsFenetre,
+      focusPerdu: state.focusPerdu,
+      calibrated: state.calibrated,
+      chargeInsuffisante: state.chargeInsuffisante,
+      hud: params.hud, auto: params.auto, plan: params.plan,
+      fuites: { ...leaks },
     },
   };
+}
+
+/// Dépose sur le serveur. Aucun `execute javascript` de l'autre côté : c'est la
+/// page qui écrit, le script n'a qu'à attendre le fichier.
+async function deposer(nom, fenetre) {
+  if (!params.run) { setStatus('Dépôt impossible — aucun `run` dans l\'URL.', true); return false; }
+  if (state.depotEnCours) return false;
+  state.depotEnCours = true;
+  const corps = JSON.stringify(payload(fenetre));
+  try {
+    const r = await fetch(`/depot/${encodeURIComponent(params.run)}/${encodeURIComponent(nom)}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: corps, cache: 'no-store',
+    });
+    if (r.ok) {
+      state.depotsFaits.push(nom);
+      setStatus(`Déposé « ${nom} » — ${corps.length} octets.`);
+      return true;
+    }
+    setStatus(`Dépôt « ${nom} » refusé : ${r.status}.`, true);
+    return false;
+  } catch (e) {
+    setStatus(`Dépôt « ${nom} » impossible : ${e}. Le serveur tourne-t-il ?`, true);
+    return false;
+  } finally {
+    state.depotEnCours = false;
+  }
 }
 
 function verdicts() {
@@ -606,15 +1024,21 @@ publishLeaks();
 // ── Interface ────────────────────────────────────────────────────────────────
 function setMode(m) {
   state.mode = m;
-  $('clock').style.display   = m === 'clock'   ? 'block' : 'none';
-  $('counter').style.display = m === 'counter' ? 'block' : 'none';
-  $('gl').style.display      = m === 'load'    ? 'block' : 'none';
+  $('clock').style.display   = m === 'clock' ? 'block' : 'none';
+  // Le canvas est visible dans les DEUX modes du moteur : la réglette y vit, et
+  // le compteur se lit désormais par-dessus la charge.
+  $('gl').style.display      = m === 'clock' ? 'none' : 'block';
+  // Les gros chiffres ne s'affichent que si on les a demandés — et alors aucun
+  // relevé n'est accepté.
+  $('counter').style.display = (m === 'counter' && state.chiffres) ? 'block' : 'none';
   for (const [id, mm] of [['m1','clock'],['m2','load'],['m3','counter']]) {
     $(id).setAttribute('aria-pressed', String(mm === m));
   }
-  $('run').disabled = (m !== 'load') || state.sampling;
-  if (m === 'load') { if (initGL()) resizeGL(); }
-  if (m === 'counter') state.counterLog = [];
+  $('run').disabled = (m === 'clock') || state.sampling;
+  if (m !== 'clock') { if (initGL()) resizeGL(); }
+  // Le journal n'est PLUS vidé ici. Il ne se tronque que par l'anneau, et
+  // l'anneau compte ce qu'il jette : c'est ce qui rend la clause « dit combien
+  // d'entrées il a jetées » du « fini quand » de S29 tenable.
   setStatus(m === 'load'
     ? (state.calibrated
         ? `Mode charge — charge gelée à ${state.glLoadLocked} itérations. Prêt pour un relevé.`
@@ -640,7 +1064,9 @@ $('run').onclick = startRun;
 $('align').onclick = alignClock;
 $('reset').onclick = () => {
   if (!confirm('Effacer tous les relevés ?')) return;
-  state.runs = []; state.counterLog = []; state.clockAlign = null;
+  // Le journal survit : lui seul porte le compte de ce qui a été jeté depuis
+  // l'origine de la page, et l'effacer rendrait ce compte faux sans le dire.
+  state.runs = []; state.clockAligns = [];
   // La charge reste gelée : la réarmer rendrait les relevés d'avant et d'après
   // l'effacement incomparables entre eux.
   renderResults();
@@ -657,7 +1083,46 @@ $('copy').onclick = async () => {
   }
 };
 
+// Les verbes du pilotage machine-à-machine.
+//
+// ⌃⌥S, ⌃⌥F, ⌃⌥M et ⌃⌥L sont INTERDITS ici : Regarde les enregistre en raccourcis
+// GLOBAUX par RegisterEventHotKey (app/Sources/Regarde/Input/HotKeyCenter.swift).
+// Un raccourci global prime sur l'application au premier plan — ⌃⌥S ouvrirait une
+// session Regarde en pleine mesure, et le témoin ne le verrait jamais. D'où ⌃⌥X
+// pour « arrêter », et non ⌃⌥S.
+const VERBES = {
+  KeyR: () => startRun(),
+  KeyD: () => deposer('02-etat'),
+  KeyX: async () => { await deposer('fin'); setStatus('Plan terminé.'); },
+  KeyG: () => {
+    state.reglette = !state.reglette;
+    if (state.reglette) state.regletteRefus = null;
+    setStatus(`Réglette ${state.reglette ? 'allumée' : 'éteinte'}.`);
+  },
+  KeyN: () => { state.chiffres = !state.chiffres; setMode(state.mode);
+                setStatus(`Chiffres décoratifs ${state.chiffres ? 'allumés — aucun relevé ne sera accepté' : 'éteints'}.`); },
+  KeyA: () => alignClock(),
+  KeyH: () => $('hud').classList.toggle('hidden'),
+  KeyZ: () => { resetLeaks(); setStatus('Compteurs de fuites remis à zéro.'); },
+  Digit1: () => setMode('clock'),
+  Digit2: () => setMode('load'),
+  Digit3: () => setMode('counter'),
+};
+
 addEventListener('keydown', (e) => {
+  // Les verbes passent AVANT les deux gardes ci-dessous : `e.target === probe`
+  // les avalerait quand le champ a le focus, et `e.ctrlKey || e.altKey` les
+  // rejetterait une seconde fois.
+  //
+  // L'appariement se fait sur `e.code`, la touche PHYSIQUE. Avec ⌥ enfoncé,
+  // macOS transforme `e.key` en « ® » pour KeyR : apparier sur `e.key` ferait
+  // dépendre le canal de la disposition du clavier, ce qui a déjà coûté une
+  // soirée au lot 0 avec ⌥⌘Z en AZERTY.
+  if (e.ctrlKey && e.altKey && !e.metaKey && !e.shiftKey) {
+    const verbe = VERBES[e.code];
+    if (verbe) { e.preventDefault(); verbe(); }   // rien ne s'insère dans #probe
+    return;
+  }
   if (e.target === $('probe')) return;         // ne jamais capturer la saisie du champ de test
   if (e.metaKey || e.ctrlKey || e.altKey) return;
   const k = e.key.toLowerCase();
@@ -675,10 +1140,55 @@ addEventListener('keydown', (e) => {
 // quand une main tient déjà ⌥⌘.
 $('scene').addEventListener('click', alignClock);
 
+// La perte de focus pendant un relevé le disqualifie : Chrome bride rAF sur un
+// onglet inactif, et la cadence mesurée ne serait plus celle de la page.
+addEventListener('blur', () => { if (state.sampling) state.focusPerdu = true; });
+
+// ── Amorçage ─────────────────────────────────────────────────────────────────
+state.reglette = params.reglette;
+state.chiffres = params.chiffres;
+if (!params.hud) $('hud').classList.add('hidden');
+
 // C4 : le caret doit continuer de clignoter dans ce champ pendant tout le tracé.
-$('probe').focus();
-setMode('clock');
-console.log('[temoin1] prêt — 1 horloge · 2 charge · 3 compteur · R relevé · A aligner · H panneau');
+// Sans panneau il n'est pas focalisable, et c'est assumé : C4 ne se mesure pas
+// pendant C11, et aucun pixel de panneau ne doit se trouver dans l'image.
+if (params.hud) $('probe').focus();
+setMode(params.mode);
+
+if (params.run && params.depot !== '0') deposer('00-session');
+
+// `auto=armer` : la page se configure et NE DÉMARRE PAS.
+//
+// Le plein écran est le seul geste que la page ne peut pas faire elle-même —
+// l'API Fullscreen exige un geste utilisateur, et le chemin de composition visé
+// est le plein écran NATIF de Chrome, qui passe par le menu Présentation. Un
+// démarrage automatique au `load` courrait contre cette transition et mesurerait
+// une fenêtre : c'est la limite déjà consignée pour C3b au lot 0.
+if (params.auto === 'armer') {
+  let depuis = null;
+  const guetter = () => {
+    const plein = innerHeight >= screen.height - 2;
+    if (!plein) { depuis = null; return requestAnimationFrame(guetter); }
+    if (depuis === null) depuis = performance.now();
+    if (performance.now() - depuis < 500) return requestAnimationFrame(guetter);
+    setStatus('Plein écran détecté et stable — armé. ⌃⌥R pour le premier relevé.');
+  };
+  requestAnimationFrame(guetter);
+  setStatus('Armé — en attente du plein écran, ou de ⌃⌥R.', true);
+} else if (params.auto === '1') {
+  setTimeout(startRun, 300);
+}
+
+// Un rechargement en pleine campagne laisse une PREUVE plutôt qu'un trou : le
+// `sessionId` change, et `interrompu.json` dit où la vie précédente s'est arrêtée.
+addEventListener('beforeunload', () => {
+  if (!params.run || params.depot === '0') return;
+  const corps = new Blob([JSON.stringify(payload())], { type: 'application/json' });
+  navigator.sendBeacon(`/depot/${encodeURIComponent(params.run)}/interrompu`, corps);
+});
+
+console.log(`[temoin1] prêt — protocole 2 · session ${sessionId} · run ${params.run ?? '(aucun)'} · ` +
+            `plan ${params.plan} · réglette ${state.reglette ? 'on' : 'off'}`);
 </script>
 </body>
 </html>
