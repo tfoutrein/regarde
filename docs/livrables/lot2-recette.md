@@ -114,6 +114,10 @@ Un échec ici invalide le produit, pas seulement le lot.
       pointe exactement sous le curseur. Ni l'une ni l'autre décalée — et surtout pas du double.
       *C'est le test qui attrape une erreur d'échelle Retina. À refaire sur l'écran externe en 9.1.*
 - [ ] **3.4** Relâchez `⌥⌘` : l'encre reste un court instant (≈ 0,35 s) puis disparaît d'un coup.
+- [ ] **3.4 bis** Attendez la publication, puis **reprenez `⌥⌘` sans rien tracer** : l'écran reste
+      vierge. Les marques publiées ne reviennent pas — ni sur cet écran, ni sur l'autre.
+      *Un panneau masqué ignorait les ordres de dessin, y compris celui qui le vide : il
+      réapparaissait avec son contenu périmé.*
       *Ce délai est voulu — represser `⌥⌘` avant qu'il ne s'écoule laisse tout en place.*
 - [ ] **3.5** ≈1 s après, le HUD annonce `N marque(s) publiée(s)` et un nom de dossier. **Puis
       lisez le journal** : `éclair — N marque(s), M image(s)` doit porter **deux nombres égaux**.

@@ -203,6 +203,16 @@ final class OverlayController {
         elected?.inkView.onFrame = { [weak self] in
             MainActor.assumeIsolated { self?.pump() }
         }
+
+        // Le dégel est branché sur TOUS les panneaux, pas seulement sur celui qui draine.
+        // Un écran où l'on ne trace pas ne reçoit aucun événement : sans ce rappel, il
+        // garderait indéfiniment le dessin qu'il avait avant d'être masqué.
+        for panel in panels.values {
+            let id = panel.displayID
+            panel.inkView.onThaw = { [weak self] in
+                MainActor.assumeIsolated { self?.redraw(id) }
+            }
+        }
     }
 
     /// Unique consommateur du ring : draine, applique, publie.
@@ -371,7 +381,18 @@ final class OverlayController {
 
     func showPanels() {
         visible = true
-        for panel in panels.values { panel.show() }
+        for panel in panels.values {
+            panel.show()
+            // Le panneau reprend l'état du MODÈLE à l'instant où il redevient visible.
+            //
+            // Il a pu être vidé pendant qu'il était masqué — c'est ce que fait une
+            // publication — et un ordre de dessin adressé à une vue gelée est ignoré. Sans
+            // cette resynchronisation, les marques déjà publiées réapparaissaient au
+            // ré-armement, et ne s'effaçaient que sur l'écran où l'on recommençait à
+            // tracer.
+            panel.inkView.setFrozen(false)
+        }
+        redrawAll()
     }
 
     func hidePanels() {

@@ -91,6 +91,16 @@ final class InkView: NSView {
     /// branche le drainage — voir `OverlayController.electPump`.
     var onFrame: (() -> Void)?
 
+    /// Appelé quand la vue sort du gel, pour qu'elle reprenne l'état du modèle.
+    ///
+    /// Sans ce rappel, une vue gelée ignore les ordres de dessin — c'est le but — mais
+    /// les ignore DÉFINITIVEMENT : elle réapparaît avec le contenu qu'elle avait avant
+    /// d'être masquée. Constaté en usage réel : après une publication, reprendre ⌥⌘ une
+    /// minute plus tard faisait ressurgir les marques déjà publiées, sur les deux écrans,
+    /// jusqu'au premier point du tracé suivant — et seul l'écran où l'on traçait s'en
+    /// débarrassait.
+    var onThaw: (() -> Void)?
+
     override init(frame: CGRect) {
         super.init(frame: frame)
         wantsLayer = true
@@ -174,6 +184,9 @@ final class InkView: NSView {
     func setFrozen(_ frozen: Bool) {
         guard frozen != isFrozen else { return }
         isFrozen = frozen
+        // Le dégel resynchronise : tout ce qui a été refusé pendant le gel doit être
+        // rattrapé, sans quoi la vue affiche un état périmé.
+        if !frozen { onThaw?() }
     }
 
     // MARK: - Contenu

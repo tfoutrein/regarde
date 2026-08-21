@@ -348,6 +348,27 @@ func scenarioDrift(origin: CGPoint, elsewhere: CGPoint) {
     disarm()
 }
 
+/// Trace, publie, attend, re-arme SANS tracer, et laisse l'armement tenu.
+///
+/// Sert a verifier ce que le calque affiche au moment du re-armement : les marques
+/// publiees ne doivent PAS reapparaitre. Le controle se fait par capture d'ecran pendant
+/// la pause finale.
+func scenarioGhost(origin: CGPoint) {
+    arm()
+    stroke(from: origin, to: CGPoint(x: origin.x + 220, y: origin.y + 100))
+    pause(300)
+    disarm()
+
+    // Laisser la publication eclair partir et vider le modele.
+    pause(3000)
+
+    // Re-armer, sans rien tracer, et tenir.
+    arm()
+    move(to: CGPoint(x: origin.x + 40, y: origin.y + 40), flags: ARMED)
+    pause(UInt32(value("hold", 5000)))
+    disarm()
+}
+
 func value(_ name: String, _ def: Double) -> Double {
     guard let i = args.firstIndex(of: "--\(name)"), i + 1 < args.count else { return def }
     return Double(args[i + 1]) ?? def
@@ -376,6 +397,7 @@ guard args.count > 1 else {
       triplet        --x --y --tools --marks     3 marques, 3 outils (S28)
       undo           --x --y                     trace, ⌥⌘Z, retrace, publie
       drift          --x --y --ex --ey           trace, change d'application, retrace
+      ghost          --x --y --hold              trace, publie, re-arme sans tracer
 
     Le curseur revient a sa position initiale a la fin.
     """)
@@ -396,6 +418,7 @@ case "continuous": scenarioTrace(origin: origin, count: count, width: 320, stepM
 case "lot2":       scenarioLot2(origin: origin)
 case "outside":    scenarioOutside(origin: origin)
 case "undo":       scenarioUndo(origin: origin)
+case "ghost":      scenarioGhost(origin: origin)
 case "drift":      scenarioDrift(origin: origin,
                                  elsewhere: CGPoint(x: value("ex", 1400), y: value("ey", 900)))
 case "triplet":
