@@ -172,12 +172,12 @@ enum CaptureSelfTest {
         let arrowCrop = Cropper.crop(image, around: focus)
         let headPx = CGPoint(x: CGFloat(head.x) * CGFloat(image.width),
                              y: (1 - CGFloat(head.y)) * CGFloat(image.height))
-        let offCentre = hypot(headPx.x - arrowCrop.sourceRect.midX,
-                              headPx.y - arrowCrop.sourceRect.midY)
+        let dx = headPx.x - arrowCrop.sourceRect.midX
+        let dy = headPx.y - arrowCrop.sourceRect.midY
         check(t, "la pointe tombe dans le tiers central du recadrage",
-              abs(headPx.x - arrowCrop.sourceRect.midX) < arrowCrop.sourceRect.width / 6
-              && abs(headPx.y - arrowCrop.sourceRect.midY) < arrowCrop.sourceRect.height / 6,
-              "→ écart (\(Int(headPx.x - arrowCrop.sourceRect.midX)), \(Int(headPx.y - arrowCrop.sourceRect.midY))) px sur \(Int(arrowCrop.sourceRect.width))×\(Int(arrowCrop.sourceRect.height))")
+              abs(dx) < arrowCrop.sourceRect.width / 6
+              && abs(dy) < arrowCrop.sourceRect.height / 6,
+              "→ écart (\(Int(dx)), \(Int(dy))) px sur \(Int(arrowCrop.sourceRect.width))×\(Int(arrowCrop.sourceRect.height))")
 
         let wide = Cropper.crop(image, around: NormRect(bounding: [
             NormPoint(x: 0.05, y: 0.05), NormPoint(x: 0.95, y: 0.95)]))
