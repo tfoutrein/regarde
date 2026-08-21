@@ -1,4 +1,5 @@
 import AppKit
+import ImageIO
 import ApplicationServices
 import CoreGraphics
 import Foundation
@@ -40,6 +41,45 @@ if CommandLine.arguments.contains("--capture-test") {
 
 if CommandLine.arguments.contains("--marks-test") {
     exit(MainActor.assumeIsolated { MarksSelfTest.run() } ? 0 : 1)
+}
+
+// Le décodeur de réglette — l'instrument de C11, donc le seul instrument existant
+// contre B1. Il fabrique ses propres images : un instrument dont la vérification
+// exigerait l'appareil qu'il mesure ne se vérifierait jamais.
+if CommandLine.arguments.contains("--reglette-test") {
+    exit(RegletteSelfTest.run() ? 0 : 1)
+}
+
+// Lecture d'un PNG déposé, pour le banc C11 et pour la recette manuelle.
+//
+// Le banc en a besoin : il capture, il écrit, puis il relit. Et c'est ce qui rend
+// l'accord avec l'implémentation de référence Python constatable sur la MÊME
+// image — deux décodeurs indépendants sur un seul fichier, ce qui vaut mieux que
+// deux décodeurs sur deux fichiers.
+if let i = CommandLine.arguments.firstIndex(of: "--lire-reglette") {
+    guard i + 1 < CommandLine.arguments.count else {
+        FileHandle.standardError.write(Data("usage : --lire-reglette <image.png>\n".utf8))
+        exit(2)
+    }
+    let url = URL(fileURLWithPath: CommandLine.arguments[i + 1])
+    guard let src = CGImageSourceCreateWithURL(url as CFURL, nil),
+          let image = CGImageSourceCreateImageAtIndex(src, 0, nil) else {
+        print("refus  image illisible : \(url.path)")
+        exit(1)
+    }
+    switch FrameNumberReader.lire(image) {
+    case .lu(let v, let diag):
+        print("V          \(v)")
+        print("module     \(String(format: "%.2f", diag.module))")
+        print("origine    (\(Int(diag.origine.x)), \(Int(diag.origine.y)))")
+        print("contraste  \(diag.contraste)")
+        print("marge      \(diag.margeMin)")
+        print("faibles    \(diag.bitsFaibles)")
+        exit(0)
+    case .refus(let r):
+        print("refus      \(r)")
+        exit(1)
+    }
 }
 
 @MainActor
