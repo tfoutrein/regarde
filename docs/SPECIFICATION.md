@@ -109,8 +109,8 @@ struct SessionTime: Hashable, Comparable, Codable {
 
 final class SessionClock: @unchecked Sendable {
     private let master = CMClockGetHostTimeClock()
-    private let origin: CMTime            // lu a l'entree en arming
-    private let originContinuous: UInt64  // mach_continuous_time, pour la duree murale
+    private var origin: CMTime            // MUTABLE : posee au lancement, RECALEE a l'entree en arming
+    private var originContinuous: UInt64  // mach_continuous_time, pour la duree murale
 
     func now() -> SessionTime { SessionTime(CMTimeSubtract(CMClockGetTime(master), origin)) }
 
@@ -123,11 +123,29 @@ final class SessionClock: @unchecked Sendable {
         return s
     }
 
-    func fromStream(_ pts: CMTime, sync: CMClock) -> SessionTime {
-        SessionTime(CMTimeSubtract(CMSyncConvertTime(pts, from: sync, to: master), origin))
+    /// L'horloge du flux a un PORTEUR NOMME, et n'est pas passee en parametre.
+    /// `SCStream.synchronizationClock` vaut nil avant startCapture() : la laisser
+    /// implicite invite a inventer un offset pendant `arming`, ce que la correction
+    /// 2 ci-dessus interdit. `fromStream` rend nil tant qu'aucune n'est adoptee.
+    private var sync: CMClock?
+    func adopterHorlogeDeFlux(_ c: CMClock, id: String)
+    func fromStream(_ pts: CMTime) -> SessionTime? {
+        guard let sync else { return nil }
+        return SessionTime(CMTimeSubtract(CMSyncConvertTime(pts, from: sync, to: master), origin))
     }
+    /// Inverse de now(), dont assetTime() a besoin.
+    func pts(for t: SessionTime) -> CMTime { CMTimeAdd(origin, t.raw) }
+    /// Duree MURALE, veille comprise.
+    func wallSeconds() -> Double
 }
 ```
+
+**Correction apportee en S30 : l'origine est MUTABLE et se recale a l'entree en
+`arming`.** L'esquisse la posait dans `init()`, donc au lancement de l'application.
+Une session ouverte six heures plus tard aurait donne a ses marques des
+`SessionTime` de six heures, et `assetTime()` les aurait toutes clampees hors
+bornes — sans qu'une seule image ne soit extraite, et sans le moindre message. Le
+journal aurait dit « 6 marques », le dossier aurait ete vide.
 
 ### 3.2 Le temps de l'asset n'est pas le temps de session
 
@@ -138,8 +156,16 @@ struct CaptureSegment: Codable {
     let id: CaptureSegmentID
     let displayID: CGDirectDisplayID
     let fileURL: URL
-    var firstSamplePTS: CMTime?        // PTS passe a startSession(atSourceTime:)
-    var lastSamplePTS: CMTime?
+    // `CMTime` n'est pas Codable, et l'encoder en secondes flottantes perdrait la
+    // precision au tick sur laquelle se joue tout l'appariement : on encode le
+    // couple valeur/echelle. Nil tant qu'aucun echantillon n'a ete ecrit — cas
+    // LEGITIME d'un ecran strictement fige, que S32 verifie nommement.
+    var firstSamplePTS: CMTimeCodable?   // PTS passe a startSession(atSourceTime:)
+    var lastSamplePTS: CMTimeCodable?
+    // Identite de l'horloge du flux qui a produit ces PTS. Deux flux ont deux
+    // synchronizationClock, et leurs PTS ne sont PAS comparables : sans elle, un
+    // decalage silencieux du meme ordre que B1, diagnostique comme lui.
+    var clockID: String?
     let pixelSize: CGSize              // dimensions configurees du buffer
     var pointPixelScale: Double
     let start: SessionTime
@@ -158,6 +184,8 @@ struct CaptureSegment: Codable {
 ```
 
 Le plan de burst `[t − 0,8, t, t + 0,4]` est systématiquement clampé sur `[0, duration]` ; un temps hors bornes ne produit pas de frame, il produit une trace.
+
+**`CaptureSegmentID` est OPTIONNEL sur une marque**, et c'est un cas légitime plutôt qu'une lacune : le mode éclair — le mode majoritaire — n'ouvre ni session, ni flux, ni segment. Sa marque est servie par le filet RAM et n'a aucun segment auquel se rapporter. Le rendre obligatoire aurait forcé un segment factice, c'est-à-dire un mensonge dans le manifeste. La marque porte à la place sa `provenance d'image` — `segment`, `preRoll` (résolution réduite), `filetRAM` ou `aucune` — parce que les quatre n'ont pas la même valeur de preuve et que le rapport doit pouvoir le dire.
 
 ### 3.3 Trois systèmes de coordonnées, une seule fonction de conversion
 

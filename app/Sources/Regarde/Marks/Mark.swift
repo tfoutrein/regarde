@@ -230,11 +230,27 @@ struct Mark: Identifiable, Sendable {
     /// tiers, Universal Control — empruntent ce chemin (C12).
     let timeOrigin: TimestampOrigin
 
+    /// Segment de capture porteur, s'il y en a un.
+    ///
+    /// **Optionnel, et c'est un cas légitime, pas une lacune.** Le mode éclair —
+    /// le mode MAJORITAIRE — n'ouvre ni session, ni flux, ni segment : sa marque
+    /// est servie par le filet RAM et n'a aucun segment auquel se rapporter. Le
+    /// rendre obligatoire aurait forcé un segment factice, c'est-à-dire un
+    /// mensonge dans le manifeste.
+    var segmentID: CaptureSegmentID?
+    /// Marque posée à T−N par `⌥⌘ + 1..9`, et non au geste (§ 5.1).
+    var isRetroactive: Bool = false
+    /// D'où vient son image. `preRoll` signale une résolution réduite.
+    var imageSource: ImageSource = .aucune
+
     init(id: UUID = UUID(), number: Int, displayID: CGDirectDisplayID,
          shape: MarkShape, tool: MarkTool, target: String? = nil,
          intention: Intention? = nil,
          t: SessionTime = SessionTime(seconds: 0),
-         timeOrigin: TimestampOrigin = .fallbackNow) {
+         timeOrigin: TimestampOrigin = .fallbackNow,
+         segmentID: CaptureSegmentID? = nil,
+         isRetroactive: Bool = false,
+         imageSource: ImageSource = .aucune) {
         self.id = id
         self.number = number
         self.displayID = displayID
@@ -244,5 +260,8 @@ struct Mark: Identifiable, Sendable {
         self.intention = intention
         self.t = t
         self.timeOrigin = timeOrigin
+        self.segmentID = segmentID
+        self.isRetroactive = isRetroactive
+        self.imageSource = imageSource
     }
 }

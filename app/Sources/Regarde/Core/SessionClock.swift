@@ -122,6 +122,54 @@ final class SessionClock: @unchecked Sendable {
         return Double(mach_continuous_time() &- depuis) * Self.tickToNanos / 1_000_000_000.0
     }
 
+    // ── L'horloge du FLUX ────────────────────────────────────────────────────
+    //
+    // Elle a un porteur NOMMÉ, et ce n'est pas de la cosmétique : `SCStream.
+    // synchronizationClock` vaut **nil avant `startCapture()`** (§ 3.1, correction
+    // 2). Une marque posée pendant `arming` ne peut donc pas être convertie — elle
+    // est étiquetée `preRoll` et servie par la source RAM, sans seek, et surtout
+    // JAMAIS horodatée sur un offset inventé. Laisser l'horloge implicite invite
+    // exactement à inventer cet offset.
+    private let syncLock = NSLock()
+    private var _sync: CMClock?
+    private var _syncID: String?
+
+    /// Adopte l'horloge d'un flux qui vient de démarrer.
+    func adopterHorlogeDeFlux(_ clock: CMClock, id: String) {
+        syncLock.lock(); defer { syncLock.unlock() }
+        _sync = clock; _syncID = id
+        log.notice("horloge de flux adoptée — \(id, privacy: .public)")
+    }
+
+    func oublierHorlogeDeFlux() {
+        syncLock.lock(); defer { syncLock.unlock() }
+        _sync = nil; _syncID = nil
+    }
+
+    /// Identité de l'horloge courante, ou `nil` si aucun flux ne tourne.
+    var horlogeDeFluxID: String? {
+        syncLock.lock(); defer { syncLock.unlock() }
+        return _syncID
+    }
+
+    /// Convertit un PTS de flux vers la timeline de session.
+    ///
+    /// **Par échantillon, jamais par offset figé** (§ 3.1, correction 1).
+    /// L'esquisse initiale échantillonnait l'écart une fois au démarrage ;
+    /// `CMSyncConvertTime` coûte quelques nanosecondes et supprime la question de
+    /// la dérive. Un offset figé produirait une erreur qui CROÎT avec la durée de
+    /// la session — invisible sur trente secondes, franche sur dix minutes.
+    ///
+    /// Rend `nil` quand aucune horloge n'est adoptée : c'est le cas `arming`, et
+    /// il doit se voir plutôt que se combler.
+    func fromStream(_ pts: CMTime) -> SessionTime? {
+        syncLock.lock()
+        let horloge = _sync
+        syncLock.unlock()
+        guard let horloge else { return nil }
+        return SessionTime(CMTimeSubtract(CMSyncConvertTime(pts, from: horloge, to: master), origin))
+    }
+
     /// Instant d'un `CGEvent.timestamp` converti vers un PTS de l'horloge maîtresse.
     ///
     /// C'est l'inverse de `now()`, et il sert à `CaptureSegment.assetTime` (S32) :

@@ -1,4 +1,5 @@
 import CoreGraphics
+import CoreMedia
 import Foundation
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -24,6 +25,7 @@ enum CaptureSelfTest {
         tiles(t)
         frames(t)
         engraving(t)
+        segments(t)
         print("\n── \(t.passed) vérifications passées, \(t.failed) échouées ──")
         return t.failed == 0
     }
@@ -543,5 +545,173 @@ enum CaptureSelfTest {
             if r > 200, g < 110, b < 110, r - max(g, b) > 90 { hits += 1 }
         }
         return hits
+    }
+
+    // MARK: - Segments et temps de l'asset (S32)
+
+    /// Le modèle temporel, sur des cas fabriqués à la main.
+    ///
+    /// Aucun écran, aucun flux, aucune permission — et c'est le point. Le § 3.2
+    /// appelle B1 « le défaut le plus grave de la conception initiale ». Un modèle
+    /// temporel dont la vérification exigerait un flux vivant ne serait vérifié
+    /// qu'une fois le flux écrit, c'est-à-dire après que le bug s'y serait installé.
+    private static func segments(_ t: Tally) {
+        print("\n· Segments et temps de l'asset")
+        let clock = SessionClock.shared
+        clock.rearm()
+
+        /// Un segment dont les PTS sont posés à la main, comme le ferait un writer
+        /// dont le premier échantillon n'arrive pas à zéro — ce qui est le cas
+        /// général, et toute la raison d'être d'`assetTime`.
+        func fabriquer(premier: Double, dernier: Double,
+                       horloge: String? = "flux-A") -> CaptureSegment {
+            var seg = CaptureSegment(
+                id: CaptureSegmentID(), displayID: 1,
+                fileURL: URL(fileURLWithPath: "/dev/null"),
+                pixelSize: CGSize(width: 3456, height: 2234),
+                pointPixelScale: 2,
+                start: SessionTime(seconds: 0))
+            seg.firstSamplePTS = CMTimeCodable(clock.pts(for: SessionTime(seconds: premier)))
+            seg.lastSamplePTS = CMTimeCodable(clock.pts(for: SessionTime(seconds: dernier)))
+            seg.clockID = horloge
+            return seg
+        }
+
+        // 1 — L'aller-retour, sous un tick de l'échelle de 90 000.
+        var pire = 0.0
+        for secondes in [0.0, 0.001, 1.0 / 3.0, 12.75, 59.999, 600.0] {
+            let st = SessionTime(seconds: secondes)
+            let retour = SessionTime(CMTimeSubtract(clock.pts(for: st),
+                                                    clock.pts(for: SessionTime(seconds: 0))))
+            pire = max(pire, abs(retour.seconds - secondes))
+        }
+        check(t, "aller-retour SessionTime → PTS → SessionTime sous un tick de 90 000",
+              pire < 1.0 / 90_000.0, String(format: "pire écart %.3f µs", pire * 1e6))
+
+        // 2 — `firstSamplePTS` n'est PAS zéro, et c'est tout l'objet.
+        let seg = fabriquer(premier: 3.2, dernier: 63.2)
+        check(t, "firstSamplePTS n'est pas nul — c'est ce décalage que B1 exploite",
+              (seg.firstSamplePTS?.cm.seconds ?? 0) > 1.0,
+              String(format: "%.3fs", seg.firstSamplePTS?.cm.seconds ?? -1))
+
+        // 3 — Une marque DANS le segment rend un temps d'asset relatif au premier
+        //     échantillon, et non au temps de session.
+        if let at = seg.assetTime(for: SessionTime(seconds: 10.0), clock: clock) {
+            check(t, "une marque à 10,0 s rend un temps d'asset de 6,8 s",
+                  abs(at.seconds - 6.8) < 0.001, String(format: "%.4fs", at.seconds))
+        } else {
+            check(t, "une marque à 10,0 s rend un temps d'asset", false, "refusée à tort")
+        }
+
+        // 4 — Marque ANTÉRIEURE au premier échantillon : refusée, pas approchée.
+        check(t, "marque antérieure au premier échantillon — refusée",
+              seg.assetTime(for: SessionTime(seconds: 1.0), clock: clock) == nil)
+
+        // 5 — Marque POSTÉRIEURE au dernier : refusée aussi.
+        check(t, "marque postérieure au dernier échantillon — refusée",
+              seg.assetTime(for: SessionTime(seconds: 70.0), clock: clock) == nil)
+
+        // 6 — Les bornes exactes sont, elles, ACCEPTÉES.
+        check(t, "la borne basse exacte est acceptée",
+              seg.assetTime(for: SessionTime(seconds: 3.2), clock: clock) != nil)
+        check(t, "la borne haute exacte est acceptée",
+              seg.assetTime(for: SessionTime(seconds: 63.2), clock: clock) != nil)
+
+        // 7 — Un segment VIDE ne rend jamais de temps. Écran strictement figé :
+        //     ScreenCaptureKit ne livre que sur changement, donc zéro échantillon.
+        var vide = fabriquer(premier: 0, dernier: 0)
+        vide.firstSamplePTS = nil; vide.lastSamplePTS = nil
+        check(t, "segment vide — aucun temps d'asset, et le segment se déclare vide",
+              vide.assetTime(for: SessionTime(seconds: 5), clock: clock) == nil && vide.vide)
+
+        // 8 — Une horloge de flux DIFFÉRENTE est refusée nommément.
+        //     Deux flux ont deux synchronizationClock : leurs PTS ne sont pas
+        //     comparables, et un décalage silencieux ici serait diagnostiqué comme B1.
+        check(t, "PTS d'une autre horloge de flux — refusé nommément",
+              seg.assetTime(for: SessionTime(seconds: 10), clock: clock, clockID: "flux-B") == nil)
+        check(t, "et la MÊME horloge est acceptée",
+              seg.assetTime(for: SessionTime(seconds: 10), clock: clock, clockID: "flux-A") != nil)
+
+        // 9 — Le plan de burst, clampé.
+        let bouge = MotionSample(completeFramesLastSecond: 12, dirtyRatioLastSecond: 0.10)
+        let fige = MotionSample(completeFramesLastSecond: 0, dirtyRatioLastSecond: 0)
+        let curseur = MotionSample(completeFramesLastSecond: 30, dirtyRatioLastSecond: 0.001)
+        let redraw = MotionSample(completeFramesLastSecond: 1, dirtyRatioLastSecond: 0.8)
+
+        check(t, "écran animé — burst de trois frames",
+              seg.framePlan(pour: SessionTime(seconds: 30), motion: bouge, clock: clock).count == 3)
+        check(t, "écran figé — une seule frame",
+              seg.framePlan(pour: SessionTime(seconds: 30), motion: fige, clock: clock).count == 1)
+        check(t, "curseur clignotant seul — une seule frame (surface dérisoire)",
+              seg.framePlan(pour: SessionTime(seconds: 30), motion: curseur, clock: clock).count == 1)
+        check(t, "redraw plein écran unique — une seule frame (fréquence 1)",
+              seg.framePlan(pour: SessionTime(seconds: 30), motion: redraw, clock: clock).count == 1)
+
+        // 10 — Le burst près de la fin perd sa borne haute, sans bruit.
+        let pres = seg.framePlan(pour: SessionTime(seconds: 63.0), motion: bouge, clock: clock)
+        check(t, "burst à 0,2 s de la fin — la borne violée disparaît du plan",
+              pres.count == 2, "\(pres.count) frame(s) retenue(s) sur 3")
+
+        // 11 — Encodé puis décodé, les PTS reviennent au TICK près.
+        //      Les encoder en secondes flottantes perdrait la précision sur
+        //      laquelle se joue tout l'appariement.
+        let enc = JSONEncoder(), dec = JSONDecoder()
+        if let data = try? enc.encode(seg), let relu = try? dec.decode(CaptureSegment.self, from: data) {
+            check(t, "CaptureSegment encodé puis décodé — PTS identiques au tick près",
+                  relu.firstSamplePTS?.value == seg.firstSamplePTS?.value
+                  && relu.firstSamplePTS?.timescale == seg.firstSamplePTS?.timescale
+                  && relu.lastSamplePTS?.value == seg.lastSamplePTS?.value)
+            check(t, "et le temps d'asset relu est le même",
+                  relu.assetTime(for: SessionTime(seconds: 10), clock: clock)?.value
+                  == seg.assetTime(for: SessionTime(seconds: 10), clock: clock)?.value)
+        } else {
+            check(t, "CaptureSegment encodé puis décodé", false, "encodage impossible")
+        }
+
+        // 12 — StopReason survit à l'aller-retour : un segment dont on ignore
+        //      pourquoi il s'est fermé ne dit pas si son vide est normal.
+        var arrete = seg
+        arrete.stopReason = .deconnexion
+        arrete.end = SessionTime(seconds: 63.2)
+        if let data = try? enc.encode(arrete),
+           let relu = try? dec.decode(CaptureSegment.self, from: data) {
+            check(t, "StopReason survit à l'encodage", relu.stopReason == .deconnexion)
+        } else {
+            check(t, "StopReason survit à l'encodage", false)
+        }
+
+        // 13 — Une marque SANS segment est un cas légitime : c'est le mode éclair,
+        //      le mode majoritaire, qui n'ouvre ni session ni flux.
+        let eclair = Mark(number: 1, displayID: 1,
+                          shape: .point(NormPoint(x: 0.5, y: 0.5)), tool: .point,
+                          t: SessionTime(seconds: 0), timeOrigin: .hardware,
+                          segmentID: nil, imageSource: .filetRAM)
+        check(t, "marque sans segment — cas légitime, provenance RAM",
+              eclair.segmentID == nil && eclair.imageSource == .filetRAM && !eclair.isRetroactive)
+
+        // 14 — FrameRef dit si la frame est BOÎTÉE dans son tampon (ADR-0009).
+        let boitee = FrameRef(segmentID: seg.id,
+                              contentRect: CGRect(x: 0, y: 0, width: 3440, height: 2160),
+                              bufferSize: CGSize(width: 3456, height: 2234),
+                              scaleFactor: 1, contentScale: 2, resolutionReduite: false,
+                              pts: CMTimeCodable(.zero))
+        let pleine = FrameRef(segmentID: seg.id,
+                              contentRect: CGRect(x: 0, y: 0, width: 3456, height: 2234),
+                              bufferSize: CGSize(width: 3456, height: 2234),
+                              scaleFactor: 1, contentScale: 2, resolutionReduite: false,
+                              pts: CMTimeCodable(.zero))
+        check(t, "FrameRef reconnaît une frame boîtée", boitee.boitee && !pleine.boitee)
+
+        // L'horloge de flux : nulle avant `startCapture`, et le dire au lieu de
+        // combler. Une marque posée pendant `arming` ne peut PAS être convertie.
+        clock.oublierHorlogeDeFlux()
+        check(t, "sans horloge de flux adoptée, fromStream refuse plutôt que d'inventer",
+              clock.fromStream(CMTime(seconds: 1, preferredTimescale: 600)) == nil
+              && clock.horlogeDeFluxID == nil)
+        clock.adopterHorlogeDeFlux(CMClockGetHostTimeClock(), id: "essai")
+        check(t, "une fois adoptée, fromStream rend un instant et l'horloge se nomme",
+              clock.fromStream(CMClockGetTime(CMClockGetHostTimeClock())) != nil
+              && clock.horlogeDeFluxID == "essai")
+        clock.oublierHorlogeDeFlux()
     }
 }
