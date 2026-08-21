@@ -52,6 +52,45 @@ l'image. Le calque était visible, il n'a rien laissé.
 La mesure quantitative complète (`app/Tools/lot2-cible.sh`) donne 670 pixels vermillon dans la
 région cible avec quatre marques affichées, contre 670 sur la scène nue — au pixel près.
 
+## Validation par recette manuelle — 21 août 2026
+
+Le passage automatisé ci-dessus prouvait que la chaîne fonctionne. Il ne prouvait pas que le
+produit tient en main. **Soixante-quatre tests manuels** l'ont vérifié, tous cochés par l'auteur.
+
+Ils ont trouvé **onze défauts** qu'aucun scénario automatisé n'avait vus, et dont plusieurs
+auraient rendu le produit inutilisable :
+
+| Défaut | Ce qu'il produisait |
+|---|---|
+| `dict[key] = nil` supprime la clé en Swift | une marque sans intention n'était **jamais gravée** — le cas majoritaire du mode éclair |
+| Deux algorithmes de placement du badge | le numéro sautait d'un endroit à l'autre entre l'écran et l'image |
+| Recadrage centré sur le trait | ce que la flèche désigne se retrouvait sur un bord, souvent coupé |
+| Facteur d'échelle mêlant réduction et rognage | forme gravée jusqu'à 18 % trop courte sur un recadrage non carré |
+| Plafond de 896 px sur le côté long | 128 tuiles dépensées sur les 1568 du palier, texte au quart de sa taille |
+| Épaisseur et diamètre calculés sur le côté long | trait un tiers trop épais, badge deux fois trop gros |
+| Halo ajouté autour du trait | épaisseur perçue triplée, cadre collé au texte |
+| Cible = premier morceau de fenêtre listé | **Warp inannotable** : la cible était sa barre d'onglets de 44 px |
+| Vue gelée ignorant les ordres de dessin | les marques publiées ressurgissaient au ré-armement |
+| Pot de captures vidé avant la gravure | « 1 marque, 0 image », sans erreur |
+| `⌘Z` nu intercepté en permanence | **le raccourci le plus utilisé de macOS volé à l'application testée** |
+
+Deux d'entre eux venaient de corrections faites la veille : un correctif peut en casser un autre,
+et seul l'usage le révèle.
+
+**Une décision de conception a été renversée** par l'usage : `⌥⌘Z` rend désormais son numéro
+([ADR-0013](../adr/0013-numerotation-definitive-au-mousedown.md) révisé). L'argument décisif était
+que `Échap` et `⌥⌘Z` font la même chose du point de vue de l'utilisateur, et que l'un rendait le
+numéro quand l'autre le retenait.
+
+**Deux ajouts** sont nés de la recette : une **vue d'ensemble** par écran, qui situe les marques
+les unes par rapport aux autres, et un **journal formaté** en trois colonnes, avec démarcation à
+chaque session.
+
+**La recette elle-même a dû être refaite.** Un audit multi-agents l'a confrontée au code : sur
+37 tests, **43 problèmes** — des comportements décrits à l'envers, des lignes de journal illisibles
+au moment où on les demandait, des gestes sans rien à observer. Elle est passée à 64 tests, chacun
+nommant ce qu'on regarde et où, et un générateur la produit désormais depuis sa source Markdown.
+
 ## Ce qui reste ouvert
 
 - **S16** — Developer ID et notarisation, reporté faute de compte Apple Developer payant. Le lot 8
