@@ -359,11 +359,15 @@ enum CaptureSelfTest {
         check(t, "le badge ne descend jamais sous 26 px",
               Engraver.badgeDiameter(longSide: 100) == 26)
 
-        // Le halo est un LISERÉ, pas une seconde épaisseur : il déborde d'un nombre fixe
-        // de pixels, quelle que soit la largeur du trait.
-        check(t, "le halo déborde d'un liseré constant, non proportionnel",
-              Engraver.haloEdge > 0 && Engraver.haloEdge < 1.5,
-              "→ \(Engraver.haloEdge) px de chaque côté")
+        // Le halo est pris SUR l'épaisseur, jamais ajouté autour : l'encombrement total
+        // du trait gravé doit être celui du calque, au pixel près. Mesuré à l'usage, un
+        // trait censé faire 3,1 px en occupait 4 tant que le halo débordait.
+        check(t, "le liseré tient dans l'épaisseur du trait",
+              Engraver.haloEdge * 2 < Engraver.minWidthForHalo,
+              "→ \(Engraver.haloEdge * 2) px de liseré pour un seuil de \(Engraver.minWidthForHalo)")
+        check(t, "sous le seuil, il reste assez d'encre pour se voir",
+              Engraver.minWidthForHalo - Engraver.haloEdge * 2 >= 1.4,
+              "→ \(Engraver.minWidthForHalo - Engraver.haloEdge * 2) px d'encre au minimum")
 
         // Une capsule à deux chiffres : un « 12 » dans un disque rond déborderait.
         let one = Engraver.badgeSize(number: 9, intention: nil, longSide: 896)

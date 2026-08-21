@@ -126,17 +126,22 @@ enum Engraver {
     static let haloDark = CGColor(srgbRed: 0.043, green: 0.043, blue: 0.051, alpha: 0.50)
     static let haloLight = CGColor(srgbRed: 1, green: 1, blue: 1, alpha: 0.75)
 
-    /// Débordement du halo, en PIXELS de chaque côté du trait — pas en multiples.
+    /// Largeur du liseré de halo, en pixels — pris SUR l'épaisseur du trait, pas autour.
     ///
-    /// Un multiple de l'épaisseur faisait grossir le halo avec le trait, et c'était lui le
-    /// vrai responsable de l'épaisseur perçue : à deux fois la largeur de l'encre, il la
-    /// triplait à l'œil. Un liseré de trois quarts de pixel détache le trait d'un fond de
-    /// couleur voisine sans se voir comme de l'épaisseur.
+    /// C'est le troisième réglage de ce halo, et les deux premiers se trompaient de
+    /// question. À deux fois l'épaisseur de l'encre puis à trois quarts de pixel autour,
+    /// il ajoutait dans les deux cas de la largeur : mesuré, un trait censé faire 3,1 px
+    /// en occupait 4. L'auteur l'a signalé trois fois.
     ///
-    /// Le calque, lui, n'a aucun halo : c'est le seul écart assumé entre ce qu'on voit en
-    /// traçant et ce qui est gravé, et il existe parce que l'image, elle, sera regardée
-    /// hors de son contexte.
-    static let haloEdge: CGFloat = 0.75
+    /// Le halo est donc désormais tracé À L'ÉPAISSEUR EXACTE du trait, et l'encre par
+    /// dessus, amincie d'un liseré de chaque côté. L'épaisseur totale devient rigoureusement
+    /// celle du calque ; ce qu'on troque, c'est un peu de vermillon contre une bordure.
+    ///
+    /// Sous `minWidthForHalo`, il n'y aurait plus assez d'épaisseur à partager : le trait
+    /// est alors gravé nu, ce qui est de toute façon le cas où il se voit le moins bien
+    /// dilué.
+    static let haloEdge: CGFloat = 0.5
+    static let minWidthForHalo: CGFloat = 2.4
 
     // MARK: - Gravure
 
@@ -195,26 +200,33 @@ enum Engraver {
         ctx.setLineCap(.round)
         ctx.setLineJoin(.round)
 
+        // Le liseré est pris SUR l'épaisseur, jamais ajouté autour : l'encombrement total
+        // du trait gravé doit être celui du calque, au pixel près.
+        let hasHalo = width >= Self.minWidthForHalo
+        let inkWidth = hasHalo ? width - haloEdge * 2 : width
+
         switch shape.rendering {
         case .stroke:
-            // Le halo déborde d'un quart d'épaisseur de chaque côté : assez pour détacher
-            // le trait d'un fond de couleur voisine, trop peu pour l'épaissir à l'œil.
-            ctx.setStrokeColor(halo)
-            ctx.setLineWidth(width + haloEdge * 2)
-            ctx.addPath(path)
-            ctx.strokePath()
+            if hasHalo {
+                ctx.setStrokeColor(halo)
+                ctx.setLineWidth(width)
+                ctx.addPath(path)
+                ctx.strokePath()
+            }
 
             ctx.setStrokeColor(ink)
-            ctx.setLineWidth(width)
+            ctx.setLineWidth(inkWidth)
             ctx.addPath(path)
             ctx.strokePath()
 
         case .fill:
-            ctx.setStrokeColor(halo)
-            ctx.setLineWidth(width)
-            ctx.addPath(path)
-            ctx.strokePath()
-
+            // Un disque : le liseré se prend sur son pourtour, sans l'agrandir.
+            if hasHalo {
+                ctx.setStrokeColor(halo)
+                ctx.setLineWidth(haloEdge * 2)
+                ctx.addPath(path)
+                ctx.strokePath()
+            }
             ctx.setFillColor(ink)
             ctx.addPath(path)
             ctx.fillPath()
@@ -227,13 +239,15 @@ enum Engraver {
             // Le lavis porte un liseré à pleine opacité : sans lui, un surlignage sur un
             // fond clair devient un halo aux bords indécis, et l'agent ne peut pas dire
             // où commence la zone désignée.
-            ctx.setStrokeColor(halo)
-            ctx.setLineWidth(width + haloEdge * 2)
-            ctx.addPath(path)
-            ctx.strokePath()
+            if hasHalo {
+                ctx.setStrokeColor(halo)
+                ctx.setLineWidth(width)
+                ctx.addPath(path)
+                ctx.strokePath()
+            }
 
             ctx.setStrokeColor(ink)
-            ctx.setLineWidth(width * 0.8)
+            ctx.setLineWidth(inkWidth)
             ctx.addPath(path)
             ctx.strokePath()
         }
