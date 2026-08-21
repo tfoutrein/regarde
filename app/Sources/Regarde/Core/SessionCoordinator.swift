@@ -130,6 +130,7 @@ final class SessionCoordinator {
         }
         let count = MarkStore.shared.count
         let target = sessionTarget ?? "?"
+        let marked = MarkStore.shared.targets
         let seconds = sessionStart.map { Int(Date().timeIntervalSince($0).rounded()) }
         transition(to: .finalizing)
 
@@ -193,6 +194,9 @@ final class SessionCoordinator {
                 if written != count {
                     lines.append("⚠ \(count - written) marque(s) sans image")
                 }
+                if marked.count > 1 {
+                    lines.append("⚠ marques réparties sur : " + marked.joined(separator: ", "))
+                }
                 lines.append("dossier       " + (directory?.path ?? "aucun"))
                 Journal.section("Session terminée", lines)
 
@@ -245,6 +249,7 @@ final class SessionCoordinator {
             MarkCapture.Keep(id: $0.id, number: $0.number, intention: $0.intention?.label)
         }
         let count = marks.count
+        let targets = MarkStore.shared.targets
         MarkStore.shared.reset(keepingTool: true)
         OverlayController.shared.redrawAll()
 
@@ -262,6 +267,14 @@ final class SessionCoordinator {
             await MainActor.run {
                 Journal.write("éclair — \(count) marque(s), \(written) image(s)"
                               + (directory.map { " dans \($0.lastPathComponent)" } ?? ""))
+                if targets.count > 1 {
+                    // Hors session la cible suit l'application au premier plan : une
+                    // rafale peut donc mélanger plusieurs applications sans que rien ne
+                    // l'annonce. Le dire est le minimum ; voir si l'observation doit se
+                    // couper d'elle-même reste ouvert.
+                    Journal.write("⚠ observation répartie sur \(targets.count) applications : "
+                                  + targets.joined(separator: ", "))
+                }
                 HUDWindow.shared.announce(
                     "\(count) marque\(count > 1 ? "s" : "") publiée\(count > 1 ? "s" : "")",
                     detail: directory?.lastPathComponent ?? "aucun artefact", duration: 3)

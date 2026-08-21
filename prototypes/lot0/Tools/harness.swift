@@ -328,6 +328,26 @@ func scenarioUndo(origin: CGPoint) {
     disarm()
 }
 
+/// Trace sur la fenetre au premier plan, bascule sur ce qu'il y a dessous, retrace.
+///
+/// Reproduit ce que l'auteur a fait en changeant d'ecran : hors session la cible suit
+/// l'application au premier plan, donc l'observation peut melanger deux applications.
+func scenarioDrift(origin: CGPoint, elsewhere: CGPoint) {
+    arm()
+    stroke(from: origin, to: CGPoint(x: origin.x + 200, y: origin.y + 90))
+    pause(400)
+
+    // Un clic hors de la fenetre cible : il ne trace pas, il ACTIVE ce qu'il y a dessous.
+    mouseDown(elsewhere, flags: ARMED)
+    pause(60)
+    mouseUp(elsewhere, flags: ARMED)
+    pause(1200)   // laisser le suivi rattraper la nouvelle cible
+
+    stroke(from: elsewhere, to: CGPoint(x: elsewhere.x + 200, y: elsewhere.y + 90))
+    pause(400)
+    disarm()
+}
+
 func value(_ name: String, _ def: Double) -> Double {
     guard let i = args.firstIndex(of: "--\(name)"), i + 1 < args.count else { return def }
     return Double(args[i + 1]) ?? def
@@ -355,6 +375,7 @@ guard args.count > 1 else {
       outside        --x --y                     hors cible, puis ⌥⌘⇧ (S22)
       triplet        --x --y --tools --marks     3 marques, 3 outils (S28)
       undo           --x --y                     trace, ⌥⌘Z, retrace, publie
+      drift          --x --y --ex --ey           trace, change d'application, retrace
 
     Le curseur revient a sa position initiale a la fin.
     """)
@@ -375,6 +396,8 @@ case "continuous": scenarioTrace(origin: origin, count: count, width: 320, stepM
 case "lot2":       scenarioLot2(origin: origin)
 case "outside":    scenarioOutside(origin: origin)
 case "undo":       scenarioUndo(origin: origin)
+case "drift":      scenarioDrift(origin: origin,
+                                 elsewhere: CGPoint(x: value("ex", 1400), y: value("ey", 900)))
 case "triplet":
     let names = args.firstIndex(of: "--tools").map { args[$0 + 1] } ?? "fleche,cadre,point"
     let ranks = args.firstIndex(of: "--marks").map { args[$0 + 1] } ?? "2,1,4"

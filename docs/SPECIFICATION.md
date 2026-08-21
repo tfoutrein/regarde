@@ -31,6 +31,10 @@ Ce que l'outil **ne** promet pas : il ne supprime pas les allers-retours avec l'
 
 ### 2.1 Mode éclair — une observation, le mode majoritaire
 
+**La cible suit, et une observation peut en mélanger plusieurs.** Hors session, la fenêtre cible est celle de l'application au premier plan, réévaluée en continu — c'est ce qui permet à ⌥⌘ d'armer sans rien ouvrir. Un ⌥⌘-clic hors de cette fenêtre ne trace donc rien : il active l'application visée, qui devient la cible, et le geste suivant y trace.
+
+Conséquence, observée en usage réel : une rafale peut porter sur deux applications sans que l'utilisateur s'en aperçoive — cinq marques réparties entre un navigateur et le Finder dans un même dossier. **Arbitrage retenu :** la rafale n'est pas coupée, chaque marque retient l'application qu'elle annote, et la publication signale le mélange. Couper à chaque changement d'application aurait scindé en deux les observations qui traversent volontairement deux fenêtres ; figer la cible sur la première marque aurait rendu le mode éclair muet dès qu'on change de fenêtre, sans rien dire.
+
 C'est le mode qui doit battre `⌘⇧4`. Il n'ouvre pas de session, ne produit pas d'état, n'ouvre aucun panneau.
 
 | t | Ce qui se passe |

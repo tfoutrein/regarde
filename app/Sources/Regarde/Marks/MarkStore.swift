@@ -111,7 +111,8 @@ final class MarkStore {
                           + "\(stroke.displayID), la marque s'arrête au bord")
         }
         let mark = Mark(number: stroke.number, displayID: stroke.displayID,
-                        shape: shape, tool: stroke.tool)
+                        shape: shape, tool: stroke.tool,
+                        target: TargetWindow.shared.target?.name)
         marks.append(mark)
         return mark
     }
@@ -271,12 +272,20 @@ final class MarkStore {
 
     var count: Int { marks.count }
 
+    /// Applications concernées par les marques en cours, dans l'ordre d'apparition.
+    var targets: [String] {
+        var seen: [String] = []
+        for name in marks.compactMap(\.target) where !seen.contains(name) { seen.append(name) }
+        return seen
+    }
+
     func describe() -> [String] {
         guard !marks.isEmpty else { return ["aucune marque"] }
         return marks.map { m in
             let b = m.shape.boundingBox
-            return String(format: "%d · %@ sur display %u — bbox (%.3f, %.3f) %.3f×%.3f",
-                          m.number, m.tool.label, m.displayID, b.x, b.y, b.w, b.h)
+            return String(format: "%d · %@ sur %@ (display %u) — bbox (%.3f, %.3f) %.3f×%.3f",
+                          m.number, m.tool.label, m.target ?? "?", m.displayID,
+                          b.x, b.y, b.w, b.h)
         }
     }
 }

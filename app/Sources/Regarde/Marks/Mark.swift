@@ -202,17 +202,26 @@ struct Mark: Identifiable, Sendable {
     let displayID: CGDirectDisplayID
     let shape: MarkShape
     let tool: MarkTool
+    /// Application annotée au moment du tracé.
+    ///
+    /// Hors session, la cible SUIT l'application au premier plan : une rafale peut donc
+    /// porter sur plusieurs applications sans que l'utilisateur s'en aperçoive — observé
+    /// en vrai, cinq marques réparties entre deux d'entre elles dans un seul dossier.
+    /// Sans cette information, le rapport du lot 3 attribuerait le tout à une seule.
+    let target: String?
     /// Étiquette posée après coup, `⌥⌘ + 1..6`. Reste `nil` si l'utilisateur n'en pose
     /// pas : en mode parlé, l'intention est dans la voix, pas au clavier.
     var intention: Intention?
 
     init(id: UUID = UUID(), number: Int, displayID: CGDirectDisplayID,
-         shape: MarkShape, tool: MarkTool, intention: Intention? = nil) {
+         shape: MarkShape, tool: MarkTool, target: String? = nil,
+         intention: Intention? = nil) {
         self.id = id
         self.number = number
         self.displayID = displayID
         self.shape = shape
         self.tool = tool
+        self.target = target
         self.intention = intention
     }
 }

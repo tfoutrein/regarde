@@ -194,8 +194,17 @@ l'observation et renumérote à partir de 1.
 ## 7. La fenêtre cible
 
 - [ ] **7.1** D'abord le contrôle positif : `⌥⌘` + glisser **dans** la fenêtre testée → un trait.
-      Puis `⌥⌘` + glisser **hors** de cette fenêtre → **aucun trait**, et le clic part à
-      l'application dessous, qui passe au premier plan.
+      Puis `⌥⌘` + glisser **hors** de cette fenêtre, sur une autre application : **ce
+      premier geste ne trace rien**, il active l'application visée.
+      *Et c'est tout ce que le test vérifie.* Hors session la cible **suit** l'application
+      au premier plan : celle que vous venez d'activer est devenue la cible, donc le geste
+      SUIVANT tracera dessus. C'est voulu — le mode éclair annote ce que vous regardez.
+      Le journal écrit `cible suivie : <l'autre application>` entre les deux.
+- [ ] **7.1 bis** Continuez : posez deux marques sur cette autre application, puis relâchez
+      `⌥⌘`. Les marques des deux applications atterrissent dans **un seul** dossier, et le
+      journal écrit `⚠ observation répartie sur 2 applications : …`.
+      *Décision assumée : une rafale n'est pas coupée par un changement d'application, mais
+      elle le signale, et chaque marque retient l'application qu'elle annote.*
       **Recliquez ensuite sur la fenêtre testée** : tout le reste des sections 7 et 8 en dépend.
 - [ ] **7.2** `⌥⌘⇧` + glisser hors de la fenêtre : **la marque est posée**. C'est l'échappatoire.
 - [ ] **7.3** Déplacez la fenêtre d'au moins la moitié de sa largeur, comptez une seconde, puis
