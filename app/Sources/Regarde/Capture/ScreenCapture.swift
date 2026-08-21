@@ -47,8 +47,18 @@ actor ScreenCapture {
         }
     }
 
+    /// Une capture et l'échelle de l'écran d'où elle vient.
+    struct Shot {
+        let image: CGImage
+        /// Pixels natifs par point. 2 sur un écran Retina, 1 sur un externe ordinaire.
+        ///
+        /// Nécessaire à la gravure : l'épaisseur d'un trait est décidée en POINTS à
+        /// l'écran, et sans cette échelle le graveur ne peut pas la reproduire.
+        let pointScale: CGFloat
+    }
+
     /// Capture un écran entier, à sa résolution native.
-    func capture(displayID: CGDirectDisplayID) async throws -> CGImage {
+    func capture(displayID: CGDirectDisplayID) async throws -> Shot {
         // Contenu FRAIS et non le cache du contact TCC : une fenêtre ouverte depuis le
         // dernier rafraîchissement ne serait pas dans la liste, donc pas exclue —
         // exactement le cas d'une notification qui apparaît pendant la session.
@@ -93,7 +103,7 @@ actor ScreenCapture {
             let image = try await SCScreenshotManager.captureImage(
                 contentFilter: filter, configuration: config)
             log.notice("capture \(image.width)×\(image.height) sur display \(displayID)")
-            return image
+            return Shot(image: image, pointScale: CGFloat(filter.pointPixelScale))
         } catch {
             throw Failure.captureFailed(error.localizedDescription)
         }

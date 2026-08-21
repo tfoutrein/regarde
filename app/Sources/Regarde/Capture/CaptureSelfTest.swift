@@ -320,13 +320,50 @@ enum CaptureSelfTest {
     private static func engraving(_ t: Tally) {
         print("\nGravure (S26)")
 
-        check(t, "l'épaisseur ne descend jamais sous 3 px",
-              Engraver.inkWidth(longSide: 100) == 3)
-        check(t, "l'épaisseur suit 0,22 % du côté long",
-              abs(Engraver.inkWidth(longSide: 3456) - 7.6032) < 0.001,
-              "→ \(Engraver.inkWidth(longSide: 3456))")
+        // ── L'épaisseur gravée est celle du calque, exactement ─────────────────
+        //
+        // Elle suivait « 0,22 % du côté long », une formule qui ne regarde ni l'échelle
+        // de l'écran ni celle du recadrage : sur une image de 1792 px réduite de moitié,
+        // elle gravait 3,94 px là où l'écran en montrait 3. Un tiers de trop, visible à
+        // l'œil nu sur un cadre fin — rapporté deux fois par l'auteur.
+        //
+        // Sur Retina, 3 points font 6 pixels natifs ; un recadrage réduit de moitié les
+        // ramène à 3, soit exactement ce que l'utilisateur voyait.
+        let retinaHalf = Engraver.Frame(captureSize: CGSize(width: 3456, height: 2234),
+                                        sourceRect: CGRect(x: 0, y: 0, width: 1792, height: 400),
+                                        scaleX: 0.5, scaleY: 0.5, pointScale: 2)
+        check(t, "sur Retina réduit de moitié, le trait fait la largeur du calque",
+              abs(retinaHalf.inkWidth - InkStyle.width) < 0.01,
+              "→ \(retinaHalf.inkWidth) contre \(InkStyle.width) au calque")
+
+        // Sans réduction, le trait doit occuper les pixels natifs qu'il occupe à l'écran.
+        let retinaFull = Engraver.Frame(captureSize: CGSize(width: 3456, height: 2234),
+                                        sourceRect: CGRect(x: 0, y: 0, width: 800, height: 600),
+                                        scaleX: 1, scaleY: 1, pointScale: 2)
+        check(t, "sans réduction, le trait fait ses pixels natifs",
+              abs(retinaFull.inkWidth - InkStyle.width * 2) < 0.01,
+              "→ \(retinaFull.inkWidth)")
+
+        // Sur un écran non-Retina, un point vaut un pixel.
+        let plain = Engraver.Frame(captureSize: CGSize(width: 3440, height: 1440),
+                                   sourceRect: CGRect(x: 0, y: 0, width: 800, height: 600),
+                                   scaleX: 1, scaleY: 1, pointScale: 1)
+        check(t, "sur un écran non-Retina, le trait fait ses points",
+              abs(plain.inkWidth - InkStyle.width) < 0.01, "→ \(plain.inkWidth)")
+
+        // Un plancher empêche le trait de disparaître sur un recadrage très réduit.
+        let tiny = Engraver.Frame(captureSize: CGSize(width: 3456, height: 2234),
+                                  sourceRect: CGRect(x: 0, y: 0, width: 3000, height: 2000),
+                                  scaleX: 0.08, scaleY: 0.08, pointScale: 2)
+        check(t, "le trait ne descend jamais sous un pixel et demi", tiny.inkWidth >= 1.2)
         check(t, "le badge ne descend jamais sous 26 px",
               Engraver.badgeDiameter(longSide: 100) == 26)
+
+        // Le halo est un LISERÉ, pas une seconde épaisseur : il déborde d'un nombre fixe
+        // de pixels, quelle que soit la largeur du trait.
+        check(t, "le halo déborde d'un liseré constant, non proportionnel",
+              Engraver.haloEdge > 0 && Engraver.haloEdge < 1.5,
+              "→ \(Engraver.haloEdge) px de chaque côté")
 
         // Une capsule à deux chiffres : un « 12 » dans un disque rond déborderait.
         let one = Engraver.badgeSize(number: 9, intention: nil, longSide: 896)

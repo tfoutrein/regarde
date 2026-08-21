@@ -50,17 +50,35 @@ enum Engraver {
         let scaleX: CGFloat
         let scaleY: CGFloat
 
+        /// Pixels natifs par point sur l'écran d'origine. 2 sur Retina.
+        let pointScale: CGFloat
+
         init(captureSize: CGSize, sourceRect: CGRect,
-             scaleX: CGFloat, scaleY: CGFloat) {
+             scaleX: CGFloat, scaleY: CGFloat, pointScale: CGFloat = 2) {
             self.captureSize = captureSize
             self.sourceRect = sourceRect
             self.scaleX = scaleX
             self.scaleY = scaleY
+            self.pointScale = pointScale
         }
 
         init(captureSize: CGSize, sourceRect: CGRect, scale: CGFloat) {
             self.init(captureSize: captureSize, sourceRect: sourceRect,
                       scaleX: scale, scaleY: scale)
+        }
+
+        /// Épaisseur du trait, en pixels de l'image finale.
+        ///
+        /// **Exactement celle du calque**, et c'est tout l'enjeu : `InkStyle.width` points
+        /// à l'écran font `width × pointScale` pixels natifs, que la réduction du
+        /// recadrage ramène à `× scaleY`.
+        ///
+        /// La formule précédente venait de la spécification — `max(3 px, 0,22 % du côté
+        /// long)` — et ne regardait ni l'échelle de l'écran ni celle du recadrage : sur
+        /// une image de 1792 px réduite de moitié, elle gravait 3,94 px là où l'écran en
+        /// montrait 3. Un tiers de trop, visible à l'œil nu sur un cadre fin.
+        var inkWidth: CGFloat {
+            max(1.2, InkStyle.width * pointScale * min(scaleX, scaleY))
         }
 
         /// Taille de l'image finale.
@@ -96,9 +114,6 @@ enum Engraver {
 
     // MARK: - Dimensions, calculées sur l'image finale
 
-    /// Épaisseur du trait : `max(3 px, 0,22 % du côté long)`.
-    static func inkWidth(longSide: CGFloat) -> CGFloat { max(3, longSide * 0.0022) }
-
     /// Diamètre du badge : `max(26 px, 2,2 % du côté long)`.
     static func badgeDiameter(longSide: CGFloat) -> CGFloat { max(26, longSide * 0.022) }
 
@@ -111,13 +126,17 @@ enum Engraver {
     static let haloDark = CGColor(srgbRed: 0.043, green: 0.043, blue: 0.051, alpha: 0.50)
     static let haloLight = CGColor(srgbRed: 1, green: 1, blue: 1, alpha: 0.75)
 
-    /// Débordement du halo, en multiples de l'épaisseur du trait.
+    /// Débordement du halo, en PIXELS de chaque côté du trait — pas en multiples.
     ///
-    /// 1,5 et non 2 : le halo était le vrai responsable de l'épaisseur perçue. Le trait
-    /// gravé fait la même épaisseur qu'à l'écran, mais un halo à deux fois cette largeur
-    /// le triplait à l'œil — au point qu'un cadre fin tracé à quelques pixels d'un
-    /// paragraphe ressortait épais et collé au texte. Rapporté au premier usage réel.
-    static let haloSpread: CGFloat = 1.5
+    /// Un multiple de l'épaisseur faisait grossir le halo avec le trait, et c'était lui le
+    /// vrai responsable de l'épaisseur perçue : à deux fois la largeur de l'encre, il la
+    /// triplait à l'œil. Un liseré de trois quarts de pixel détache le trait d'un fond de
+    /// couleur voisine sans se voir comme de l'épaisseur.
+    ///
+    /// Le calque, lui, n'a aucun halo : c'est le seul écart assumé entre ce qu'on voit en
+    /// traçant et ce qui est gravé, et il existe parce que l'image, elle, sera regardée
+    /// hors de son contexte.
+    static let haloEdge: CGFloat = 0.75
 
     // MARK: - Gravure
 
@@ -134,7 +153,7 @@ enum Engraver {
         ctx.draw(image, in: CGRect(x: 0, y: 0, width: w, height: h))
 
         let longSide = CGFloat(max(w, h))
-        let width = inkWidth(longSide: longSide)
+        let width = frame.inkWidth
         let map = LuminanceMap(image)
 
         // Formes d'abord.
@@ -181,7 +200,7 @@ enum Engraver {
             // Le halo déborde d'un quart d'épaisseur de chaque côté : assez pour détacher
             // le trait d'un fond de couleur voisine, trop peu pour l'épaissir à l'œil.
             ctx.setStrokeColor(halo)
-            ctx.setLineWidth(width * haloSpread)
+            ctx.setLineWidth(width + haloEdge * 2)
             ctx.addPath(path)
             ctx.strokePath()
 
@@ -209,7 +228,7 @@ enum Engraver {
             // fond clair devient un halo aux bords indécis, et l'agent ne peut pas dire
             // où commence la zone désignée.
             ctx.setStrokeColor(halo)
-            ctx.setLineWidth(width * 1.3)
+            ctx.setLineWidth(width + haloEdge * 2)
             ctx.addPath(path)
             ctx.strokePath()
 

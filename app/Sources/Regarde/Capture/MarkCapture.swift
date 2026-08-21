@@ -117,7 +117,8 @@ actor MarkCapture {
     /// Capture et recadre une marque, sans rien écrire. La gravure viendra à la
     /// fermeture de session, quand l'intention est connue et la marque confirmée.
     func capture(mark: Mark) async throws {
-        let capture = try await ScreenCapture.shared.capture(displayID: mark.displayID)
+        let shot = try await ScreenCapture.shared.capture(displayID: mark.displayID)
+        let capture = shot.image
         let captureSize = CGSize(width: capture.width, height: capture.height)
 
         // `focusBox` et non `boundingBox` : pour une flèche, le sujet est sa POINTE, pas
@@ -144,7 +145,8 @@ actor MarkCapture {
             number: mark.number, shape: mark.shape, image: image,
             frame: Engraver.Frame(captureSize: captureSize,
                                   sourceRect: cropped.sourceRect,
-                                  scaleX: scaleX, scaleY: scaleY)))
+                                  scaleX: scaleX, scaleY: scaleY,
+                                  pointScale: shot.pointScale)))
         log.notice("marque \(mark.number) capturée — \(cropped.kind.rawValue) \(image.width)×\(image.height)")
     }
 
