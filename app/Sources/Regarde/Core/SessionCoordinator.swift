@@ -250,6 +250,9 @@ final class SessionCoordinator {
     /// l'application testee : on suspend d'abord, on s'explique ensuite.
     func forceSuspend(reason: String) {
         guard state != .suspended, state != .idle else { return }
+        // On renonce à publier : les recadrages en attente n'iront nulle part, et les
+        // garder ferait ressortir des images périmées dans une session ultérieure.
+        Task { await MarkCapture.shared.reset() }
         let previous = state
         state = .suspended
         log.notice("suspension forcée depuis \(previous.rawValue, privacy: .public) — \(reason, privacy: .public)")

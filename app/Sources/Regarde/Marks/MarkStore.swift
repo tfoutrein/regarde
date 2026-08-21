@@ -21,6 +21,7 @@ import Foundation
 final class MarkStore {
     static let shared = MarkStore()
 
+
     /// Marques posées, dans l'ordre de création.
     private(set) var marks: [Mark] = []
 
@@ -173,12 +174,17 @@ final class MarkStore {
         // flèche est prévisible.
         if !keepingTool { tool = .arrow }
 
-        // Les recadrages en attente partent avec le modèle. Sans cela, une session
-        // abandonnée laisserait ses items 1 à 4 dans le pot alors que la numérotation
-        // repart à 1 : la publication suivante ferait correspondre l'item périmé 1 à la
-        // marque neuve 1 et graverait les deux dans `marque-01.png`, dernier écrivain
-        // gagnant. Une image d'une session morte ressortirait dans un dossier vivant.
-        Task { await MarkCapture.shared.reset() }
+        // Le pot de captures n'est PAS vidé ici, et ce silence est délibéré.
+        //
+        // Il l'a été, une nuit, pour empêcher une session abandonnée de laisser des items
+        // périmés. Le remède a cassé le cas normal : la publication vide le modèle avant
+        // de lancer la gravure, les deux tâches couraient vers le même acteur, et le pot
+        // se vidait avant que `finalize` n'y arrive. Symptôme relevé par l'auteur dès la
+        // première marque — « 1 marque(s), 0 image(s) », trois fois de suite.
+        //
+        // Le nettoyage du pot appartient aux moments où l'on RENONCE à publier :
+        // l'ouverture d'une session, une suspension. Jamais au vidage du modèle, qui
+        // précède justement une publication.
     }
 
     // MARK: - Rendu

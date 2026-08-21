@@ -46,7 +46,7 @@ echo "→ ⌃⌥S : ouverture de session"
 "$HARNESS" hotkey --key 1 >/dev/null 2>&1 || osascript -e 'tell application "System Events" to key code 1 using {control down, option down}'
 sleep 2
 
-grep -E "cible :|état " "$JOURNAL" | tail -4
+grep -E "cible |état " "$JOURNAL" | tail -4 || true
 
 echo "→ Scénario : quatre outils, quatre intentions"
 # Le harness tourne en arrière-plan et TIENT l'armement 6 s à la fin : le calque
