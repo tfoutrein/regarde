@@ -72,12 +72,16 @@ final class TargetWindow {
     }
 
     /// Fixe la cible sur l'application au premier plan. Appelé à l'ouverture de session.
+    /// `announcing: false` laisse l'appelant journaliser lui-même.
+    ///
+    /// L'ouverture d'une session veut sa démarcation AVANT la ligne de cible, et le nom
+    /// de la cible n'est connu qu'ici : c'est donc à l'appelant d'ordonner les deux.
     @discardableResult
-    func acquire() -> Target? {
+    func acquire(announcing: Bool = true) -> Target? {
         guard let app = NSWorkspace.shared.frontmostApplication,
               app.processIdentifier != ProcessInfo.processInfo.processIdentifier
         else {
-            Journal.write("cible : aucune application au premier plan")
+            Journal.warn(.target, "aucune application au premier plan")
             return nil
         }
 
@@ -86,7 +90,7 @@ final class TargetWindow {
             // Une application sans fenêtre listable — agent de menus, application en
             // cours de lancement. Refuser est plus honnête que d'armer partout : le
             // rapport dirait « cible X » alors que les marques viendraient d'ailleurs.
-            Journal.write("cible : \(name) n'a aucune fenêtre exploitable")
+            Journal.warn(.target, "\(name) n'a aucune fenêtre exploitable")
             return nil
         }
 
@@ -97,8 +101,11 @@ final class TargetWindow {
         publish(frame)
         OptionGate.shared.setTargetFrontmost(true)
         observeActivation()
-        Journal.write(String(format: "cible figée : %@ — cadre (%.0f, %.0f) %.0f×%.0f",
-                             name, frame.minX, frame.minY, frame.width, frame.height))
+        if announcing {
+            Journal.event(.target, String(format: "figée sur %@ — (%.0f, %.0f) %.0f×%.0f",
+                                          name, frame.minX, frame.minY,
+                                          frame.width, frame.height))
+        }
         announce(name)
         startPolling()
         return t
@@ -123,7 +130,7 @@ final class TargetWindow {
 
         let name = app.localizedName ?? app.bundleIdentifier ?? "pid \(app.processIdentifier)"
         if target?.pid != app.processIdentifier {
-            Journal.write("cible suivie : \(name)")
+            Journal.event(.target, "suivie — \(name)")
             announce(name)
         }
         target = Target(pid: app.processIdentifier, bundleID: app.bundleIdentifier,
@@ -139,7 +146,7 @@ final class TargetWindow {
     /// seulement sur elle.
     func release() {
         isPinned = false
-        Journal.write("cible : dégelée, retour au suivi")
+        Journal.event(.target, "dégelée, retour au suivi")
         refreshTarget()
         startPolling()
     }
@@ -177,7 +184,7 @@ final class TargetWindow {
                 let app = NSWorkspace.shared.frontmostApplication
                 let isTarget = app?.processIdentifier == t.pid
                 OptionGate.shared.setTargetFrontmost(isTarget)
-                Journal.write("application active : \(app?.localizedName ?? "?")"
+                Journal.event(.focus, "\(app?.localizedName ?? "?")"
                               + (isTarget ? " — la cible" : " — les touches lui reviennent"))
             }
         }

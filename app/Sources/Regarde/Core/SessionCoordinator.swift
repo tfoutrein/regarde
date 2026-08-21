@@ -65,7 +65,7 @@ final class SessionCoordinator {
     /// donc sur l'éditeur — exactement ce que S22 existe pour empêcher.
     func openSession() {
         guard state == .idle || state == .blocked else {
-            Journal.write("⌃⌥S ignoré — déjà en \(state.rawValue)")
+            Journal.warn(.session, "⌃⌥S ignoré — déjà en \(state.rawValue)")
             return
         }
         guard transition(to: .preflight) else { return }
@@ -96,14 +96,14 @@ final class SessionCoordinator {
         do {
             directory = try SessionPaths.makeSessionDirectory()
         } catch {
-            Journal.write("⚠ répertoire de session impossible : \(error)")
+            Journal.warn(.session, "répertoire impossible — \(error)")
             HUDWindow.shared.announce("Impossible d'écrire les artefacts",
                                       detail: SessionPaths.root.path, duration: 5)
             transition(to: .blocked, reason: "répertoire de session : \(error)")
             return
         }
 
-        guard let target = TargetWindow.shared.acquire() else {
+        guard let target = TargetWindow.shared.acquire(announcing: false) else {
             HUDWindow.shared.announce("Aucune fenêtre à annoter",
                                       detail: "Mets l'application au premier plan, puis ⌃⌥S",
                                       duration: 3)
@@ -111,6 +111,10 @@ final class SessionCoordinator {
             return
         }
 
+        Journal.rule("SESSION · \(target.name)")
+        Journal.event(.target, String(format: "figée — cadre (%.0f, %.0f) %.0f×%.0f",
+                                      target.frame.minX, target.frame.minY,
+                                      target.frame.width, target.frame.height))
         MarkStore.shared.reset()
         sessionDirectory = directory
         sessionTarget = target.name
@@ -125,7 +129,7 @@ final class SessionCoordinator {
     /// Termine la session. `⌃⌥F`. La publication des artefacts arrive en S27.
     func closeSession() {
         guard state == .recording else {
-            Journal.write("⌃⌥F ignoré — aucune session en cours (\(state.rawValue))")
+            Journal.warn(.session, "⌃⌥F ignoré — aucune session en cours (\(state.rawValue))")
             return
         }
         let count = MarkStore.shared.count
@@ -153,7 +157,7 @@ final class SessionCoordinator {
         // le premier relâchement de ⌥⌘ après la session republierait ses marques, dans
         // un second dossier, en double.
         // Écrit AVANT le vidage, faute de quoi la liste sort vide.
-        Journal.section("Marques de la session", MarkStore.shared.describe())
+        Journal.list("MARQUES", MarkStore.shared.describe())
 
         MarkStore.shared.reset()
         OverlayController.shared.redrawAll()
@@ -172,7 +176,7 @@ final class SessionCoordinator {
                     written = frames.filter { $0.role == .crop }.count
                     overviews = frames.filter { $0.role == .overview }.count
                 } catch {
-                    await MainActor.run { Journal.write("⚠ gravure : \(error)") }
+                    await MainActor.run { Journal.warn(.capture, "gravure — \(error)") }
                 }
             } else {
                 // Ne peut plus arriver depuis que l'ouverture refuse un répertoire
@@ -180,7 +184,7 @@ final class SessionCoordinator {
                 // vient de corriger.
                 await MarkCapture.shared.reset()
                 await MainActor.run {
-                    Journal.write("⚠ aucun répertoire de session — \(keep.count) marque(s) perdue(s)")
+                    Journal.warn(.session, "aucun répertoire — \(keep.count) marque(s) perdue(s)")
                 }
             }
             await MainActor.run {
@@ -190,21 +194,21 @@ final class SessionCoordinator {
                 // impossible, en relisant, de dire où l'une finissait. Le compte rendu
                 // répond aux quatre questions qu'on se pose alors — sur quoi, combien de
                 // temps, combien de marques, et où sont les images.
-                var lines = [
-                    "cible         \(target)",
-                    "durée         \(seconds.map { "\($0) s" } ?? "?")",
-                    "marques       \(count)",
-                    "recadrages    \(written)",
-                    "ensembles     \(overviews)",
+                var pairs = [
+                    ("cible", target),
+                    ("durée", seconds.map { "\($0) s" } ?? "?"),
+                    ("marques", "\(count)"),
+                    ("recadrages", "\(written)"),
+                    ("ensembles", "\(overviews)"),
+                    ("dossier", directory?.lastPathComponent ?? "aucun"),
                 ]
                 if written != count {
-                    lines.append("⚠ \(count - written) marque(s) sans image")
+                    pairs.append(("⚠", "\(count - written) marque(s) sans image"))
                 }
                 if marked.count > 1 {
-                    lines.append("⚠ marques réparties sur : " + marked.joined(separator: ", "))
+                    pairs.append(("⚠", "réparties sur " + marked.joined(separator: ", ")))
                 }
-                lines.append("dossier       " + (directory?.path ?? "aucun"))
-                Journal.section("Session terminée", lines)
+                Journal.block("FIN DE SESSION", pairs)
 
                 self.transition(to: .idle)
                 HUDWindow.shared.announce(
@@ -271,19 +275,22 @@ final class SessionCoordinator {
                 written = frames.filter { $0.role == .crop }.count
                 overviews = frames.filter { $0.role == .overview }.count
             } catch {
-                await MainActor.run { Journal.write("⚠ mode éclair : \(error)") }
+                await MainActor.run { Journal.warn(.capture, "mode éclair — \(error)") }
             }
             await MainActor.run {
-                Journal.write("éclair — \(count) marque(s), \(written) recadrage(s), "
-                              + "\(overviews) vue(s) d'ensemble"
-                              + (directory.map { " dans \($0.lastPathComponent)" } ?? ""))
+                Journal.block("ÉCLAIR", [
+                    ("marques", "\(count)"),
+                    ("recadrages", "\(written)"),
+                    ("ensembles", "\(overviews)"),
+                    ("dossier", directory?.lastPathComponent ?? "aucun"),
+                ])
                 if targets.count > 1 {
                     // Hors session la cible suit l'application au premier plan : une
                     // rafale peut donc mélanger plusieurs applications sans que rien ne
                     // l'annonce. Le dire est le minimum ; voir si l'observation doit se
                     // couper d'elle-même reste ouvert.
-                    Journal.write("⚠ observation répartie sur \(targets.count) applications : "
-                                  + targets.joined(separator: ", "))
+                    Journal.warn(.session, "observation répartie sur \(targets.count) "
+                                 + "applications : " + targets.joined(separator: ", "))
                 }
                 HUDWindow.shared.announce(
                     "\(count) marque\(count > 1 ? "s" : "") publiée\(count > 1 ? "s" : "")",

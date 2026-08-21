@@ -152,7 +152,7 @@ final class HotKeyCenter {
 
     fileprivate func fire(id: UInt32) {
         guard let action = HotKeyAction(rawValue: id) else { return }
-        Journal.write("raccourci : \(action.label)")
+        Journal.event(.key, action.label)
         onAction?(action)
     }
 

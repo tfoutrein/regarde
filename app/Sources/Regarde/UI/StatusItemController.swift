@@ -113,7 +113,7 @@ final class StatusItemController {
 
     private func reportGeometry(trigger: String) {
         guard let button = item?.button else {
-            Journal.write("⚠ élément de barre de menus : aucun bouton")
+            Journal.warn(.system, "élément de barre de menus : aucun bouton")
             return
         }
         let visible = item?.isVisible ?? false

@@ -107,8 +107,8 @@ final class MarkStore {
         defer { live = nil }
 
         if stroke.clipped {
-            Journal.write("marque \(stroke.number) — le geste est sorti de l'écran "
-                          + "\(stroke.displayID), la marque s'arrête au bord")
+            Journal.warn(.mark, "\(stroke.number) · le geste est sorti de l'écran "
+                         + "\(stroke.displayID), la marque s'arrête au bord")
         }
         let mark = Mark(number: stroke.number, displayID: stroke.displayID,
                         shape: shape, tool: stroke.tool,

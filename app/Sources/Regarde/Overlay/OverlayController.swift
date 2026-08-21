@@ -99,30 +99,30 @@ final class OverlayController {
                     MarkStore.shared.cancelStroke()
                 case .undo:
                     if let removed = MarkStore.shared.undoLast() {
-                        Journal.write("marque \(removed.number) supprimée — le numéro est rendu")
+                        Journal.event(.mark, "\(removed.number) · supprimée, le numéro est rendu")
                     }
                 case .selectTool(let tool):
                     MarkStore.shared.tool = tool
-                    Journal.write("outil : \(tool.label)")
+                    Journal.event(.tool, tool.label)
                     HUDWindow.shared.announce("Outil : \(tool.label)",
                                               detail: "⌥⌘ + F C P S", duration: 2)
                 case .intention(let intention):
                     switch MarkStore.shared.apply(intention) {
                     case .applied(let number, let intention):
-                        Journal.write("marque \(number) : \(intention.label)")
+                        Journal.event(.mark, "\(number) · \(intention.label)")
                         HUDWindow.shared.announce("Marque \(number) — \(intention.label)",
                                                   detail: "⌥⌘ + 1..6", duration: 2)
                     case .noMark, .muted:
                         // Aucune marque à qualifier. Le dire, plutôt que de laisser
                         // l'utilisateur croire que sa frappe a porté.
-                        Journal.write("intention \(intention.rawValue) sans marque à qualifier")
+                        Journal.warn(.mark, "intention \(intention.rawValue) sans marque à qualifier")
                         HUDWindow.shared.announce("Aucune marque à qualifier",
                                                   detail: "Trace d'abord, qualifie ensuite",
                                                   duration: 2)
                     }
                 case .mutedDigit(let rank):
                     // Le chiffre a été avalé : la palette s'arrête à 6 (ADR-0021).
-                    Journal.write("chiffre \(rank) sans effet — la palette s'arrête à 6")
+                    Journal.event(.key, "chiffre \(rank) sans effet — la palette s'arrête à 6")
                     HUDWindow.shared.announce("\(rank) — hors palette",
                                               detail: "Les intentions vont de 1 à 6",
                                               duration: 2)
@@ -255,7 +255,7 @@ final class OverlayController {
             guard store.hasLiveStroke else { return }
             store.extendStroke(to: event.point, geometry: geometry)
             if let mark = store.endStroke() {
-                Journal.write("marque \(mark.number) — \(mark.tool.label) sur display \(mark.displayID)")
+                Journal.event(.mark, "\(mark.number) · \(mark.tool.label) · display \(mark.displayID)")
                 // La capture part MAINTENANT, sans attendre la fin de session : une
                 // infobulle se referme, une animation se termine, un menu disparaît.
                 // Capturer plus tard donnerait six images d'un même écran au repos, où
@@ -265,7 +265,7 @@ final class OverlayController {
                         try await MarkCapture.shared.capture(mark: mark)
                     } catch {
                         await MainActor.run {
-                            Journal.write("⚠ capture de la marque \(mark.number) : \(error)")
+                            Journal.warn(.capture, "marque \(mark.number) — \(error)")
                         }
                     }
                 }

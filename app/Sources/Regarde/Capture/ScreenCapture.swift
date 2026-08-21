@@ -75,8 +75,8 @@ actor ScreenCapture {
             // qu'`os_log` ne rend rien pour ce bundle, et un diagnostic qu'on ne peut
             // pas lire ne diagnostique rien.
             await MainActor.run {
-                Journal.write("écran \(displayID) absent — partageables : "
-                              + (available.isEmpty ? "AUCUN" : available))
+                Journal.warn(.capture, "écran \(displayID) absent — partageables : "
+                             + (available.isEmpty ? "AUCUN" : available))
             }
             throw Failure.noDisplay(displayID)
         }

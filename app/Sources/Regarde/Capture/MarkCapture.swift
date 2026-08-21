@@ -164,7 +164,7 @@ actor MarkCapture {
             let list = missing.isEmpty ? "\(absent.count) marque(s)"
                                        : missing.map(String.init).joined(separator: ", ")
             await MainActor.run {
-                Journal.write("⚠ capture absente pour la ou les marques \(list)")
+                Journal.warn(.capture, "absente pour \(list)")
             }
         }
     }

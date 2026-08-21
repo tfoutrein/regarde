@@ -14,6 +14,26 @@ Comptez **35 à 45 minutes**. Les sections 1 et 2 sont bloquantes.
 
 ## Avant de commencer
 
+Le journal est en trois colonnes — l'heure, la catégorie, le fait — avec une démarcation à
+chaque ouverture et chaque fin de session :
+
+```
+15:15:23  touche   ⌃⌥S — ouvrir une session
+15:15:23  ── SESSION · TextEdit ──────────────────────────────
+15:15:23  cible    figée — cadre (100, 100) 900×600
+15:15:26  marque   1 · flèche · display 1
+15:15:26  marque   1 · erreur
+15:15:30  ── FIN DE SESSION ──────────────────────────────────
+          cible        TextEdit
+          marques      3
+          recadrages   3
+          ensembles    1
+```
+
+Les catégories : `système`, `session`, `cible`, `marque`, `outil`, `focus`, `touche`,
+`capture`. Un `⚠` en tête de ligne remplace la catégorie — ils se repèrent en parcourant
+la marge.
+
 ```bash
 # 1. Le journal, dans un terminal — AVANT de lancer l'application
 tail -F ~/Regarde/journal.txt

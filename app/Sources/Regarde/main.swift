@@ -48,7 +48,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         Journal.reset()
-        Journal.write("démarrage")
+        Journal.event(.system, "démarrage")
 
         // La disposition du clavier doit être résolue AVANT l'enregistrement des
         // raccourcis : ils s'appuient sur elle pour trouver la bonne touche.
@@ -79,18 +79,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         TargetWindow.shared.follow()
 
         if TestFlags.visibleCapture {
-            Journal.write("⚠ --visible-capture : le calque APPARAÎT dans les captures")
+            Journal.warn(.system, "--visible-capture : le calque APPARAÎT dans les captures")
         }
 
         if EventTap.shared.start() {
             EventTap.shared.startWatchdog()
             OptionGate.shared.currentMode = .active
-            Journal.write("tap démarré — ⌥⌘ + glisser trace, ⌃⌥S ouvre une session")
+            Journal.event(.system, "tap démarré — ⌥⌘ + glisser trace, ⌃⌥S ouvre une session")
         } else {
             // Sans tap, rien à arbitrer : la porte reste fermée pour que le reste de
             // l'application ne se croie pas en état de tracer.
             OptionGate.shared.currentMode = .passthrough
-            Journal.write("⚠ tap non démarré : voir le diagnostic (⌃⌥S)")
+            Journal.warn(.system, "tap non démarré — voir le diagnostic (⌃⌥S)")
         }
 
         HotKeyCenter.shared.install()
@@ -121,9 +121,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case .endSession:
             SessionCoordinator.shared.closeSession()
         case .toggleMicrophoneLock:
-            Journal.write("⌃⌥M — verrou du micro (lot 5)")
+            Journal.event(.key, "⌃⌥M — verrou du micro, lot 5")
         case .toggleAnnotationLock:
-            Journal.write("⌃⌥L — mode annotation verrouillé (lot 2)")
+            Journal.event(.key, "⌃⌥L — mode annotation verrouillé, à venir")
         }
     }
 

@@ -36,10 +36,10 @@ enum CaptureDemo {
     ]
 
     static func run() {
-        Journal.write("── démonstration de capture ──")
+        Journal.rule("DÉMONSTRATION DE CAPTURE")
 
         guard let screen = NSScreen.main else {
-            Journal.write("aucun écran")
+            Journal.warn(.capture, "aucun écran")
             exit(1)
         }
         let displayID = OverlayPanel.displayID(of: screen)
@@ -83,7 +83,7 @@ enum CaptureDemo {
                 print(directory.path)
                 exit(frames.count == marks.count ? 0 : 1)
             } catch {
-                Journal.write("⚠ démonstration : \(error)")
+                Journal.warn(.capture, "démonstration — \(error)")
                 exit(2)
             }
         }
