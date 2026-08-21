@@ -306,6 +306,12 @@ chemin `captureImage` — utile à connaître pour le mode éclair du lot 2. Le 
 fait au lot 3, avec le même banc et le flux continu : c'est le seul test qui rend visible le
 risque R5, invisible sur un écran statique.
 
+**Ce seuil de 16 ms ne se transpose pas au lot 3**, et c'est une correction, pas une nuance. Il a
+été écrit pour un `captureImage` ponctuel ; le flux continu tourne à 15 fps (§ 5.2 de la
+spécification), soit 66,7 ms entre deux frames encodées. Aucune extraction ne peut être plus fine
+que cet intervalle. Le critère d'acceptation du lot 3 se dit donc en unités de compteur du
+témoin — voir § 7.4, « Le seuil de C11 s'écrit avant la mesure ».
+
 ### 4.6 Les douze critères
 
 | # | Critère | Manipulation | Bloquant pour le GO ? |
@@ -756,6 +762,120 @@ Règles valables pour toutes les sessions :
 **28 sessions pour les lots 0 à 2**, soit environ 88 heures — cohérent avec les 11,5 journées
 calibrées plus la ré-immersion. À partir du lot 3, le découpage se refait lot par lot : les
 tâches y sont trop couplées pour être planifiées six mois à l'avance.
+
+### 7.4 Lot 3 — 17 sessions
+
+Premier lot dont le découpage n'était pas écrit d'avance. Il l'est ici, à la fin du lot 2,
+contre le code qui existe et non contre l'idée qu'on s'en faisait.
+
+| # | Durée | Objectif | Fini quand |
+|---|---|---|---|
+| S29 | 3 h | Témoin en mode compteur lisible par machine : numéro en code-barres binaire par-dessus la charge WebGL, journal de page et relevés C3b déposés sur disque par le même canal | Une commande dépose un journal de 60 s `(numéro, now)` **sans `execute javascript`**, dit combien d'entrées elle a jetées, et la cadence reste entre 70 et 90 % du natif |
+| S30 | 3 h | Origine de `SessionClock` posée au lancement et recalée à l'entrée en `arming` ; `originContinuous`, `SessionTime` `Codable`, `hostTicks` transporté du tap jusqu'à `Mark.t` | Le journal donne pour chaque marque son `SessionTime` **et** l'origine de son horodatage ; une marque en mode éclair, sans session, porte `hardware` et n'incrémente pas `fallbackCount` |
+| S31 | 4 h | Banc C11 : pont `performance.now()` ↔ horloge hôte, lecture du numéro gravé dans le PNG, **seuil d'acceptation écrit avant toute mesure**, ligne de base de la chaîne ponctuelle | `lot3-c11.sh` publie la latence propre de `captureImage` sans prétendre à un PASS, et **refuse** de conclure si le pont disperse de plus de 16 ms, si `fallbackCount` a bougé, ou si `--visible-capture` est actif |
+| S32 | 3 h | Modèle temporel en autotest pur : `fromStream` / `pts(for:)`, `CaptureSegment` `Codable` avec `StopReason`, `assetTime()` bornée, `FrameRef`, `MotionSample`, `CaptureSegmentID` **optionnel** sur `Mark` | La section `segments` passe quatorze cas fabriqués à la main ; **retirer la soustraction de `firstSamplePTS` fait passer la section au rouge** |
+| S33 | 2 h | Rotation portrait et recopie vidéo refusées nommément dans `ScreenGeometry`, refus rendu visible | Mettre un écran en recopie fait écrire son `displayID` refusé avec sa raison ; le HUD le dit, et un ⌥⌘-glisser tenté dessus est refusé avec un message |
+| S34 | 4 h | Un `SCStream` par écran à la configuration du § 5.2, filtre reconstruit en cours de flux, démarrage entre `arming` et `recording`, échec empruntant `arming → idle` | Sur 20 s à deux écrans, le journal donne les frames `.complete` reçues contre le théorique et les dimensions réelles du buffer **et non 1920×1080** ; verrouiller l'écran ne laisse aucun `.mov` sous `$TMPDIR` |
+| S35 | 3 h | `AVAssetWriter` HEVC par segment, GOP à 1 s, `firstSamplePTS` et `lastSamplePTS` relevés, **finalisation par segment dès le premier writer**, manifeste JSON à côté de chaque `.mov` | Deux écrans chargés pendant 60 s laissent deux `.mov` lisibles en 0700/0600 avec leur JSON ; un écran figé produit « segment vide » et non un fichier ; le comptage d'encre sur des frames extraites ne dépasse pas le témoin |
+| S36 | 2 h | Débranchement : le writer d'un écran disparu est finalisé **au moment de la déconnexion**, `StopReason` renseigné sur chaque chemin d'arrêt | Débrancher l'externe en pleine session laisse l'heure de finalisation de son segment et un `lastSamplePTS` non nil ; la session continue sur l'écran restant. `lot3-debranchement.sh` rejoue en 3 min |
+| S37 | 4 h | Frontière B2 en un seul contrat : ring lock-free du tap vers `encodeQueue`, seule propriétaire des frames ; anneau de 4 frames sous double garde ; appariement au PTS inférieur le plus proche | Une `dispatchPrecondition` garde chaque accès à un `CVPixelBuffer` ; 2 min sous charge sans `EXC_BAD_ACCESS` ; le journal donne copies faites contre copies évitées — **zéro sur écran figé** |
+| S38 | 2 h | La frame boîtée décrite là où elle sert : `contentRect` et `scaleFactor` portés par `FrameRef` et `Engraver.Frame`. **Le modèle ne bascule pas** — `Mark` reste normalisée sur le cadre de l'écran | Une frame boîtée dont le `contentRect` est strictement inférieur au buffer passe l'autotest ; sur l'externe non-Retina à origine négative, une marque au bord droit tombe au bord droit de l'image |
+| S39 | 4 h | Extraction : un seul `generateCGImagesAsynchronously` par segment, tolérances nommées, provenance inscrite par marque, budget des 3 s décomposé — **et verdict C11 rendu** | `lot3-c11.sh` rend PASS sur 8 marques posées pendant l'animation, au seuil écrit en S31 ; **retirer la soustraction de `firstSamplePTS` fait rendre FAIL** ; écran statique → 8 marques servies par le filet RAM, raison dite par marque |
+| S40 | 3 h | Plan de burst du § 5.4 sous double critère de mouvement, clampé par `assetTime()`, chaque borne violée journalisée | Curseur clignotant seul et redraw plein écran unique donnent **une** image, page animée en donne trois, marque à 0,2 s de la fin en donne deux avec la borne violée nommée |
+| S41 | 3 h | Les quatre budgets sur 10 min à deux écrans, soak de 20 min, série des écarts C11 dans le temps, **C3b refait en plein écran** — dette du lot 0 soldée | Les quatre nombres consignés face à leurs seuils ; la série des écarts C11 **ne dérive pas** ; six relevés C3b en plein écran, un par session neuve et dans les deux ordres, avec `glLoadLocked` identique sur les six |
+| S42 | 3 h | Passage du livrable : 8 marques sur page animée, deux écrans, 10 min, débranchement en cours de route | `docs/livrables/lot3-passage.md` cite le critère mot pour mot et remplit son tableau sans case vide ; `v0.3.0` est posé sur ce commit |
+| S43 | 2 h | Recette manuelle du lot 3, auditée contre le code **avant** remise, générateur prenant source et sortie en arguments | Les tests sont cochés un par un par l'auteur ; une seule commande régénère les deux pages, lot 2 et lot 3 ; les défauts trouvés sont corrigés puis étiquetés `v0.3.1` |
+| S44 | 3 h | **Marge** — pré-roll opt-in : segments roulants de 10 s à 2 fps en demi-résolution, les trois derniers conservés, bascule pleine résolution à l'ouverture | Sans consentement, **rien n'est écrit** ; avec, trois segments au plus sous 8 MiB ; **verrouiller l'écran arrête toute croissance de fichier** — la couture existe : `forceSuspend` abandonne désormais le travail en vol à tout état, il reste à y brancher l'arrêt du flux |
+| S45 | 2 h | **Marge** — marques rétroactives ⌥⌘ + `1`..`9`, seul consommateur du pré-roll, avec le discriminant de substitution du § 6.7 | ⌥⌘ tenu sans rien tracer puis `3` pose une marque à T−3 s servie **par le fichier encodé** ; une marque antérieure au plus ancien segment est refusée avec un message plutôt que servie par une frame fausse |
+
+**45 heures pour S29 à S43**, exactement les 6,5 journées du lot au taux de conversion du lot 2
+(5,5 j pour 38 h). Les cinq heures de S44 et S45 sont en plus, et c'est voulu : voir plus bas.
+
+#### Ce que l'ordre impose
+
+Quatre contraintes ne se négocient pas, et elles suffisent à fixer la séquence.
+
+**L'instrument précède l'objet.** S29 à S31 rendent B1 mesurable avant qu'une ligne d'extraction
+existe. C'est la consigne du § 5, écrite ici sous forme de trois sessions plutôt que d'un
+avertissement.
+
+**Le banc ne prétend pas à un verdict qu'il ne peut pas rendre.** La chaîne du lot 2 capture dans
+une `Task.detached` au relâchement (`OverlayController`, au commit d'une marque), et le lot 0 lui
+a mesuré 49,1 ms de médiane et 120,9 ms au pire
+([`RESULTATS.md`](../prototypes/lot0/RESULTATS.md)). Elle est structurellement hors de la
+tolérance du § 4.5. S31 publie donc une **ligne de base** et quatre
+refus opposables ; le verdict tombe en S39, sur la chaîne continue, qui est la seule à pouvoir le
+soutenir.
+
+**La finalisation par segment arrive avec le premier writer**, pas après la campagne de mesure.
+Un écran débranché pendant un relevé emporterait sinon toute la session — y compris les marques
+de l'autre écran, qui sont complètes (§ 5.5).
+
+**B2 se ferme en un seul contrat.** S37 pose la frontière entière — ring du tap, propriété des
+frames par `encodeQueue`, double garde de l'anneau — parce qu'une frontière posée à moitié est
+une frontière qui ne tient pas, et que le bug qu'elle prévient n'est pas reproductible à la
+demande.
+
+#### Le seuil de C11 s'écrit avant la mesure, et pas en millisecondes
+
+Le § 4.5 fixe la tolérance à « une frame à 60 fps, soit 16 ms ». Ce chiffre a été écrit pour le
+banc du lot 0, qui mesurait un `captureImage` ponctuel. Il ne se transpose pas : le flux du lot 3
+tourne à `minimumFrameInterval = 1/15` (§ 5.2), soit **66,7 ms entre deux frames encodées**. Aucune
+extraction ne peut être plus fine que ça, et un seuil de 16 ms rendrait C11 infaisable par
+construction plutôt que difficile.
+
+Le critère se dit donc en **unités de compteur du témoin**, qui rend à 60 fps : le numéro gravé
+dans l'image doit tomber dans l'intervalle des numéros rendus entre la frame encodée précédant le
+`mouseDown` et la suivante. L'écart se publie dans les deux unités, frames et millisecondes.
+
+Il est écrit en S31, **avant** la première mesure, et repris mot pour mot en S39. Un seuil écrit
+après coup est un seuil ajusté au résultat.
+
+C'est un amendement au § 4.5, qui reste vrai pour le lot 0 et faux pour le lot 3.
+
+#### La marge, en bloc retirable
+
+Le § 6.3 désigne le pré-roll comme le seul poste de marge du lot. S44 et S45 sont donc placées en
+fin de lot, et elles y sont **indissociables** : le pré-roll sans les marques rétroactives est un
+coût de disque sans usage, et les marques rétroactives sans le pré-roll n'ont rien à lire. On les
+livre ensemble ou on les décale ensemble, après le GO/NO-GO n°2.
+
+Tant qu'elles ne sont pas livrées, elles figurent dans « ce qui reste ouvert » du passage comme de
+la recette. Le lot 3 est déclaré atteint sans elles — son critère de fin ne les mentionne pas.
+
+#### Cinq constats trouvés en préparant le lot, et corrigés avant lui
+
+Confronter le découpage au code a produit cinq constats. Ils sont réglés dans le commit qui
+ouvre le lot : aucun n'attendait une session pour être compris, et deux étaient des pannes.
+
+| Constat | Où | Ce qu'il produisait, et ce qu'il est devenu |
+|---|---|---|
+| Le contrôle de non-régression comptait `frames/*.png` et en exigeait exactement six | `lot2-livrable.sh`, bloc « Images » | **Rouge en permanence** depuis l'ajout de la vue d'ensemble, qui atterrit dans le même dossier. **Corrigé** — marques, vues d'ensemble et intrus comptés séparément, et le compte des ensembles vaut deux, un par écran annoté : accepter un seul laissait passer la perte d'un écran, sur un script dont tout l'objet est d'en exercer deux |
+| `absent` était construit par soustraction du pot, puis cherché dans ce même pot | `MarkCapture.waitForCaptures` | Le filtre était vide à tous les coups : le journal comptait les captures manquantes sans jamais dire lesquelles. **Corrigé** — les marques attendues sont passées entières, les numéros absents sont nommés |
+| `forceSuspend` sortait quand l'état valait `.idle` | `SessionCoordinator.forceSuspend` | **Le mode éclair vit entièrement à `.idle`** : un verrouillage d'écran pendant une observation laissait le recadrage dans le pot et la publication programmée partir derrière le verrou. Ce n'était pas une dette du lot 3, c'était une fuite dans le mode majoritaire. **Corrigé** — l'abandon du travail en vol ne dépend plus de l'état, seule la transition reste gardée |
+| `Mark` est normalisée contre `screen.cocoaFrame.size` | `MarkStore.beginStroke` | Ce n'est pas un défaut mais la contrainte qui interdit à S38 de faire basculer le modèle : la frame retenue n'existe qu'après l'appariement, et le calque se retrouverait décalé de la marge de boîtage qu'on prétend supprimer. **Écrit dans le code**, avant qu'on la découvre en la cassant |
+| `CFBundleShortVersionString` valait `0.1.0` | `Info.plist`, `build-app.sh` | On publiait `v0.2.1` et le bundle annonçait `0.1.0`, faute que rien ne les relie. **Corrigé** — la version se dérive du dernier tag et le `CFBundleVersion` du nombre de commits, avec repli sur le plist si le dépôt n'a pas de tag |
+
+#### Ce que la réfutation des correctifs a trouvé en plus
+
+Les cinq correctifs ont été soumis à quatre lentilles de réfutation avant d'être commités —
+concurrence Swift 6, machine à états et sites d'appel, outillage et signature, complétude —
+puis chaque constat confronté au code par un sceptique chargé de le démolir. Trente-deux
+constats bruts, **quatorze retenus**, sept défauts distincts après dédoublonnage. Le premier
+était dans le correctif lui-même.
+
+| Défaut | Où | Ce qu'il produisait |
+|---|---|---|
+| Glob sans correspondance sous `set -euo pipefail` | `lot2-livrable.sh`, bloc « Images » | **Introduit par le correctif n°1.** `ls` sort en erreur, `pipefail` propage, `errexit` tue le script : un dossier sans marque ne donnait pas « ✗ 0 marques », il ne donnait **rien**, code 1, et la remise en place de la fenêtre en fin de script n'était jamais atteinte. Un contrôle muet au lieu d'un contrôle rouge, ce qui est pire |
+| Le tracé EN COURS échappait à l'abandon | `SessionCoordinator.forceSuspend` | `count` ne compte que les marques posées : un geste interrompu par le verrou gardait son numéro et son encre, réapparaissait au geste suivant en suivant le curseur sans bouton enfoncé, et décalait toute la numérotation. `OptionGate.requestReset()`, écrit pour ce cas, n'était pas appelé |
+| La cible restait gelée après une suspension | `SessionCoordinator.forceSuspend` | Une session tuée par le verrou ne reprend pas — `resumeFromSuspension` ramène à `.idle`. Mais `TargetWindow.release()` n'était appelé que par `closeSession` : `isPinned` restait vrai pour toujours et **⌥⌘ n'armait plus nulle part**, sans message, jusqu'à un ⌃⌥S suivi d'un ⌃⌥F |
+| `openSession` n'annulait pas la publication éclair programmée | `SessionCoordinator.openSession` | Le même défaut que le troisième constat, sur un autre chemin d'abandon. Ouvrir une session moins de 0,8 s après un relâchement de ⌥⌘ publiait la première marque de la session dans un dossier « ÉCLAIR » séparé, puis effaçait l'encre en pleine session |
+| `set +o pipefail` désarmait le script entier | `build-app.sh` | `codesign … \| sed` rendait le statut de `sed`, donc zéro quoi qu'il arrive. Une signature en échec passait inaperçue, `--verify` était avalé de même, et le bundle signé était remplacé par un bundle qui ne l'était pas sous un « ✓ Installé ». Au lancement suivant, **TCC redemandait toutes les autorisations** — la panne exacte que le certificat stable existe pour empêcher |
+
+Les deux derniers n'étaient pas dans les cinq constats et ne venaient pas des correctifs : ils
+préexistaient, sur des chemins voisins. Les corriger ici plutôt que plus tard suit ce que la
+recette du lot 2 a établi — un correctif peut en casser un autre, et le chemin qu'on ne
+traverse pas est celui qui casse.
 
 ---
 

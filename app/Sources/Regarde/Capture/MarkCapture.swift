@@ -150,22 +150,31 @@ actor MarkCapture {
     ///
     /// Le plafond existe pour qu'une capture perdue ne bloque pas la publication des
     /// autres : mieux vaut un dossier incomplet qu'un dossier qui n'arrive jamais.
-    private func waitForCaptures(of expected: Set<UUID>) async {
+    /// Les marques attendues sont passées ENTIÈRES, et non réduites à leurs identités.
+    ///
+    /// Le numéro d'une capture manquante ne peut pas venir du pot : une capture absente
+    /// n'y est, par définition, pas. L'ancienne version le cherchait pourtant là —
+    /// `pending.filter { absent.contains($0.id) }` — sur un ensemble construit par
+    /// soustraction du pot, donc disjoint de lui : le filtre était vide à tous les coups
+    /// et le journal se rabattait en permanence sur son message de repli. Il annonçait
+    /// « absente pour 2 marque(s) » sans jamais dire lesquelles, c'est-à-dire sans dire
+    /// la seule chose qu'on lui demande.
+    private func waitForCaptures(of expected: [Keep]) async {
+        let awaited = Set(expected.map(\.id))
         let deadline = Date().addingTimeInterval(3)
         while Date() < deadline {
             let present = Set(pending.map(\.id))
-            if expected.isSubset(of: present) { return }
+            if awaited.isSubset(of: present) { return }
             try? await Task.sleep(for: .milliseconds(40))
         }
-        let absent = expected.subtracting(Set(pending.map(\.id)))
-        if !absent.isEmpty {
-            let missing = pending.filter { absent.contains($0.id) }.map(\.number).sorted()
-            log.error("captures manquantes après 3 s : \(absent.count, privacy: .public)")
-            let list = missing.isEmpty ? "\(absent.count) marque(s)"
-                                       : missing.map(String.init).joined(separator: ", ")
-            await MainActor.run {
-                Journal.warn(.capture, "absente pour \(list)")
-            }
+        let present = Set(pending.map(\.id))
+        let absent = expected.filter { !present.contains($0.id) }
+        guard !absent.isEmpty else { return }
+
+        let list = absent.map(\.number).sorted().map(String.init).joined(separator: ", ")
+        log.error("captures manquantes après 3 s — marques \(list, privacy: .public)")
+        await MainActor.run {
+            Journal.warn(.capture, "capture absente — marque(s) \(list)")
         }
     }
 
@@ -237,7 +246,7 @@ actor MarkCapture {
     /// fichier : son recadrage a été capturé, il est simplement jeté sans avoir jamais
     /// touché le disque.
     func finalize(keeping keep: [Keep], into directory: URL) async throws -> [Frame] {
-        await waitForCaptures(of: Set(keep.map(\.id)))
+        await waitForCaptures(of: keep)
         let byID = Dictionary(uniqueKeysWithValues: keep.map { ($0.id, $0) })
 
         var written: [Frame] = []

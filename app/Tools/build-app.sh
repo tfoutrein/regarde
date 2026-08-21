@@ -48,9 +48,16 @@ echo "→ swift build -c ${CONFIG}"
 # ce garde-fou est tombée.
 BUILD_LOG="$(mktemp)"
 trap 'rm -f "${BUILD_LOG}"' EXIT
-set -o pipefail
+# `pipefail` est déjà armé en tête de script : le `set -o pipefail` qui figurait ici était
+# mort, et le `set +o pipefail` qui suivait le désarmait pour TOUT le reste — y compris
+# `codesign … | sed` plus bas, dont le statut devenait celui de `sed`, donc toujours zéro.
+# Une signature en échec (trousseau verrouillé, entitlements déplacés) passait alors
+# inaperçue, `--verify` était avalé de la même façon, et le script remplaçait le bundle
+# signé par un bundle qui ne l'était pas en annonçant « ✓ Installé ». Au lancement suivant
+# l'identité de signature ayant changé, TCC redemandait Accessibilité et Enregistrement de
+# l'écran — précisément la panne que le chemin fixe et le certificat stable existent pour
+# empêcher. On laisse donc `pipefail` armé de bout en bout.
 swift build -c "${CONFIG}" 2>&1 | tee "${BUILD_LOG}"
-set +o pipefail
 
 # Les avertissements se comptent, sinon ils défilent avec le reste et personne ne les
 # voit. Deux d'entre eux ont atteint l'auteur avant moi.
@@ -58,7 +65,11 @@ WARNINGS="$(grep -cE "warning: " "${BUILD_LOG}" || true)"
 if [ "${WARNINGS:-0}" -gt 0 ]; then
     echo
     echo "⚠ ${WARNINGS} avertissement(s) de compilation — à corriger avant de livrer"
-    grep -E "warning: " "${BUILD_LOG}" | sed 's|.*/Sources/Regarde/|   |' | head -8
+    # `|| true` : `head -8` ferme le tube après huit lignes, et au-delà de ce que le
+    # tampon absorbe `sed` prend un SIGPIPE. Maintenant que `pipefail` reste armé, ça
+    # tuerait le script — au moment précis où il y a beaucoup d'avertissements à lire.
+    # Le statut d'un affichage de diagnostic ne veut rien dire de toute façon.
+    grep -E "warning: " "${BUILD_LOG}" | sed 's|.*/Sources/Regarde/|   |' | head -8 || true
     echo
 fi
 BIN="${ROOT}/.build/${CONFIG}/${APP_NAME}"
@@ -70,6 +81,28 @@ mkdir -p "${STAGE}/Contents/MacOS" "${STAGE}/Contents/Resources"
 cp "${BIN}" "${STAGE}/Contents/MacOS/${APP_NAME}"
 cp "${ROOT}/Resources/Info.plist" "${STAGE}/Contents/Info.plist"
 printf 'APPL????' > "${STAGE}/Contents/PkgInfo"
+
+# La version se DÉRIVE du dépôt, elle ne se recopie pas à la main.
+#
+# Le plist du dépôt a annoncé 0.1.0 pendant les releases v0.2.0 et v0.2.1, parce que rien
+# ne reliait les deux : une valeur écrite une fois puis oubliée. Le tag est la source de
+# vérité — c'est lui qui nomme la release — et le nombre de commits donne un
+# `CFBundleVersion` monotone, ce que la notarisation du lot 8 exigera.
+#
+# En l'absence de tag (dépôt fraîchement cloné sans historique, archive) on garde les
+# valeurs de repli du plist plutôt que d'inventer un numéro : une version fausse est pire
+# qu'une version périmée, parce qu'elle a l'air juste.
+if VERSION=$(git -C "${ROOT}/.." describe --tags --abbrev=0 2>/dev/null); then
+    VERSION="${VERSION#v}"
+    BUILD=$(git -C "${ROOT}/.." rev-list --count HEAD)
+    /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${VERSION}" \
+                            "${STAGE}/Contents/Info.plist" >/dev/null
+    /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${BUILD}" \
+                            "${STAGE}/Contents/Info.plist" >/dev/null
+    echo "   version ${VERSION} (build ${BUILD})"
+else
+    echo "   ⚠ aucun tag git — version de repli du plist conservée"
+fi
 
 SIGN_ARGS=(--force --sign "${CERT_NAME}" --identifier "${BUNDLE_ID}" --timestamp=none)
 if [[ "${HARDENED}" -eq 1 ]]; then

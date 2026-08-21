@@ -55,6 +55,20 @@ final class MarkStore {
     // MARK: - Cycle d'un geste
 
     /// Début d'un tracé. Fixe l'écran porteur pour toute sa durée.
+    ///
+    /// **Invariant : une marque naît dans le repère de son ÉCRAN, jamais dans celui d'une
+    /// frame.** `NormPoint` est normalisé ici contre `screen.cocoaFrame.size`, et c'est
+    /// ce même cadre que le calque relit à chaque redessin — donc c'est lui, et lui seul,
+    /// que l'utilisateur a sous les yeux en désignant quelque chose.
+    ///
+    /// La tentation, quand arrive la capture continue, est de normaliser plutôt sur le
+    /// `contentRect` de la frame retenue, puisque c'est ce que demande l'ADR-0009 pour
+    /// les pixels. Ce serait faux ici, pour deux raisons : la frame retenue n'existe
+    /// qu'APRÈS l'appariement, c'est-à-dire longtemps après ce `mouseDown` ; et le calque
+    /// se retrouverait décalé de la marge de boîtage même qu'on prétend supprimer.
+    ///
+    /// La conversion vers le repère de la frame appartient à `FrameRef` et à
+    /// `Engraver.Frame` : une couture unique, du côté des pixels, pas du côté du modèle.
     func beginStroke(at eventPoint: CGPoint, geometry: ScreenGeometry) {
         guard let screen = geometry.screen(containingEvent: eventPoint) else { return }
         let size = screen.cocoaFrame.size

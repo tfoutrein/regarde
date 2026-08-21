@@ -73,9 +73,31 @@ for f in "$LAST"frames/*.png; do
   printf "   %-14s %s\n" "$(basename "$f")" \
     "$(sips -g pixelWidth -g pixelHeight "$f" 2>/dev/null | grep -oE '[0-9]+$' | paste -sd× -)"
 done
-COUNT=$(ls -1 "$LAST"frames/*.png 2>/dev/null | wc -l | tr -d ' ')
+# Les vues d'ensemble vivent dans le MÊME dossier que les recadrages. Les compter avec
+# eux faisait échouer ce contrôle à chaque exécution depuis leur ajout — huit fichiers
+# attendus ici pour six marques — et un contrôle de non-régression rouge en permanence ne
+# contrôle plus rien. Une vue d'ensemble n'est pas le recadrage d'une marque : le critère
+# porte sur les marques, l'ensemble se compte à côté.
+#
+# Le `|| true` de chaque ligne n'est pas décoratif. Sous `set -euo pipefail`, un glob sans
+# correspondance est passé littéralement à `ls`, qui sort en erreur ; `2>/dev/null` masque
+# le message mais pas le code, pipefail le propage et errexit tue le script — c'est-à-dire
+# exactement dans le cas que ces contrôles existent pour signaler. Sans lui, une session
+# sans aucune marque ne donne pas « ✗ 0 marques » : elle ne donne RIEN, code 1, et le
+# `place` final n'est jamais atteint. `wc -l` imprime « 0 » de toute façon, donc la valeur
+# reste juste ; seul le statut est neutralisé.
+MARQUES=$(ls -1 "$LAST"frames/marque-*.png 2>/dev/null | wc -l | tr -d ' ' || true)
+ENSEMBLES=$(ls -1 "$LAST"frames/ensemble*.png 2>/dev/null | wc -l | tr -d ' ' || true)
+AUTRES=$(ls -1 "$LAST"frames/*.png 2>/dev/null | grep -cv -e '/marque-' -e '/ensemble' || true)
 echo
-[ "$COUNT" -eq 6 ] && echo "✓ 6 images" || echo "✗ $COUNT images au lieu de 6"
+[ "$MARQUES" -eq 6 ] && echo "✓ 6 marques" || echo "✗ $MARQUES marques au lieu de 6"
+# Une vue d'ensemble par écran ANNOTÉ : ce scénario en annote deux, donc deux fichiers.
+# Un seul voudrait dire qu'un écran a perdu la sienne — précisément la régression qu'un
+# script dont tout l'objet est « deux écrans » existe pour attraper.
+[ "$ENSEMBLES" -eq 2 ] && echo "✓ 2 vues d'ensemble, une par écran" \
+                       || echo "✗ $ENSEMBLES vue(s) d'ensemble au lieu de 2"
+[ "$AUTRES" -eq 0 ] && echo "✓ aucun fichier inattendu" \
+                    || echo "✗ $AUTRES fichier(s) inattendu(s) dans frames/"
 
 # Remettre la fenêtre sur l'écran principal, pour ne pas laisser le poste dans un état
 # inhabituel.

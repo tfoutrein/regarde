@@ -115,6 +115,15 @@ final class SessionCoordinator {
         Journal.event(.target, String(format: "figée — cadre (%.0f, %.0f) %.0f×%.0f",
                                       target.frame.minX, target.frame.minY,
                                       target.frame.width, target.frame.height))
+        // Le mode éclair a pu programmer une publication : elle appartient aux marques
+        // qu'on jette juste en dessous, pas à la session qui s'ouvre. Le modèle et le pot
+        // sont déjà abandonnés ici — le minuteur est le troisième objet en vol, et le
+        // seul endroit qui l'annulait, `modifierChanged`, sort sur sa garde d'état avant
+        // d'y toucher. Sans cette ligne, ouvrir une session moins de 0,8 s après avoir
+        // relâché ⌥⌘ fait publier la première marque de la SESSION dans un dossier
+        // « ÉCLAIR » séparé, puis efface l'encre de l'écran en pleine session.
+        flashWorkItem?.cancel()
+        flashWorkItem = nil
         MarkStore.shared.reset()
         sessionDirectory = directory
         sessionTarget = target.name
@@ -305,10 +314,59 @@ final class SessionCoordinator {
     /// d'utilisateur. Un doute sur l'etat du systeme se resout TOUJOURS en faveur de
     /// l'application testee : on suspend d'abord, on s'explique ensuite.
     func forceSuspend(reason: String) {
-        guard state != .suspended, state != .idle else { return }
-        // On renonce à publier : les recadrages en attente n'iront nulle part, et les
-        // garder ferait ressortir des images périmées dans une session ultérieure.
+        // Ce qui est en vol est abandonné D'ABORD, et sans condition d'état.
+        //
+        // Le mode éclair vit ENTIÈREMENT à `.idle` — voir `modifierChanged`, qui sort
+        // sur tout autre état. Une marque tracée hors session y laisse deux choses : un
+        // recadrage dans le pot de `MarkCapture`, et une publication programmée 0,8 s
+        // plus tard. L'ancienne garde sortait avant d'y toucher, si bien qu'un
+        // verrouillage d'écran pendant une observation éclair laissait le recadrage
+        // survivre au verrou et la publication partir derrière lui.
+        //
+        // C'est ce que l'ADR-0020 interdit, et l'exemption portait précisément sur le
+        // mode majoritaire : un doute sur l'état du système se résout en faveur de
+        // l'application testée à TOUT état, pas seulement pendant une session.
+        //
+        // C'est aussi la couture par laquelle le pré-roll s'arrêtera : il tourne au
+        // repos, donc à `.idle`, donc sous une garde qui l'aurait ignoré.
+        flashWorkItem?.cancel()
+        flashWorkItem = nil
+        // Les recadrages en attente n'iront nulle part, et les garder ferait ressortir
+        // des images périmées dans une session ultérieure.
         Task { await MarkCapture.shared.reset() }
+
+        // Le tracé EN COURS ne figure pas dans `count`, qui ne compte que les marques
+        // POSÉES. C'est pourtant l'objet le plus en vol qui soit : un geste interrompu
+        // par le verrou a déjà réservé son numéro et peint son encre. Sans cet appel il
+        // survit au verrou, réapparaît au geste suivant en suivant le curseur sans
+        // bouton enfoncé, et décale d'un tout le reste de la numérotation.
+        //
+        // `requestReset` est écrit pour ce cas exact : il remet le verrou du tap à plat
+        // SANS rendre à l'application testée le milieu d'un clic dont elle a manqué le
+        // début, et déclenche `cancelStroke` + `redrawAll` par `onResetRequested`.
+        OptionGate.shared.requestReset()
+
+        // La cible est dégelée ici, et non après la garde d'état.
+        //
+        // Une session suspendue ne reprend pas : `resumeFromSuspension` la ramène à
+        // `.idle`, c'est donc une FIN de session, et une fin de session dégèle la cible
+        // — exactement ce que fait `closeSession`. Sans cela `isPinned` reste vrai pour
+        // toujours, `refreshTarget` sort sur sa garde à chaque tour, et le mode éclair
+        // reste braqué sur la fenêtre d'une session morte : ⌥⌘ n'arme plus nulle part,
+        // sans le moindre message. Le seul remède serait un ⌃⌥S suivi d'un ⌃⌥F.
+        if TargetWindow.shared.isPinned { TargetWindow.shared.release() }
+
+        let abandoned = MarkStore.shared.count
+        if abandoned > 0 {
+            Journal.warn(.session, "\(abandoned) marque(s) abandonnée(s) — \(reason)")
+            MarkStore.shared.reset(keepingTool: true)
+            OverlayController.shared.redrawAll()
+        }
+
+        // La transition d'état, elle, reste gardée. À `.idle` il n'y a pas de session à
+        // suspendre, et publier `suspended` ferait dire à la barre de menus qu'une
+        // session est interrompue alors qu'aucune n'était ouverte.
+        guard state != .suspended, state != .idle else { return }
         let previous = state
         state = .suspended
         log.notice("suspension forcée depuis \(previous.rawValue, privacy: .public) — \(reason, privacy: .public)")

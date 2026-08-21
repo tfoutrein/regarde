@@ -10,8 +10,11 @@
     <string>Regarde</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
+    <!-- Valeurs de repli. `Tools/build-app.sh` les remplace par la version dérivée du
+         dernier tag git et par le nombre de commits : le plist du dépôt annonçait
+         0.1.0 alors que le projet publiait 0.2.1, faute que rien ne les liait. -->
     <key>CFBundleShortVersionString</key>
-    <string>0.1.0</string>
+    <string>0.2.1</string>
     <key>CFBundleVersion</key>
     <string>1</string>
     <key>LSMinimumSystemVersion</key>
