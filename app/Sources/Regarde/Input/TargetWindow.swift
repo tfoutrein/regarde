@@ -213,26 +213,67 @@ final class TargetWindow {
 
     private static let slack: CGFloat = 6
 
-    /// Cadre de la fenêtre la plus en avant d'un processus.
+    /// Cadre de la fenêtre la plus en avant d'un processus, barres accolées comprises.
     ///
-    /// `CGWindowListCopyWindowInfo` renvoie les fenêtres de l'avant vers l'arrière : la
-    /// première du bon pid est celle que l'utilisateur regarde.
+    /// `CGWindowListCopyWindowInfo` renvoie les fenêtres de l'avant vers l'arrière, mais
+    /// prendre la première ne suffit pas : **plusieurs applications découpent leur
+    /// fenêtre en morceaux**, et le morceau listé en tête est souvent une barre.
+    ///
+    /// Warp expose une barre d'onglets de 3440×44 puis la vraie fenêtre de 3440×1440
+    /// juste en dessous ; Chrome en plein écran fait de même avec trois barres. Retenir la
+    /// première donnait une cible de 44 pixels de haut : ⌥⌘ n'armait que dans cette bande,
+    /// et tracer dans le terminal ne faisait rien — sans le moindre message, puisque du
+    /// point de vue du code la cible existait.
+    ///
+    /// On part donc de la fenêtre de tête et on lui agrège celles qui la TOUCHENT. Deux
+    /// morceaux accolés d'une même fenêtre se rejoignent ; une seconde fenêtre posée
+    /// ailleurs sur l'écran, non — ce qui préserve le sens de « la fenêtre du dessus ».
     static func frontWindowFrame(pid: pid_t) -> CGRect? {
         let options: CGWindowListOption = [.optionOnScreenOnly, .excludeDesktopElements]
         guard let list = CGWindowListCopyWindowInfo(options, kCGNullWindowID)
                 as? [[String: Any]] else { return nil }
 
+        // `layer == 0` écarte les panneaux flottants et les infobulles, dont le cadre
+        // ferait rétrécir la cible à leur taille.
+        var pieces: [CGRect] = []
         for info in list {
             guard let owner = info[kCGWindowOwnerPID as String] as? pid_t, owner == pid,
                   let layer = info[kCGWindowLayer as String] as? Int, layer == 0,
                   let bounds = info[kCGWindowBounds as String] as? [String: Any],
                   let rect = CGRect(dictionaryRepresentation: bounds as CFDictionary)
             else { continue }
-            // `layer == 0` écarte les panneaux flottants et les infobulles, dont le
-            // cadre est minuscule et ferait rétrécir la cible à leur taille.
             guard rect.width > 40, rect.height > 40 else { continue }
-            return rect
+            pieces.append(rect)
         }
-        return nil
+        return merge(pieces)
     }
+
+    /// Agrège les morceaux qui touchent le premier, de proche en proche.
+    ///
+    /// Séparée de la lecture système pour être vérifiable : c'est de la géométrie, et
+    /// c'est là qu'était le défaut.
+    static func merge(_ pieces: [CGRect]) -> CGRect? {
+        guard var frame = pieces.first else { return nil }
+
+        // Répété, parce qu'une barre peut en toucher une autre qui touche la fenêtre —
+        // les trois barres de Chrome en plein écran.
+        var remaining = Array(pieces.dropFirst())
+        var merged = true
+        while merged {
+            merged = false
+            for (i, piece) in remaining.enumerated()
+            where piece.insetBy(dx: -contactSlack, dy: -contactSlack).intersects(frame) {
+                frame = frame.union(piece)
+                remaining.remove(at: i)
+                merged = true
+                break
+            }
+        }
+        return frame
+    }
+
+    /// Tolérance de contact entre deux morceaux d'une même fenêtre. Assez pour absorber
+    /// un liseré d'un pixel entre une barre et son contenu, trop peu pour rejoindre une
+    /// fenêtre voisine.
+    static let contactSlack: CGFloat = 2
 }

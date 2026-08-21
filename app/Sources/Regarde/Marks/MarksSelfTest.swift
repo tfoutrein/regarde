@@ -327,6 +327,40 @@ enum MarksSelfTest {
               !OptionGate.isArmed(flags: required, required: required,
                                   location: CGPoint(x: 520, y: 200), target: target))
 
+        // ── La fenêtre cible est faite de ses morceaux accolés ─────────────────
+        //
+        // Plusieurs applications découpent leur fenêtre : Warp expose une barre
+        // d'onglets de 3440×44 puis la vraie fenêtre de 3440×1440 juste en dessous,
+        // Chrome en plein écran en expose trois. Retenir le premier morceau donnait une
+        // cible de 44 pixels de haut, et tracer dans le terminal ne faisait rien.
+        let warpBar = CGRect(x: -971, y: -1484, width: 3440, height: 44)
+        let warpBody = CGRect(x: -971, y: -1440, width: 3440, height: 1440)
+        check(t, "une barre accolée est agrégée à sa fenêtre",
+              TargetWindow.merge([warpBar, warpBody])
+              == CGRect(x: -971, y: -1484, width: 3440, height: 1484),
+              "→ \(String(describing: TargetWindow.merge([warpBar, warpBody])))")
+
+        // Trois barres en cascade, comme Chrome en plein écran : chacune ne touche que
+        // sa voisine, d'où l'agrégation répétée.
+        let chrome = [CGRect(x: 0, y: 0, width: 1728, height: 33),
+                      CGRect(x: 0, y: 33, width: 1728, height: 41),
+                      CGRect(x: 0, y: 74, width: 1728, height: 47),
+                      CGRect(x: 0, y: 121, width: 1728, height: 996)]
+        check(t, "trois barres en cascade rejoignent la fenêtre",
+              TargetWindow.merge(chrome) == CGRect(x: 0, y: 0, width: 1728, height: 1117))
+
+        // Une fenêtre POSÉE AILLEURS n'est pas absorbée : « la fenêtre du dessus » garde
+        // son sens quand une application en a plusieurs.
+        let front = CGRect(x: 100, y: 100, width: 500, height: 400)
+        let elsewhere = CGRect(x: 900, y: 700, width: 500, height: 400)
+        check(t, "une fenêtre distante n'est pas absorbée",
+              TargetWindow.merge([front, elsewhere]) == front)
+
+        // Un seul morceau reste lui-même, et zéro morceau ne donne pas de cible.
+        check(t, "une fenêtre unique est rendue telle quelle",
+              TargetWindow.merge([front]) == front)
+        check(t, "aucun morceau ne donne aucune cible", TargetWindow.merge([]) == nil)
+
         // Les TOUCHES ne suivent pas le curseur, elles suivent l'application active.
         //
         // La règle inverse a été mesurée fausse : une flèche tracée vers le bord laisse
