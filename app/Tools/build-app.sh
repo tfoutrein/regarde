@@ -42,7 +42,25 @@ if ! security find-identity -v -p codesigning | grep -qF "${CERT_NAME}"; then
 fi
 
 echo "→ swift build -c ${CONFIG}"
-swift build -c "${CONFIG}"
+# La sortie est CAPTURÉE au passage, et non relue par un second appel : SwiftPM ne
+# réémet pas ses avertissements sur un build en cache, si bien qu'une seconde
+# invocation en compte toujours zéro. C'est le piège dans lequel la première version de
+# ce garde-fou est tombée.
+BUILD_LOG="$(mktemp)"
+trap 'rm -f "${BUILD_LOG}"' EXIT
+set -o pipefail
+swift build -c "${CONFIG}" 2>&1 | tee "${BUILD_LOG}"
+set +o pipefail
+
+# Les avertissements se comptent, sinon ils défilent avec le reste et personne ne les
+# voit. Deux d'entre eux ont atteint l'auteur avant moi.
+WARNINGS="$(grep -cE "warning: " "${BUILD_LOG}" || true)"
+if [ "${WARNINGS:-0}" -gt 0 ]; then
+    echo
+    echo "⚠ ${WARNINGS} avertissement(s) de compilation — à corriger avant de livrer"
+    grep -E "warning: " "${BUILD_LOG}" | sed 's|.*/Sources/Regarde/|   |' | head -8
+    echo
+fi
 BIN="${ROOT}/.build/${CONFIG}/${APP_NAME}"
 [[ -x "${BIN}" ]] || { echo "✗ Binaire introuvable : ${BIN}"; exit 1; }
 

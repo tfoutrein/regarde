@@ -171,7 +171,6 @@ enum Engraver {
 
         ctx.draw(image, in: CGRect(x: 0, y: 0, width: w, height: h))
 
-        let longSide = CGFloat(max(w, h))
         let width = frame.inkWidth
         let map = LuminanceMap(image)
 
