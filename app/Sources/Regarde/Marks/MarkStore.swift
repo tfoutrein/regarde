@@ -41,6 +41,8 @@ final class MarkStore {
         let tool: MarkTool
         /// Numéro réservé dès la pression, pas au relâchement (ADR-0013).
         let number: Int
+        /// Le geste est-il sorti du cadre de son écran ?
+        var clipped: Bool = false
     }
 
     private var live: LiveStroke?
@@ -76,6 +78,16 @@ final class MarkStore {
               let screen = geometry.screens.first(where: { $0.displayID == stroke.displayID })
         else { return }
         let localPoint = geometry.windowLocal(fromEvent: eventPoint, on: screen)
+
+        // Un geste peut sortir de l'écran où il a commencé — le poursuivre sur l'écran
+        // voisin est même un cas prévu. Le point est alors ramené au bord, parce que la
+        // marque ne peut décrire que ce qui est visible et capturable, mais on le
+        // RETIENT : une marque tronquée sans un mot laisserait croire que la flèche
+        // désigne le bord de l'écran alors qu'elle visait au-delà.
+        if localPoint.x < 0 || localPoint.y < 0
+            || localPoint.x > stroke.panelSize.width || localPoint.y > stroke.panelSize.height {
+            stroke.clipped = true
+        }
         stroke.current = NormPoint(local: localPoint, in: stroke.panelSize)
         live = stroke
     }
@@ -94,6 +106,10 @@ final class MarkStore {
         }
         defer { live = nil }
 
+        if stroke.clipped {
+            Journal.write("marque \(stroke.number) — le geste est sorti de l'écran "
+                          + "\(stroke.displayID), la marque s'arrête au bord")
+        }
         let mark = Mark(number: stroke.number, displayID: stroke.displayID,
                         shape: shape, tool: stroke.tool)
         marks.append(mark)

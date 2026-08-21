@@ -24,10 +24,19 @@ struct NormPoint: Codable, Hashable, Sendable {
         self.y = y
     }
 
-    /// Depuis un point local à une vue de taille donnée.
+    /// Depuis un point local à une vue de taille donnée, RAMENÉ dans le cadre.
+    ///
+    /// Un geste qui sort de l'écran de départ produirait sinon des coordonnées hors de
+    /// [0, 1] : le calque les clippe à l'affichage, mais elles ressortent telles quelles
+    /// dans la géométrie de la marque. Relevé dans un journal réel —
+    /// `bbox (0.679, -0.085) 0.049×0.603` — et le recadrage qui en découle vise alors une
+    /// zone en partie hors de l'image, donc décalée.
+    ///
+    /// La marque décrit ce qui est VISIBLE : c'est ce que l'utilisateur a désigné, et
+    /// c'est tout ce que la capture pourra montrer.
     init(local: CGPoint, in size: CGSize) {
-        x = size.width > 0 ? Double(local.x / size.width) : 0
-        y = size.height > 0 ? Double(local.y / size.height) : 0
+        x = size.width > 0 ? min(max(Double(local.x / size.width), 0), 1) : 0
+        y = size.height > 0 ? min(max(Double(local.y / size.height), 0), 1) : 0
     }
 
     /// Vers un point local à une vue de taille donnée.

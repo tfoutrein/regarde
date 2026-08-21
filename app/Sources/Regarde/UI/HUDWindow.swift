@@ -119,6 +119,8 @@ struct HUDAnnouncement: Sendable {
 private struct HUDView: View {
     @State private var state = SessionCoordinator.shared.state
     @State private var announcement: HUDAnnouncement?
+    /// Application annotée, affichée tant que la session dure.
+    @State private var target: String?
 
     var body: some View {
         HStack(spacing: 10) {
@@ -128,9 +130,10 @@ private struct HUDView: View {
             VStack(alignment: .leading, spacing: 1) {
                 Text(announcement?.title ?? title)
                     .font(.system(size: 13, weight: .medium))
-                Text(announcement?.detail ?? "le lot 2 y ajoutera le projet et les marques")
+                Text(announcement?.detail ?? subtitle)
                     .font(.system(size: 10))
                     .foregroundStyle(.secondary)
+                    .lineLimit(1)
             }
             Spacer(minLength: 0)
         }
@@ -143,6 +146,27 @@ private struct HUDView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .hudAnnouncement)) { note in
             announcement = note.object as? HUDAnnouncement
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .sessionTargetChanged)) { note in
+            target = note.object as? String
+        }
+    }
+
+    /// Le HUD nomme l'application annotée pendant TOUTE la session.
+    ///
+    /// L'ouverture l'annonçait déjà, mais l'annonce s'efface au bout de trois secondes.
+    /// Or c'est justement ce qu'on veut vérifier plus tard, quand on a basculé d'une
+    /// fenêtre à l'autre et qu'on ne sait plus sur quoi la session porte — et la cible
+    /// est figée à l'ouverture, donc l'application au premier plan ne répond pas à la
+    /// question.
+    private var subtitle: String {
+        switch state {
+        case .recording, .finalizing, .publishing:
+            return target.map { "sur \($0)" } ?? "cible inconnue"
+        case .idle:
+            return target.map { "⌥⌘ trace sur \($0)" } ?? "⌃⌥S ouvre une session"
+        default:
+            return "⌃⌥S ouvre une session"
         }
     }
 
@@ -172,6 +196,8 @@ private struct HUDView: View {
 }
 
 extension Notification.Name {
+    /// Nom de l'application ciblée, ou `nil` quand il n'y en a plus.
+    static let sessionTargetChanged = Notification.Name("dev.tfoutrein.regarde.sessionTargetChanged")
     static let sessionStateChanged = Notification.Name("dev.tfoutrein.regarde.sessionStateChanged")
     static let hudAnnouncement = Notification.Name("dev.tfoutrein.regarde.hudAnnouncement")
 }

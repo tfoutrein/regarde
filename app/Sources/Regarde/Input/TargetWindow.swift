@@ -99,6 +99,7 @@ final class TargetWindow {
         observeActivation()
         Journal.write(String(format: "cible figée : %@ — cadre (%.0f, %.0f) %.0f×%.0f",
                              name, frame.minX, frame.minY, frame.width, frame.height))
+        announce(name)
         startPolling()
         return t
     }
@@ -114,6 +115,7 @@ final class TargetWindow {
             // plus honnête qu'un rectangle infini, qui laisserait poser une marque sur un
             // bureau dont le rapport ne pourrait rien dire.
             target = nil
+            announce(nil)
             OptionGate.shared.setTargetRect(.null)
             OptionGate.shared.setTargetFrontmost(false)
             return
@@ -122,6 +124,7 @@ final class TargetWindow {
         let name = app.localizedName ?? app.bundleIdentifier ?? "pid \(app.processIdentifier)"
         if target?.pid != app.processIdentifier {
             Journal.write("cible suivie : \(name)")
+            announce(name)
         }
         target = Target(pid: app.processIdentifier, bundleID: app.bundleIdentifier,
                         name: name, frame: frame)
@@ -139,6 +142,11 @@ final class TargetWindow {
         Journal.write("cible : dégelée, retour au suivi")
         refreshTarget()
         startPolling()
+    }
+
+    /// Fait connaître la cible au HUD.
+    private func announce(_ name: String?) {
+        NotificationCenter.default.post(name: .sessionTargetChanged, object: name)
     }
 
     // MARK: - Application active

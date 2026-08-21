@@ -167,6 +167,27 @@ enum MarksSelfTest {
         check(t, "le numéro d'un geste trop court est rendu", store.liveNumber == 3)
         store.cancelStroke()
 
+        // Un geste qui sort de l'écran reste dans le cadre de la marque.
+        //
+        // Relevé dans un journal réel : `bbox (0.679, -0.085) …`. Le calque clippait bien
+        // à l'affichage, mais la géométrie sortait de [0, 1] et le recadrage visait une
+        // zone en partie hors de l'image.
+        store.reset()
+        store.beginStroke(at: CGPoint(x: 500, y: 400), geometry: g)
+        store.extendStroke(to: CGPoint(x: -3000, y: 5000), geometry: g)
+        if let mark = { () -> Mark? in
+            store.extendStroke(to: CGPoint(x: -3000, y: 5000), geometry: g)
+            return store.endStroke()
+        }() {
+            let b = mark.shape.boundingBox
+            check(t, "un geste hors écran reste dans [0, 1]",
+                  b.x >= 0 && b.y >= 0 && b.x + b.w <= 1.001 && b.y + b.h <= 1.001,
+                  "→ bbox (\(b.x), \(b.y)) \(b.w)×\(b.h)")
+        } else {
+            check(t, "un geste hors écran produit tout de même une marque", false)
+        }
+        store.reset()
+
         // L'outil survit à une publication éclair, mais pas à une nouvelle session.
         store.tool = .highlight
         store.reset(keepingTool: true)

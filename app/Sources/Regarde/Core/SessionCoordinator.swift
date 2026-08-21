@@ -32,6 +32,10 @@ final class SessionCoordinator {
     /// Répertoire de la session en cours. `nil` hors session.
     private(set) var sessionDirectory: URL?
 
+    /// Nom de la cible et instant d'ouverture, pour le compte rendu de fin.
+    private var sessionTarget: String?
+    private var sessionStart: Date?
+
     // MARK: - Transitions
 
     @discardableResult
@@ -109,6 +113,8 @@ final class SessionCoordinator {
 
         MarkStore.shared.reset()
         sessionDirectory = directory
+        sessionTarget = target.name
+        sessionStart = Date()
         Task { await MarkCapture.shared.reset() }
         OptionGate.shared.currentMode = .active
         transition(to: .recording)
@@ -123,13 +129,13 @@ final class SessionCoordinator {
             return
         }
         let count = MarkStore.shared.count
+        let target = sessionTarget ?? "?"
+        let seconds = sessionStart.map { Int(Date().timeIntervalSince($0).rounded()) }
         transition(to: .finalizing)
 
         // La cible est dégelée, pas relâchée : le mode éclair reprend la main dès la
         // session close, et ⌥⌘ doit continuer d'armer sur la fenêtre regardée.
         TargetWindow.shared.release()
-
-        Journal.section("Marques de la session", MarkStore.shared.describe())
 
         // Les marques encore présentes, avec leur intention. Ce dictionnaire EST le
         // filtre : une marque supprimée par ⌘Z n'y figure pas, donc son recadrage est
@@ -139,10 +145,15 @@ final class SessionCoordinator {
         }
         let directory = sessionDirectory
         sessionDirectory = nil
+        sessionTarget = nil
+        sessionStart = nil
 
         // Le modèle est vidé MAINTENANT, avant toute reprise du mode éclair. Sans cela,
         // le premier relâchement de ⌥⌘ après la session republierait ses marques, dans
         // un second dossier, en double.
+        // Écrit AVANT le vidage, faute de quoi la liste sort vide.
+        Journal.section("Marques de la session", MarkStore.shared.describe())
+
         MarkStore.shared.reset()
         OverlayController.shared.redrawAll()
 
@@ -167,9 +178,24 @@ final class SessionCoordinator {
                 }
             }
             await MainActor.run {
-                Journal.write("\(written) image\(written > 1 ? "s" : "") écrite"
-                              + (written > 1 ? "s" : "")
-                              + (directory.map { " dans \($0.path)" } ?? ""))
+                // Un bloc de FIN, et pas seulement une ligne de plus.
+                //
+                // Les sessions s'enchaînaient dans le journal sans rien pour les séparer :
+                // impossible, en relisant, de dire où l'une finissait. Le compte rendu
+                // répond aux quatre questions qu'on se pose alors — sur quoi, combien de
+                // temps, combien de marques, et où sont les images.
+                var lines = [
+                    "cible         \(target)",
+                    "durée         \(seconds.map { "\($0) s" } ?? "?")",
+                    "marques       \(count)",
+                    "images        \(written)",
+                ]
+                if written != count {
+                    lines.append("⚠ \(count - written) marque(s) sans image")
+                }
+                lines.append("dossier       " + (directory?.path ?? "aucun"))
+                Journal.section("Session terminée", lines)
+
                 self.transition(to: .idle)
                 HUDWindow.shared.announce(
                     "Session terminée — \(count) marque\(count > 1 ? "s" : "")",
