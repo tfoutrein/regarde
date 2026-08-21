@@ -69,7 +69,16 @@ actor MarkCapture {
     }
 
     /// Une marque et son image, prêtes pour le rapport.
+    /// Ce qu'une image écrite représente.
+    enum Role: String, Sendable {
+        /// Le détail d'une marque.
+        case crop
+        /// Un écran entier, toutes ses marques gravées.
+        case overview
+    }
+
     struct Frame: Sendable {
+        let role: Role
         let number: Int
         let kind: Cropper.Kind
         let url: URL
@@ -83,6 +92,7 @@ actor MarkCapture {
     private struct Pending {
         let id: UUID
         let number: Int
+        let displayID: CGDirectDisplayID
         let shape: MarkShape
         let image: CGImage
         let frame: Engraver.Frame
@@ -90,7 +100,30 @@ actor MarkCapture {
 
     private var pending: [Pending] = []
 
-    func reset() { pending.removeAll() }
+    /// Une vue d'ensemble par écran : l'écran entier, réduit au palier standard.
+    ///
+    /// Les recadrages montrent chacun leur détail, mais ils ne disent pas où les marques
+    /// se situent les unes par rapport aux autres — ce que l'agent doit savoir pour
+    /// comprendre « le bouton sous le titre » ou « la colonne de droite ». La vue
+    /// d'ensemble répond à cette question, et à elle seule.
+    ///
+    /// Retenue RÉDUITE, et non en résolution native : garder une capture entière par
+    /// écran coûterait 31 Mo là où le palier standard en demande six. La réduction est la
+    /// même que celle qu'on lui appliquerait de toute façon à l'écriture.
+    ///
+    /// C'est la DERNIÈRE capture de l'écran qui est gardée : l'état le plus récent où une
+    /// marque y a été posée, donc le plus proche de ce que l'utilisateur avait sous les
+    /// yeux en terminant.
+    private struct Overview {
+        let image: CGImage
+        let frame: Engraver.Frame
+    }
+    private var overviews: [CGDirectDisplayID: Overview] = [:]
+
+    func reset() {
+        pending.removeAll()
+        overviews.removeAll()
+    }
 
     /// Jette le recadrage d'une marque annulée.
     ///
@@ -150,6 +183,20 @@ actor MarkCapture {
         // le rectangle qui contient le trait. Centrer sur la boîte englobante mettait le
         // milieu du trait au centre de l'image et laissait l'élément désigné sur un bord,
         // souvent coupé.
+        // La vue d'ensemble, réduite une fois pour toutes.
+        let overviewTarget = Cropper.tileTarget(width: capture.width, height: capture.height,
+                                                budget: Self.standardBudget)
+        let overviewImage = Cropper.scale(
+            capture, toLongSide: max(overviewTarget.width, overviewTarget.height))
+        let overviewScaleX = CGFloat(overviewImage.width) / captureSize.width
+        let overviewScaleY = CGFloat(overviewImage.height) / captureSize.height
+        overviews[mark.displayID] = Overview(
+            image: overviewImage,
+            frame: Engraver.Frame(captureSize: captureSize,
+                                  sourceRect: CGRect(origin: .zero, size: captureSize),
+                                  scaleX: overviewScaleX, scaleY: overviewScaleY,
+                                  pointScale: shot.pointScale))
+
         let cropped = Cropper.crop(capture, around: mark.shape.focusBox)
 
         // Le recadreur a déjà tout fait pour un recadrage, facteur compris. L'image
@@ -175,7 +222,8 @@ actor MarkCapture {
         }
 
         pending.append(Pending(
-            id: mark.id, number: mark.number, shape: mark.shape, image: image,
+            id: mark.id, number: mark.number, displayID: mark.displayID,
+            shape: mark.shape, image: image,
             frame: Engraver.Frame(captureSize: captureSize,
                                   sourceRect: cropped.sourceRect,
                                   scaleX: scaleX, scaleY: scaleY,
@@ -209,6 +257,7 @@ actor MarkCapture {
             let box = item.frame.rect(item.shape.boundingBox)
             let out = item.frame.outputSize
             written.append(Frame(
+                role: .crop,
                 number: item.number,
                 kind: item.frame.sourceRect.size == item.frame.captureSize ? .full : .crop,
                 url: url,
@@ -220,7 +269,64 @@ actor MarkCapture {
                               y: Double(box.maxY / max(out.height, 1)))])))
             log.notice("marque \(item.number) gravée → \(url.lastPathComponent, privacy: .public)")
         }
+        written += writeOverviews(keeping: keep, into: directory)
         pending.removeAll()
+        overviews.removeAll()
+        return written
+    }
+
+    /// Écrit une vue d'ensemble par écran concerné, toutes ses marques gravées.
+    ///
+    /// Les marques sont prises dans le MODÈLE conservé au moment de la publication, pas
+    /// dans le pot de recadrages : une marque annulée n'y figure pas, et l'ensemble doit
+    /// montrer exactement ce que les recadrages montrent, ni plus ni moins.
+    private func writeOverviews(keeping keep: [Keep], into directory: URL) -> [Frame] {
+        let byID = Dictionary(uniqueKeysWithValues: keep.map { ($0.id, $0) })
+
+        // Les marques retenues, groupées par écran, dans l'ordre de leur numéro.
+        var byDisplay: [CGDirectDisplayID: [Pending]] = [:]
+        for item in pending where byID[item.id] != nil {
+            byDisplay[item.displayID, default: []].append(item)
+        }
+
+        var written: [Frame] = []
+        // Un seul écran concerné : le fichier s'appelle « ensemble.png », sans suffixe à
+        // déchiffrer. Plusieurs : ils sont numérotés dans l'ordre où ils ont été annotés.
+        let displays = byDisplay.keys.sorted {
+            (byDisplay[$0]?.first?.number ?? 0) < (byDisplay[$1]?.first?.number ?? 0)
+        }
+
+        for (index, displayID) in displays.enumerated() {
+            guard let overview = overviews[displayID],
+                  let items = byDisplay[displayID], !items.isEmpty else { continue }
+
+            let engraved = Engraver.engrave(
+                overview.image,
+                items: items.sorted { $0.number < $1.number }.map {
+                    Engraver.Item(number: $0.number, shape: $0.shape,
+                                  intention: byID[$0.id]?.intention ?? nil)
+                },
+                frame: overview.frame)
+
+            let name = displays.count == 1 ? "ensemble.png"
+                                           : String(format: "ensemble-%d.png", index + 1)
+            let url = directory.appendingPathComponent(name)
+            do {
+                try ScreenCapture.writePNG(engraved, to: url)
+            } catch {
+                log.error("vue d'ensemble non écrite : \(String(describing: error), privacy: .public)")
+                continue
+            }
+            written.append(Frame(
+                role: .overview,
+                number: items.map(\.number).min() ?? 0,
+                kind: .full,
+                url: url,
+                pixelSize: CGSize(width: engraved.width, height: engraved.height),
+                normalizedInFrame: NormRect(bounding: [NormPoint(x: 0, y: 0),
+                                                       NormPoint(x: 1, y: 1)])))
+            log.notice("vue d'ensemble → \(name, privacy: .public) — \(items.count) marque(s)")
+        }
         return written
     }
 }

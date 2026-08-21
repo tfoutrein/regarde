@@ -161,11 +161,16 @@ final class SessionCoordinator {
         transition(to: .publishing)
         Task {
             var written = 0
+            var overviews = 0
             if let directory {
                 do {
                     let frames = try await MarkCapture.shared.finalize(
                         keeping: keep, into: SessionPaths.frames(of: directory))
-                    written = frames.count
+                    // Comptés à part : une vue d'ensemble n'est pas le recadrage d'une
+                    // marque, et les additionner déclencherait l'avertissement
+                    // « marque sans image » à contresens.
+                    written = frames.filter { $0.role == .crop }.count
+                    overviews = frames.filter { $0.role == .overview }.count
                 } catch {
                     await MainActor.run { Journal.write("⚠ gravure : \(error)") }
                 }
@@ -189,7 +194,8 @@ final class SessionCoordinator {
                     "cible         \(target)",
                     "durée         \(seconds.map { "\($0) s" } ?? "?")",
                     "marques       \(count)",
-                    "images        \(written)",
+                    "recadrages    \(written)",
+                    "ensembles     \(overviews)",
                 ]
                 if written != count {
                     lines.append("⚠ \(count - written) marque(s) sans image")
@@ -255,17 +261,21 @@ final class SessionCoordinator {
 
         Task {
             var written = 0
+            var overviews = 0
             var directory: URL?
             do {
                 let dir = try SessionPaths.makeSessionDirectory()
                 directory = dir
-                written = try await MarkCapture.shared.finalize(
-                    keeping: keep, into: SessionPaths.frames(of: dir)).count
+                let frames = try await MarkCapture.shared.finalize(
+                    keeping: keep, into: SessionPaths.frames(of: dir))
+                written = frames.filter { $0.role == .crop }.count
+                overviews = frames.filter { $0.role == .overview }.count
             } catch {
                 await MainActor.run { Journal.write("⚠ mode éclair : \(error)") }
             }
             await MainActor.run {
-                Journal.write("éclair — \(count) marque(s), \(written) image(s)"
+                Journal.write("éclair — \(count) marque(s), \(written) recadrage(s), "
+                              + "\(overviews) vue(s) d'ensemble"
                               + (directory.map { " dans \($0.lastPathComponent)" } ?? ""))
                 if targets.count > 1 {
                     // Hors session la cible suit l'application au premier plan : une

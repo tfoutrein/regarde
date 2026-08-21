@@ -433,6 +433,8 @@ Filet universel : toute marque conserve sa frame RAM. Test de non-régression ob
 |---|---|
 | Recadrage | Zone d'intérêt dilatée ×2,5, côté long dans `[640, 1792]` px, **surface plafonnée à 1024 tuiles**, dimensions alignées sur des multiples de 28. Si la boîte dilatée dépasse 40 % de la surface de l'écran, bascule sur `full`. |
 
+**Vue d'ensemble.** Chaque publication écrit, en plus des recadrages, **un `ensemble.png` par écran annoté** : l'écran entier réduit au palier standard, toutes ses marques gravées dessus. Les recadrages montrent chacun leur détail ; seul l'ensemble dit où les marques se situent les unes par rapport aux autres, ce dont l'agent a besoin pour interpréter « le bouton sous le titre » ou « la colonne de droite ». C'est la dernière capture de l'écran qui sert de fond — l'état le plus récent où une marque y a été posée — et elle est retenue déjà réduite : six mégaoctets au lieu de trente et un.
+
 **Correction du lot 2 — trois règles réécrites après le premier usage réel.**
 
 *La zone d'intérêt n'est pas la boîte englobante.* Pour une flèche, c'est un carré autour de sa **pointe**, dimensionné sur la longueur du trait. Centrer sur la boîte englobante mettait le milieu du trait au centre de l'image et laissait l'élément désigné sur un bord, souvent coupé : l'agent recevait un gros plan sur du vide traversé par un trait.

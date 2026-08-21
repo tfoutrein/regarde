@@ -271,6 +271,11 @@ une qualifiée par une intention. Puis `⌃⌥F`. Ouvrez le dossier que le HUD v
 
 - [ ] **10.1** Un PNG par marque, nommé `marque-NN.png` où **NN est le numéro, pas le rang** : après
       un `⌥⌘Z`, la suite comporte un trou. C'est voulu.
+- [ ] **10.1 bis** Un `ensemble.png` s'y ajoute : **l'écran entier, toutes les marques gravées
+      dessus**, numérotées et qualifiées. C'est lui qui situe les marques les unes par rapport
+      aux autres.
+      *Un fichier par écran annoté : `ensemble.png` s'il n'y en a qu'un, `ensemble-1.png` et
+      `ensemble-2.png` sinon, numérotés dans l'ordre où vous les avez annotés.*
 - [ ] **10.2** Sur l'image de la **flèche** : ce qu'elle **désigne** est au centre, pas le milieu du
       trait. La flèche entre par un bord et pointe vers le centre.
       *Corrigé pendant cette recette, après votre remarque.*
