@@ -3,7 +3,7 @@
 import html as H, re, sys
 
 SRC = "docs/livrables/lot2-recette.md"   # relatif à la racine du dépôt
-CSS = "/Users/tfoutrein2/.claude/jobs/51392cd5/tmp/recette.css"
+CSS = "app/Tools/recette.css"          # relatif à la racine du dépôt
 OUT = "/Users/tfoutrein2/.claude/jobs/51392cd5/tmp/lot2-recette.html"
 
 def inline(t):
@@ -34,6 +34,9 @@ def close_suite():
         body.append(f'<p class="suite-note">{note}</p>')
     body.append('<ul class="tests">')
     for tid, text, hint in tests:
+        assert tid.split(".")[0] == num, (
+            f"le test {tid} est tombé dans la section {num} — "
+            "un identifiant non reconnu a fermé la section trop tôt")
         h = f'<i>{hint}</i>' if hint else ''
         body.append(f'<li><label class="test"><input type="checkbox" data-id="{tid}">'
                     f'<span class="box"></span><span class="tid">{tid}</span>'
@@ -65,7 +68,11 @@ while i < len(lines):
             suite = (suite[0], suite[1], inline(" ".join(note)))
         continue
 
-    m = re.match(r'^- \[ \] \*\*([\d.]+)\*\*\s+(.*)$', ln)
+    # « 7.1 bis » compte aussi : un identifiant non reconnu tomberait dans le cas
+    # « paragraphe », qui ferme la section — et les tests suivants atterriraient sous le
+    # titre d'après. C'est arrivé : 7.2 à 7.4 se sont retrouvés sous « 8. La session
+    # explicite ».
+    m = re.match(r'^- \[ \] \*\*([\d.]+(?:\s+bis)?)\*\*\s+(.*)$', ln)
     if m:
         tid, text = m.group(1), m.group(2)
         cont, hint = [], []
