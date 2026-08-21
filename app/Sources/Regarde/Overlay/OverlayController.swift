@@ -245,7 +245,7 @@ final class OverlayController {
         let store = MarkStore.shared
         switch event.eventKind {
         case .down:
-            store.beginStroke(at: event.point, geometry: geometry)
+            store.beginStroke(at: event.point, geometry: geometry, hostTicks: event.hostTicks)
         case .drag:
             // Un `mouseMoved` sans tracé en cours ne doit rien allonger : il n'y a pas
             // de bouton enfoncé, c'est de la visée.

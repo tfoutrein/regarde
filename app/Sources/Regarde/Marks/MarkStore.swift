@@ -43,6 +43,11 @@ final class MarkStore {
         let number: Int
         /// Le geste est-il sorti du cadre de son écran ?
         var clipped: Bool = false
+        /// Instant de la PRESSION, retenu ici parce qu'il se perd sinon : entre le
+        /// `mouseDown` et le `mouseUp` qui construit la marque, il s'écoule tout le
+        /// geste, et `now()` au relâchement daterait la marque d'après ce qu'elle
+        /// désigne.
+        let stamped: StampedTime
     }
 
     private var live: LiveStroke?
@@ -69,8 +74,12 @@ final class MarkStore {
     ///
     /// La conversion vers le repère de la frame appartient à `FrameRef` et à
     /// `Engraver.Frame` : une couture unique, du côté des pixels, pas du côté du modèle.
-    func beginStroke(at eventPoint: CGPoint, geometry: ScreenGeometry) {
+    func beginStroke(at eventPoint: CGPoint, geometry: ScreenGeometry, hostTicks: UInt64 = 0) {
         guard let screen = geometry.screen(containingEvent: eventPoint) else { return }
+        // Horodaté ICI, au plus près de la pression. `stamp` rend toujours un instant
+        // utilisable : jamais on ne perd une marque à cause d'un timestamp aberrant,
+        // c'est l'origine qui dit s'il est fiable.
+        let stamped = SessionClock.shared.stamp(hostTicks: hostTicks)
         let size = screen.cocoaFrame.size
         let localPoint = geometry.windowLocal(fromEvent: eventPoint, on: screen)
         let norm = NormPoint(local: localPoint, in: size)
@@ -81,7 +90,8 @@ final class MarkStore {
         // sur la marque 2 ». Attribuer au relâchement rendrait le badge invisible
         // pendant le geste, donc le numéro imprononçable au moment où il en a besoin.
         live = LiveStroke(displayID: screen.displayID, panelSize: size,
-                          start: norm, current: norm, tool: tool, number: nextNumber)
+                          start: norm, current: norm, tool: tool, number: nextNumber,
+                          stamped: stamped)
         nextNumber += 1
     }
 
@@ -126,7 +136,8 @@ final class MarkStore {
         }
         let mark = Mark(number: stroke.number, displayID: stroke.displayID,
                         shape: shape, tool: stroke.tool,
-                        target: TargetWindow.shared.target?.name)
+                        target: TargetWindow.shared.target?.name,
+                        t: stroke.stamped.time, timeOrigin: stroke.stamped.origin)
         marks.append(mark)
         return mark
     }
@@ -297,9 +308,12 @@ final class MarkStore {
         guard !marks.isEmpty else { return ["aucune marque"] }
         return marks.map { m in
             let b = m.shape.boundingBox
-            return String(format: "%d · %@ sur %@ (display %u) — bbox (%.3f, %.3f) %.3f×%.3f",
-                          m.number, m.tool.label, m.target ?? "?", m.displayID,
-                          b.x, b.y, b.w, b.h)
+            // L'origine n'est nommée que lorsqu'elle est un REPLI : la mentionner à
+            // chaque ligne noierait le cas qui compte dans le cas courant.
+            let repli = m.timeOrigin == .fallbackNow ? " ⚠ repli" : ""
+            return String(format: "%d · %@ · %@%@ sur %@ (display %u) — bbox (%.3f, %.3f) %.3f×%.3f",
+                          m.number, m.tool.label, m.t.description, repli,
+                          m.target ?? "?", m.displayID, b.x, b.y, b.w, b.h)
         }
     }
 }

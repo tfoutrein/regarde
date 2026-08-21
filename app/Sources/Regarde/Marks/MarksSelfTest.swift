@@ -1,6 +1,8 @@
 import AppKit
 import Carbon.HIToolbox
 import CoreGraphics
+import CoreMedia
+import Foundation
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Autotest des marques — S20 à S23, lancé par `--marks-test`
@@ -29,6 +31,7 @@ enum MarksSelfTest {
         rendering(t)
         anchors(t)
         arming(t)
+        horloge(t)
 
         print("\n── \(t.passed) vérifications passées, \(t.failed) échouées ──")
         return t.failed == 0
@@ -432,5 +435,121 @@ enum MarksSelfTest {
 
         gate.currentMode = savedMode
         gate.setTargetFrontmost(false)
+    }
+
+    // MARK: - Horloge de session (S30)
+
+    /// Les deux horloges, et le recalage d'origine.
+    ///
+    /// Rien ici n'exige d'écran, de permission ni de session : c'est le point de
+    /// cette section. Le § 3.1 a quatre corrections, et trois d'entre elles se
+    /// vérifient sans quitter la ligne de commande.
+    private static func horloge(_ t: Tally) {
+        print("\n· Horloge de session")
+        let clock = SessionClock.shared
+
+        // ── Le recalage d'origine ────────────────────────────────────────────
+        //
+        // On ne peut pas avancer l'horloge de la machine dans un autotest. Ce qu'on
+        // peut faire, et qui teste la même chose, c'est laisser le temps s'écouler
+        // puis constater que `rearm()` ramène `now()` près de zéro. Sans recalage,
+        // une session ouverte six heures après le lancement daterait ses marques de
+        // six heures, et `assetTime()` les clamperait toutes hors bornes.
+        let avant = clock.now().seconds
+        clock.rearm()
+        let apres = clock.now().seconds
+        check(t, "rearm() ramène l'origine à l'instant courant",
+              apres < 0.050 && apres >= 0,
+              String(format: "avant %.3fs → après %.3fs", avant, apres))
+        check(t, "l'origine avançait bien avant le recalage",
+              avant >= apres,
+              String(format: "%.3fs ≥ %.3fs", avant, apres))
+
+        // ── Les deux horloges avancent ensemble hors veille ──────────────────
+        //
+        // `mach_absolute_time` s'arrête pendant la veille, `mach_continuous_time`
+        // non. Hors veille, elles doivent donner la MÊME durée : c'est ce qui rend
+        // l'écart interprétable comme « il y a eu veille » plutôt que comme du bruit.
+        // Un autotest ne peut pas endormir la machine ; il peut établir qu'au repos
+        // les deux ne divergent pas.
+        clock.rearm()
+        let debut = Date()
+        while Date().timeIntervalSince(debut) < 0.25 { }        // attente active, 250 ms
+        let maitresse = clock.now().seconds
+        let murale = clock.wallSeconds()
+        check(t, "durée d'horloge et durée murale s'accordent hors veille",
+              abs(maitresse - murale) < 0.005,
+              String(format: "%.4fs contre %.4fs, écart %.1f ms",
+                     maitresse, murale, abs(maitresse - murale) * 1000))
+        check(t, "les deux ont bien mesuré l'attente",
+              maitresse > 0.20 && maitresse < 0.50,
+              String(format: "%.3fs", maitresse))
+
+        // ── L'aller-retour SessionTime ↔ PTS ─────────────────────────────────
+        //
+        // `pts(for:)` est l'inverse de `now()`, et S32 s'en sert pour demander à
+        // l'asset la frame d'un `SessionTime`. Une inversion ici produirait des
+        // images décalées du double de l'offset, dans le bon sens la moitié du temps.
+        for secondes in [0.0, 0.5, 12.75, 600.0] {
+            let st = SessionTime(seconds: secondes)
+            let retour = SessionTime(CMTimeSubtract(clock.pts(for: st),
+                                                    clock.pts(for: SessionTime(seconds: 0))))
+            check(t, String(format: "SessionTime %.2fs → PTS → SessionTime", secondes),
+                  abs(retour.seconds - secondes) < 0.001,
+                  String(format: "%.6fs", retour.seconds))
+        }
+
+        // ── Codable, au tick près ────────────────────────────────────────────
+        //
+        // Encoder en secondes flottantes perdrait la précision que l'échelle de
+        // 90 000 existe pour garantir. Le manifeste du lot 4 portera ces valeurs.
+        for secondes in [0.0, 1.0 / 3.0, 42.123456, 3600.0] {
+            let st = SessionTime(seconds: secondes)
+            guard let data = try? JSONEncoder().encode(st),
+                  let relu = try? JSONDecoder().decode(SessionTime.self, from: data) else {
+                check(t, "SessionTime encodé puis relu", false, "encodage impossible")
+                continue
+            }
+            check(t, String(format: "SessionTime %.6fs survit à l'encodage", secondes),
+                  relu.raw.value == st.raw.value && relu.raw.timescale == st.raw.timescale,
+                  "\(relu.raw.value)/\(relu.raw.timescale)")
+        }
+
+        // ── L'horodatage matériel, et son repli ──────────────────────────────
+        //
+        // Un timestamp nul est le cas des événements synthétiques : Karabiner,
+        // BetterTouchTool, pilotes Logitech ou Razer, Universal Control, partage
+        // d'écran. Sans le repli, la marque serait perdue en silence chez tout
+        // utilisateur de ces outils — c'est le critère C12.
+        let avantReplis = clock.fallbackCount
+        let nul = clock.stamp(hostTicks: 0)
+        check(t, "un timestamp nul bascule en repli",
+              nul.origin == .fallbackNow && clock.fallbackCount == avantReplis + 1)
+        check(t, "et rend malgré tout un instant utilisable",
+              nul.time.seconds >= 0)
+
+        let futur = clock.stamp(hostTicks: SessionClock.hostTicksNow() &+ 10_000_000_000)
+        check(t, "un timestamp du futur bascule en repli",
+              futur.origin == .fallbackNow)
+
+        let bon = clock.stamp(hostTicks: SessionClock.hostTicksNow())
+        check(t, "un timestamp matériel valide est accepté",
+              bon.origin == .hardware,
+              String(format: "%.4fs", bon.time.seconds))
+
+        // ── Le mode éclair, sans session ─────────────────────────────────────
+        //
+        // C'est le cas majoritaire, et celui qu'un développement centré session ne
+        // traverse jamais. Hors session l'origine reste celle du dernier recalage :
+        // une marque posée maintenant tombe donc APRÈS elle, dans la fenêtre de
+        // validité, et n'a aucune raison de partir en repli. Si elle y partait, tout
+        // relevé du banc C11 serait refusé pour `fallbackCount` bougé.
+        let replisAvantEclair = clock.fallbackCount
+        let eclair = clock.stamp(hostTicks: SessionClock.hostTicksNow())
+        check(t, "une marque éclair, sans session, porte une origine matérielle",
+              eclair.origin == .hardware)
+        check(t, "et ne fait pas bouger fallbackCount",
+              clock.fallbackCount == replisAvantEclair,
+              "\(clock.fallbackCount)")
     }
 }

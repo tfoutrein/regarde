@@ -213,9 +213,28 @@ struct Mark: Identifiable, Sendable {
     /// pas : en mode parlé, l'intention est dans la voix, pas au clavier.
     var intention: Intention?
 
+    /// Instant du `mouseDown`, sur la timeline de session.
+    ///
+    /// Le `mouseDown` et non le relâchement, et c'est la même raison qui fixe le
+    /// numéro là ([ADR-0013](adr/0013)) : c'est l'instant que l'utilisateur DÉSIGNE.
+    /// Entre la pression et le relâchement il s'écoule le temps d'un geste — une
+    /// seconde, parfois deux — pendant lequel l'infobulle s'est refermée et
+    /// l'animation s'est terminée. Apparier sur le relâchement donnerait l'écran
+    /// d'après, ce qui est exactement le bug B1 sous un autre nom.
+    let t: SessionTime
+    /// D'où vient `t` : de l'horodatage matériel de l'événement, ou d'un repli.
+    ///
+    /// Publié dans le journal parce qu'un repli n'est pas une erreur mais une
+    /// PERTE DE PRÉCISION, et qu'elle doit se voir avant qu'on s'étonne d'un
+    /// appariement flou. Les événements synthétiques — Karabiner, pilotes de souris
+    /// tiers, Universal Control — empruntent ce chemin (C12).
+    let timeOrigin: TimestampOrigin
+
     init(id: UUID = UUID(), number: Int, displayID: CGDirectDisplayID,
          shape: MarkShape, tool: MarkTool, target: String? = nil,
-         intention: Intention? = nil) {
+         intention: Intention? = nil,
+         t: SessionTime = SessionTime(seconds: 0),
+         timeOrigin: TimestampOrigin = .fallbackNow) {
         self.id = id
         self.number = number
         self.displayID = displayID
@@ -223,5 +242,7 @@ struct Mark: Identifiable, Sendable {
         self.tool = tool
         self.target = target
         self.intention = intention
+        self.t = t
+        self.timeOrigin = timeOrigin
     }
 }

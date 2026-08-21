@@ -80,6 +80,17 @@ final class SessionCoordinator {
 
         guard transition(to: .arming) else { return }
 
+        // L'origine de l'horloge est recalée ICI, et nulle part ailleurs.
+        //
+        // À l'entrée en `arming` : avant la première frame, avant la première marque,
+        // et après que la session est certaine de s'ouvrir. Sans ce recalage,
+        // l'origine resterait celle du lancement de l'application — une session
+        // ouverte six heures plus tard donnerait à ses marques des `SessionTime` de
+        // six heures, et `assetTime()` les clamperait toutes hors bornes sans qu'une
+        // seule image ne soit extraite. Le bug serait muet : le journal dirait
+        // « 6 marques », le dossier ne contiendrait rien.
+        SessionClock.shared.rearm()
+
         // Le répertoire AVANT la cible, et son échec refuse la session.
         //
         // Avant la cible, parce qu'échouer après aurait laissé la cible figée sur une
@@ -216,6 +227,25 @@ final class SessionCoordinator {
                 }
                 if marked.count > 1 {
                     pairs.append(("⚠", "réparties sur " + marked.joined(separator: ", ")))
+                }
+
+                // La durée MURALE à côté de la durée d'horloge, et l'écart nommé quand
+                // il existe. `mach_absolute_time` s'arrête pendant la veille : une
+                // session ouverte avant une mise en veille et fermée après annoncerait
+                // sinon quelques minutes pour plusieurs heures.
+                let murale = SessionClock.shared.wallSeconds()
+                if let s = seconds, murale - Double(s) > 2 {
+                    pairs.append(("veille", String(format: "%.0f s d'écart — durée murale %.0f s",
+                                                   murale - Double(s), murale)))
+                }
+
+                // `fallbackCount` sans condition : zéro est une information, et c'est
+                // celle qu'on veut lire en constatant qu'un appariement est flou.
+                let replis = SessionClock.shared.fallbackCount
+                pairs.append(("horodatages en repli", "\(replis)"))
+                if replis > 0 {
+                    pairs.append(("⚠", "horodatage matériel inutilisable — pilote tiers "
+                                       + "ou événement synthétique (C12)"))
                 }
                 Journal.block("FIN DE SESSION", pairs)
 

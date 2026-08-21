@@ -17,7 +17,7 @@ import os
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Instant relatif au demarrage de la session, en secondes.
-struct SessionTime: Hashable, Comparable, CustomStringConvertible, Sendable {
+struct SessionTime: Hashable, Comparable, CustomStringConvertible, Sendable, Codable {
     static let scale: CMTimeScale = 90_000
     let raw: CMTime
 
@@ -26,6 +26,23 @@ struct SessionTime: Hashable, Comparable, CustomStringConvertible, Sendable {
 
     var seconds: Double { raw.seconds }
     var milliseconds: Double { raw.seconds * 1000 }
+
+    // `CMTime` n'est pas `Codable`, et l'encoder en secondes flottantes perdrait
+    // la précision exacte que l'échelle de 90 000 existe pour garantir. On encode
+    // le couple valeur/échelle, qui se relit au tick près.
+    private enum CodingKeys: String, CodingKey { case value, timescale }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        raw = CMTime(value: try c.decode(CMTimeValue.self, forKey: .value),
+                     timescale: try c.decode(CMTimeScale.self, forKey: .timescale))
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(raw.value, forKey: .value)
+        try c.encode(raw.timescale, forKey: .timescale)
+    }
 
     static func < (a: Self, b: Self) -> Bool { a.raw < b.raw }
     var description: String { String(format: "%.3fs", seconds) }
@@ -49,19 +66,69 @@ final class SessionClock: @unchecked Sendable {
     static let shared = SessionClock()
 
     private let master = CMClockGetHostTimeClock()
-    private let origin: CMTime
     private let log = Logger(subsystem: logSubsystem, category: "clock")
+
+    /// Les deux origines, sous un même verrou.
+    ///
+    /// Elles sont MUTABLES : l'origine est posée au lancement, puis RECALÉE à
+    /// l'entrée en `arming`. Sans ce recalage, une application lancée le matin
+    /// donnerait à la première marque de l'après-midi un `SessionTime` de plusieurs
+    /// heures — et `assetTime()` (§ 3.2) le clamperait hors bornes sans qu'aucune
+    /// image ne soit jamais extraite. L'origine doit être celle de la SESSION.
+    ///
+    /// L'origine continue existe parce que `mach_absolute_time` S'ARRÊTE pendant la
+    /// veille (§ 3.1, correction 4). Les trois producteurs restent cohérents entre
+    /// eux sur l'horloge maîtresse — c'est ce qui compte pour l'appariement — mais
+    /// la durée MURALE d'une session interrompue par une veille ne s'en déduit pas.
+    /// Un rapport qui annoncerait « session de 4 minutes » pour une session ouverte
+    /// avant le déjeuner et fermée après serait faux.
+    private struct Origines { var maitresse: CMTime; var continue_: UInt64 }
+    private let origines: OSAllocatedUnfairLock<Origines>
 
     /// Compteurs de diagnostic — lus par le rapport de fin de run.
     private let _fallbacks = OSAllocatedUnfairLock(initialState: 0)
 
     init() {
-        origin = CMClockGetTime(master)
+        origines = OSAllocatedUnfairLock(
+            initialState: Origines(maitresse: CMClockGetTime(CMClockGetHostTimeClock()),
+                                   continue_: mach_continuous_time()))
     }
+
+    /// Repose les deux origines. Appelé à l'entrée en `arming`, et là seulement.
+    ///
+    /// Hors session, l'origine reste celle du dernier recalage — ou celle du
+    /// lancement si aucune session n'a encore été ouverte. C'est exactement ce qu'il
+    /// faut pour le mode éclair : ses marques tombent après l'origine, donc dans la
+    /// fenêtre de validité, donc étiquetées `hardware` sans grossir `fallbackCount`.
+    func rearm() {
+        let t = CMClockGetTime(master), c = mach_continuous_time()
+        origines.withLock { $0 = Origines(maitresse: t, continue_: c) }
+        log.notice("origine recalée")
+    }
+
+    private var origin: CMTime { origines.withLock { $0.maitresse } }
 
     /// Instant courant sur la timeline de session.
     func now() -> SessionTime {
         SessionTime(CMTimeSubtract(CMClockGetTime(master), origin))
+    }
+
+    /// Durée MURALE depuis l'origine, veille comprise.
+    ///
+    /// `mach_continuous_time` avance pendant la veille là où `mach_absolute_time`
+    /// s'arrête : c'est la seule des deux qui puisse dater une `Interruption`.
+    func wallSeconds() -> Double {
+        let depuis = origines.withLock { $0.continue_ }
+        return Double(mach_continuous_time() &- depuis) * Self.tickToNanos / 1_000_000_000.0
+    }
+
+    /// Instant d'un `CGEvent.timestamp` converti vers un PTS de l'horloge maîtresse.
+    ///
+    /// C'est l'inverse de `now()`, et il sert à `CaptureSegment.assetTime` (S32) :
+    /// demander à l'asset la frame d'un `SessionTime` suppose de savoir à quel PTS
+    /// il correspond.
+    func pts(for t: SessionTime) -> CMTime {
+        CMTimeAdd(origin, t.raw)
     }
 
     /// Convertit un `CGEvent.timestamp` (unites mach absolues) vers la timeline de session.
