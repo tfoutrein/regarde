@@ -110,3 +110,32 @@ renumérotation compacte redeviendrait le meilleur choix pour la lisibilité du 
 - [ADR-0003](0003-encodage-continu-hevc-plutot-que-ring-buffer-ram.md) — l'anneau applicatif de
   4 frames et son rôle dans l'appariement.
 - [ADR-0014](0014-journal-append-only.md) — l'attribution du numéro est un événement du journal.
+
+## Révision du 21 août 2026 — l'annulation rend son numéro
+
+**Ce qui change.** `⌥⌘Z` rend le numéro de la marque qu'il supprime. La numérotation reste
+contiguë, et la marque suivante reprend celui qui vient d'être libéré.
+
+**Pourquoi.** La décision d'origine faisait de tout numéro attribué un numéro consommé, au motif
+que l'utilisateur a pu le prononcer à voix haute. Elle laissait donc un trou après chaque
+annulation.
+
+L'argument qui l'a renversée vient de l'usage, rapporté par l'auteur pendant la recette du lot 2 :
+**`Échap` et `⌥⌘Z` font la même chose de son point de vue** — annuler une marque qu'on vient de
+faire — et `Échap` rendait déjà son numéro. Deux gestes équivalents avec deux résultats différents,
+ce n'est pas une décision, c'est une incohérence.
+
+L'objection d'origine ne tient pas dans ce cas précis. `⌥⌘Z` ne supprime que la **dernière** marque,
+celle qu'on vient de tracer ; si on l'annule, c'est précisément qu'on renonce à ce qu'on venait
+d'en dire. Un trou dans la numérotation, lui, reste inexplicable pour qui relit le rapport.
+
+**Ce que la décision garde.** Le numéro est toujours attribué au `mouseDown` et ne bouge plus tant
+que la marque existe : aucune renumérotation en cascade, jamais. Une marque qui n'est pas la
+dernière ne peut de toute façon pas être supprimée dans le périmètre actuel.
+
+**Ce que le changement a imposé.** Deux marques différentes peuvent désormais porter le même numéro
+au cours d'une session — celle qu'on efface et celle qui la remplace. Le pot de recadrages en
+attente ne pouvait donc plus être indexé par numéro : il l'est par l'identifiant de la marque, sans
+quoi les deux se seraient gravées dans le même fichier et l'image publiée aurait pu être celle de
+la marque annulée. Le recadrage d'une marque annulée est jeté, et une capture qui atterrit après
+coup — la tâche part au relâchement, `⌥⌘Z` est plus rapide que ScreenCaptureKit — est refusée.

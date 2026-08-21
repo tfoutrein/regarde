@@ -56,6 +56,14 @@ actor MarkCapture {
     ///
     /// Le type porte maintenant la distinction, et le bug n'est plus réécrivable.
     struct Keep: Sendable {
+        /// Identité de la marque, et non son numéro.
+        ///
+        /// Depuis qu'une marque annulée rend son numéro, deux marques différentes peuvent
+        /// porter le même au cours d'une session : celle qu'on vient d'effacer et celle
+        /// qui la remplace. Indexer par numéro ferait graver les deux dans le même
+        /// fichier, dernier écrivain gagnant — et l'image publiée serait celle de la
+        /// marque annulée.
+        let id: UUID
         let number: Int
         let intention: String?
     }
@@ -73,6 +81,7 @@ actor MarkCapture {
 
     /// Un recadrage en attente de gravure.
     private struct Pending {
+        let id: UUID
         let number: Int
         let shape: MarkShape
         let image: CGImage
@@ -82,6 +91,20 @@ actor MarkCapture {
     private var pending: [Pending] = []
 
     func reset() { pending.removeAll() }
+
+    /// Jette le recadrage d'une marque annulée.
+    ///
+    /// Appelé au `⌥⌘Z`. Sans lui, le recadrage resterait en attente jusqu'à la
+    /// publication, où il serait certes écarté par le filtre — mais il occuperait la
+    /// mémoire d'une image pour rien, et la capture pourrait encore être en vol au moment
+    /// de l'annulation.
+    func discard(id: UUID) {
+        pending.removeAll { $0.id == id }
+        discarded.insert(id)
+    }
+
+    /// Marques annulées, pour refuser une capture arrivée après coup.
+    private var discarded: Set<UUID> = []
     var pendingCount: Int { pending.count }
 
     /// Attend que les captures des marques attendues soient arrivées.
@@ -94,17 +117,19 @@ actor MarkCapture {
     ///
     /// Le plafond existe pour qu'une capture perdue ne bloque pas la publication des
     /// autres : mieux vaut un dossier incomplet qu'un dossier qui n'arrive jamais.
-    private func waitForCaptures(of expected: Set<Int>) async {
+    private func waitForCaptures(of expected: Set<UUID>) async {
         let deadline = Date().addingTimeInterval(3)
         while Date() < deadline {
-            let present = Set(pending.map(\.number))
+            let present = Set(pending.map(\.id))
             if expected.isSubset(of: present) { return }
             try? await Task.sleep(for: .milliseconds(40))
         }
-        let missing = expected.subtracting(Set(pending.map(\.number))).sorted()
-        if !missing.isEmpty {
-            log.error("captures manquantes après 3 s : \(missing, privacy: .public)")
-            let list = missing.map(String.init).joined(separator: ", ")
+        let absent = expected.subtracting(Set(pending.map(\.id)))
+        if !absent.isEmpty {
+            let missing = pending.filter { absent.contains($0.id) }.map(\.number).sorted()
+            log.error("captures manquantes après 3 s : \(absent.count, privacy: .public)")
+            let list = missing.isEmpty ? "\(absent.count) marque(s)"
+                                       : missing.map(String.init).joined(separator: ", ")
             await MainActor.run {
                 Journal.write("⚠ capture absente pour la ou les marques \(list)")
             }
@@ -141,8 +166,16 @@ actor MarkCapture {
             image = reduced
         }
 
+        // Une capture peut atterrir ICI après que l'utilisateur a annulé sa marque : la
+        // tâche part au relâchement, ScreenCaptureKit prend quelques dizaines de
+        // millisecondes, et ⌥⌘Z est plus rapide que ça.
+        guard !discarded.contains(mark.id) else {
+            log.notice("capture de la marque \(mark.number) jetée — annulée entre-temps")
+            return
+        }
+
         pending.append(Pending(
-            number: mark.number, shape: mark.shape, image: image,
+            id: mark.id, number: mark.number, shape: mark.shape, image: image,
             frame: Engraver.Frame(captureSize: captureSize,
                                   sourceRect: cropped.sourceRect,
                                   scaleX: scaleX, scaleY: scaleY,
@@ -156,12 +189,12 @@ actor MarkCapture {
     /// fichier : son recadrage a été capturé, il est simplement jeté sans avoir jamais
     /// touché le disque.
     func finalize(keeping keep: [Keep], into directory: URL) async throws -> [Frame] {
-        await waitForCaptures(of: Set(keep.map(\.number)))
-        let byNumber = Dictionary(uniqueKeysWithValues: keep.map { ($0.number, $0) })
+        await waitForCaptures(of: Set(keep.map(\.id)))
+        let byID = Dictionary(uniqueKeysWithValues: keep.map { ($0.id, $0) })
 
         var written: [Frame] = []
         for item in pending {
-            guard let entry = byNumber[item.number] else { continue }
+            guard let entry = byID[item.id] else { continue }
             let intention = entry.intention
             let engraved = Engraver.engrave(
                 item.image,
@@ -170,7 +203,7 @@ actor MarkCapture {
                 frame: item.frame)
 
             let url = directory.appendingPathComponent(
-                String(format: "marque-%02d.png", item.number))
+                String(format: "marque-%02d.png", entry.number))
             try ScreenCapture.writePNG(engraved, to: url)
 
             let box = item.frame.rect(item.shape.boundingBox)

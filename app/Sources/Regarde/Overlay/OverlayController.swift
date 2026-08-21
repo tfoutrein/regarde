@@ -99,7 +99,7 @@ final class OverlayController {
                     MarkStore.shared.cancelStroke()
                 case .undo:
                     if let removed = MarkStore.shared.undoLast() {
-                        Journal.write("marque \(removed.number) supprimée — le numéro n'est pas réattribué")
+                        Journal.write("marque \(removed.number) supprimée — le numéro est rendu")
                     }
                 case .selectTool(let tool):
                     MarkStore.shared.tool = tool

@@ -143,12 +143,29 @@ final class MarkStore {
 
     // MARK: - Édition
 
-    /// Supprime la dernière marque. Le numéro n'est PAS rendu : il laisse un trou,
-    /// parce que l'utilisateur a pu le prononcer à voix haute.
+    /// Supprime la dernière marque, et lui reprend son numéro.
+    ///
+    /// Le numéro EST rendu, contrairement à la première version de l'ADR-0013.
+    ///
+    /// L'argument qui a tranché vient de l'usage : `Échap` et `⌥⌘Z` font la même chose du
+    /// point de vue de l'utilisateur — annuler une marque qu'on vient de faire — et
+    /// `Échap` rendait déjà le numéro. Deux gestes équivalents avec deux résultats
+    /// différents, c'est une incohérence, pas une décision.
+    ///
+    /// L'objection d'origine était qu'un numéro prononcé à voix haute ne doit pas changer
+    /// de sens. Elle ne tient pas ici : `⌥⌘Z` ne supprime que la DERNIÈRE marque, celle
+    /// qu'on vient de tracer, et si on l'annule c'est précisément qu'on renonce à ce
+    /// qu'on venait d'en dire. Un trou dans la numérotation, lui, reste inexplicable pour
+    /// qui relit le rapport.
     @discardableResult
     func undoLast() -> Mark? {
-        guard !marks.isEmpty else { return nil }
-        return marks.removeLast()
+        guard let mark = marks.popLast() else { return nil }
+        if mark.number == nextNumber - 1 { nextNumber -= 1 }
+
+        // Le recadrage déjà capturé part avec elle. Sans cela il attendrait la
+        // publication sous un numéro qu'une autre marque porte désormais.
+        Task { await MarkCapture.shared.discard(id: mark.id) }
+        return mark
     }
 
     func clear() {

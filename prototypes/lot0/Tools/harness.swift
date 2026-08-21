@@ -304,6 +304,30 @@ func scenarioTriplet(origin: CGPoint, tools: [String], intentions: [Int]) {
     disarm()
 }
 
+/// Trace, annule par ⌥⌘Z, retrace AILLEURS, publie.
+///
+/// Vérifie que l'image publiée est celle de la SECONDE marque : les deux portent le
+/// numéro 1 depuis que l'annulation le rend, et seule leur identité les distingue.
+func scenarioUndo(origin: CGPoint) {
+    arm()
+    selectTool("cadre")
+
+    // Premier cadre, en haut.
+    stroke(from: origin, to: CGPoint(x: origin.x + 260, y: origin.y + 120))
+    pause(500)
+
+    // Annulation : code 13, la touche marquée Z sur un clavier français.
+    key(13, flags: ARMED)
+    pause(400)
+
+    // Second cadre, nettement plus bas : les deux images doivent être distinctes.
+    stroke(from: CGPoint(x: origin.x, y: origin.y + 320),
+           to: CGPoint(x: origin.x + 260, y: origin.y + 440))
+    pause(400)
+
+    disarm()
+}
+
 func value(_ name: String, _ def: Double) -> Double {
     guard let i = args.firstIndex(of: "--\(name)"), i + 1 < args.count else { return def }
     return Double(args[i + 1]) ?? def
@@ -330,6 +354,7 @@ guard args.count > 1 else {
       lot2           --x --y                     4 outils + intentions (S20 a S23)
       outside        --x --y                     hors cible, puis ⌥⌘⇧ (S22)
       triplet        --x --y --tools --marks     3 marques, 3 outils (S28)
+      undo           --x --y                     trace, ⌥⌘Z, retrace, publie
 
     Le curseur revient a sa position initiale a la fin.
     """)
@@ -349,6 +374,7 @@ case "rightidle":  scenarioRightClickIdle(origin: origin)
 case "continuous": scenarioTrace(origin: origin, count: count, width: 320, stepMs: 6)
 case "lot2":       scenarioLot2(origin: origin)
 case "outside":    scenarioOutside(origin: origin)
+case "undo":       scenarioUndo(origin: origin)
 case "triplet":
     let names = args.firstIndex(of: "--tools").map { args[$0 + 1] } ?? "fleche,cadre,point"
     let ranks = args.firstIndex(of: "--marks").map { args[$0 + 1] } ?? "2,1,4"

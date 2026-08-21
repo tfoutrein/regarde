@@ -68,7 +68,8 @@ enum CaptureDemo {
                 }
 
                 let keep = marks.map {
-                    MarkCapture.Keep(number: $0.number, intention: $0.intention?.label)
+                    MarkCapture.Keep(id: $0.id, number: $0.number,
+                                     intention: $0.intention?.label)
                 }
 
                 let frames = try await MarkCapture.shared.finalize(

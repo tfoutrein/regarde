@@ -158,12 +158,14 @@ l'observation et renumérote à partir de 1.
       **sans relâcher** : posez une marque (badge `1`), commencez un second tracé (badge `2`
       pendant le geste), annulez par `Échap`, retracez : la nouvelle marque reprend le **`2`**.
 - [ ] **5.6** `⌥⌘Z`, **`⌥⌘` tenu sans interruption** : la marque `2` disparaît et le journal écrit
-      `marque 2 supprimée — le numéro n'est pas réattribué`.
+      `marque 2 supprimée — le numéro est rendu`.
       *Après une publication, il n'y a plus rien à annuler : `⌥⌘Z` est alors sans effet et sans
       message. C'est normal.*
-- [ ] **5.7** Toujours sans relâcher, tracez une marque : elle porte **`3`**, pas `2`. Le calque
-      montre `1` et `3`.
-      *C'est voulu : vous avez pu prononcer ce numéro à voix haute.*
+- [ ] **5.7** Toujours sans relâcher, tracez une marque : elle reprend le **`2`**. Le calque montre
+      `1` et `2`, sans trou.
+      *`Échap` et `⌥⌘Z` annulent tous deux une marque qu'on vient de faire : ils rendent donc tous
+      deux son numéro. Vérifiez ensuite que l'image publiée est bien la NOUVELLE marque 2 et non
+      celle que vous avez effacée.*
 
 ## 6. Les intentions
 

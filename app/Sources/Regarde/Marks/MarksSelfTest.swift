@@ -134,22 +134,37 @@ enum MarksSelfTest {
         store.extendStroke(to: CGPoint(x: 500, y: 500), geometry: g)
         _ = store.endStroke()
 
-        // Une suppression, elle, laisse un TROU : le numéro a pu être prononcé.
-        store.undoLast()
+        // Une suppression rend son numéro, exactement comme une annulation.
+        //
+        // Échap et ⌥⌘Z font la même chose du point de vue de l'utilisateur — annuler une
+        // marque qu'on vient de faire — et laisser un trou dans un cas mais pas dans
+        // l'autre était une incohérence. Signalé à l'usage.
+        let removed = store.undoLast()
+        check(t, "l'annulation retire bien la dernière marque", removed?.number == 2)
         store.beginStroke(at: CGPoint(x: 600, y: 600), geometry: g)
-        check(t, "après suppression, le numéro suivant est 3 et non 2",
-              store.liveNumber == 3, "→ \(String(describing: store.liveNumber))")
+        check(t, "après suppression, le numéro supprimé est repris",
+              store.liveNumber == 2, "→ \(String(describing: store.liveNumber))")
         store.extendStroke(to: CGPoint(x: 700, y: 700), geometry: g)
         _ = store.endStroke()
+
+        // La numérotation reste contiguë : c'est tout l'objet du changement.
+        check(t, "les numéros se suivent sans trou",
+              store.marks.map(\.number) == [1, 2],
+              "→ \(store.marks.map(\.number))")
+
+        // Mais deux marques différentes ont porté le 2 : leurs identités diffèrent, et
+        // c'est par elles que la gravure les distingue.
+        check(t, "la marque reprise a sa propre identité",
+              store.marks.last?.id != removed?.id)
 
         // Un geste trop court ne consomme rien non plus.
         store.tool = .arrow
         store.beginStroke(at: CGPoint(x: 800, y: 800), geometry: g)
         let reserved = store.liveNumber
-        check(t, "le geste trop court avait réservé 4", reserved == 4)
+        check(t, "le geste trop court avait réservé 3", reserved == 3)
         check(t, "un geste trop court ne pose aucune marque", store.endStroke() == nil)
         store.beginStroke(at: CGPoint(x: 100, y: 700), geometry: g)
-        check(t, "le numéro d'un geste trop court est rendu", store.liveNumber == 4)
+        check(t, "le numéro d'un geste trop court est rendu", store.liveNumber == 3)
         store.cancelStroke()
 
         // L'outil survit à une publication éclair, mais pas à une nouvelle session.

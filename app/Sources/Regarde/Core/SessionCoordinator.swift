@@ -135,7 +135,7 @@ final class SessionCoordinator {
         // filtre : une marque supprimée par ⌘Z n'y figure pas, donc son recadrage est
         // jeté sans avoir jamais touché le disque.
         let keep = MarkStore.shared.marks.map {
-            MarkCapture.Keep(number: $0.number, intention: $0.intention?.label)
+            MarkCapture.Keep(id: $0.id, number: $0.number, intention: $0.intention?.label)
         }
         let directory = sessionDirectory
         sessionDirectory = nil
@@ -216,7 +216,7 @@ final class SessionCoordinator {
         guard !marks.isEmpty else { return }
 
         let keep = marks.map {
-            MarkCapture.Keep(number: $0.number, intention: $0.intention?.label)
+            MarkCapture.Keep(id: $0.id, number: $0.number, intention: $0.intention?.label)
         }
         let count = marks.count
         MarkStore.shared.reset(keepingTool: true)
