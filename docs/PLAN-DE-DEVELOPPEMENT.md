@@ -788,6 +788,21 @@ contre le code qui existe et non contre l'idée qu'on s'en faisait.
 | S44 | 3 h | **Marge** — pré-roll opt-in : segments roulants de 10 s à 2 fps en demi-résolution, les trois derniers conservés, bascule pleine résolution à l'ouverture | Sans consentement, **rien n'est écrit** ; avec, trois segments au plus sous 8 MiB ; **verrouiller l'écran arrête toute croissance de fichier** — la couture existe : `forceSuspend` abandonne désormais le travail en vol à tout état, il reste à y brancher l'arrêt du flux |
 | S45 | 2 h | **Marge** — marques rétroactives ⌥⌘ + `1`..`9`, seul consommateur du pré-roll, avec le discriminant de substitution du § 6.7 | ⌥⌘ tenu sans rien tracer puis `3` pose une marque à T−3 s servie **par le fichier encodé** ; une marque antérieure au plus ancien segment est refusée avec un message plutôt que servie par une frame fausse |
 
+> **État au 22 août 2026 : S29 à S43 sont écrites et commitées.** Le lot est complet
+> en code et instrumenté ; il n'est pas validé. Sept points du critère restent NON
+> MESURÉS, tous parce qu'ils demandent la machine — deux écrans, l'autorisation
+> d'enregistrement, Chrome en plein écran natif, et du temps réel qui passe. Le
+> détail est dans [`livrables/lot3-passage.md`](livrables/lot3-passage.md), et
+> `v0.3.0` attend le commit qui remplira son tableau.
+>
+> Ce qui a été prouvé sans machine : **314 vérifications d'autotest**, dont trois
+> contre-épreuves qui cassent délibérément le code pour vérifier que les tests
+> rougissent, et **trois invariants vérifiés mécaniquement** — le tap ne touche aucun
+> tampon, l'anneau garde sa file, il n'existe qu'une seule porte vers l'asset.
+>
+> S44 et S45 — pré-roll et marques rétroactives — ne sont pas faites. Elles sont le
+> bloc de marge du § 6.3, et le critère de fin du lot ne les mentionne pas.
+
 **45 heures pour S29 à S43**, exactement les 6,5 journées du lot au taux de conversion du lot 2
 (5,5 j pour 38 h). Les cinq heures de S44 et S45 sont en plus, et c'est voulu : voir plus bas.
 
