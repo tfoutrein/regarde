@@ -129,6 +129,29 @@ final class StatusItemController {
                 unreachable = true
             }
         }
+        // `screen` est nil quand la fenêtre de l'élément ne recouvre AUCUN écran.
+        //
+        // C'est ce que fait macOS d'un élément qu'il ne peut plus placer : il le gare
+        // hors champ. `isVisible` reste vrai, l'image est construite, et l'utilisateur
+        // ne trouve rien — c'est le cas le plus déroutant des trois, parce que tout ce
+        // qu'on sait mesurer dit que tout va bien.
+        //
+        // Le diagnostic ne le voyait pas : toute son analyse — écran porteur, encoche —
+        // vivait DANS un `if let screen`, donc était sautée en silence précisément
+        // quand il y avait quelque chose à dire. Une section qui omet ses lignes se lit
+        // comme une section qui n'a rien à signaler.
+        if button.window?.screen == nil {
+            let ecrans = NSScreen.screens.map {
+                String(format: "%.0f→%.0f", $0.frame.minY, $0.frame.maxY)
+            }.joined(separator: ", ")
+            lines.append("écran      AUCUN — la fenêtre ne recouvre aucun écran")
+            lines.append("           écrans en y : \(ecrans)")
+            lines.append("⚠ L'ÉLÉMENT EST GARÉ HORS ÉCRAN — invisible malgré isVisible=true.")
+            lines.append("  macOS fait cela quand la barre de menus est pleine : il ne peut")
+            lines.append("  plus placer l'élément et le pousse hors champ.")
+            lines.append("  Libère de la place — retire une icône, ou masque celles du système.")
+            unreachable = true
+        }
         if let screen = button.window?.screen {
             lines.append("écran      \(Int(screen.frame.width))×\(Int(screen.frame.height)) pt à (\(Int(screen.frame.minX)), \(Int(screen.frame.minY)))")
 
@@ -161,7 +184,8 @@ final class StatusItemController {
         if unreachable && !isUnreachable {
             HUDWindow.shared.announce(
                 "Icône introuvable dans la barre de menus",
-                detail: "⌃⌥S ouvre le diagnostic"
+                detail: "Barre pleine — libère une place. ⌃⌥S ouvre le diagnostic.",
+                duration: 8
             )
         }
         isUnreachable = unreachable
