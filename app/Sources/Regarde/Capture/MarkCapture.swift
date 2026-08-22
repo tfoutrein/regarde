@@ -96,6 +96,18 @@ actor MarkCapture {
         let shape: MarkShape
         let image: CGImage
         let frame: Engraver.Frame
+        // ── Ce que S37 y dépose, et pourquoi ce n'est pas dans `Keep` ────────
+        //
+        // `Keep` ne porte que ce dont la PUBLICATION a besoin : identité, numéro,
+        // intention. Le temps, le mouvement et le segment sont des faits de
+        // CAPTURE : ils sont connus ici, à la prise, et perdus si on ne les
+        // retient pas — au moment de publier, l'écran a bougé depuis longtemps.
+        //
+        // Le plan de burst (S40) et l'extraction (S39) les liront ici.
+        let t: SessionTime
+        let motion: MotionSample
+        let segmentID: CaptureSegmentID?
+        let source: ImageSource
     }
 
     private var pending: [Pending] = []
@@ -183,7 +195,7 @@ actor MarkCapture {
 
     /// Capture et recadre une marque, sans rien écrire. La gravure viendra à la
     /// fermeture de session, quand l'intention est connue et la marque confirmée.
-    func capture(mark: Mark) async throws {
+    func capture(mark: Mark, motion: MotionSample = MotionSample()) async throws {
         let shot = try await ScreenCapture.shared.capture(displayID: mark.displayID)
         let capture = shot.image
         let captureSize = CGSize(width: capture.width, height: capture.height)
@@ -236,7 +248,12 @@ actor MarkCapture {
             frame: Engraver.Frame(captureSize: captureSize,
                                   sourceRect: cropped.sourceRect,
                                   scaleX: scaleX, scaleY: scaleY,
-                                  pointScale: shot.pointScale)))
+                                  pointScale: shot.pointScale),
+            t: mark.t, motion: motion, segmentID: mark.segmentID,
+            // Le chemin de S24 reste le FILET du § 5.1 : une image existe quoi
+            // qu'il arrive ensuite. L'extraction depuis le fichier encodé, qui la
+            // remplacera quand elle réussit, arrive en S39.
+            source: .filetRAM))
         log.notice("marque \(mark.number) capturée — \(cropped.kind.rawValue) \(image.width)×\(image.height)")
 
         // Le banc C11 date l'ARRIVÉE de l'image. La différence avec `mark.t`, pris

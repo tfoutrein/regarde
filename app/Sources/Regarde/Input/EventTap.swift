@@ -260,12 +260,25 @@ final class EventTap: @unchecked Sendable {
             case .swallow:
                 return nil
             case .capture(let kind):
+                // À la PRESSION, et seulement là : une demande d'instantané part
+                // vers `encodeQueue`, qui ira chercher la frame correspondante
+                // pendant qu'elle est encore dans l'anneau. Attendre le
+                // relâchement la chercherait 0,27 s trop tard — l'anneau tient
+                // quatre frames, le geste dure une à deux secondes.
+                //
+                // Ce que fait le tap ici est UNE écriture atomique et deux dans un
+                // tampon déjà alloué. Il ne touche aucun `CVPixelBuffer` : c'est la
+                // règle absolue de B2, et elle ne souffre aucune exception
+                // d'optimisation.
+                let demande = kind == .down
+                    ? SnapshotRing.shared.demander(hostTicks: event.timestamp) : 0
                 InkRing.shared.push(InkEvent(
                     x: location.x,
                     y: location.y,
                     kind: kind.rawValue,
                     hostTicks: event.timestamp,
-                    enqueuedTicks: t0
+                    enqueuedTicks: t0,
+                    snapshot: demande
                 ))
                 return nil
             }

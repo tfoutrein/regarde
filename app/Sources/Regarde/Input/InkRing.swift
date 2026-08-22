@@ -32,6 +32,13 @@ struct InkEvent: Sendable {
     var hostTicks: UInt64
     /// Instant d'entree dans le callback, pour mesurer la latence de bout en bout (T0.7).
     var enqueuedTicks: UInt64
+    /// Numero de la demande d'instantane deposee a la PRESSION (S37).
+    ///
+    /// Zero hors `mouseDown`, et zero quand l'anneau n'est pas arme. Il voyage avec
+    /// l'evenement parce que c'est le seul moyen de relier, au relachement, la
+    /// marque a la frame prise une seconde plus tot — l'anneau ne tient que 0,27 s,
+    /// la chercher au relachement reviendrait a prendre l'ecran d'APRES.
+    var snapshot: UInt64 = 0
 
     var eventKind: Kind { Kind(rawValue: kind) ?? .drag }
     var point: CGPoint { CGPoint(x: x, y: y) }
@@ -63,7 +70,7 @@ final class InkRing: @unchecked Sendable {
         self.capacity = capacity
         self.mask = UInt64(capacity - 1)
         self.buffer = .allocate(capacity: capacity)
-        self.buffer.initialize(repeating: InkEvent(x: 0, y: 0, kind: 0, hostTicks: 0, enqueuedTicks: 0),
+        self.buffer.initialize(repeating: InkEvent(x: 0, y: 0, kind: 0, hostTicks: 0, enqueuedTicks: 0, snapshot: 0),
                                count: capacity)
     }
 

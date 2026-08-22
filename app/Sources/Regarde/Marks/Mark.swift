@@ -242,6 +242,12 @@ struct Mark: Identifiable, Sendable {
     var isRetroactive: Bool = false
     /// D'où vient son image. `preRoll` signale une résolution réduite.
     var imageSource: ImageSource = .aucune
+    /// Numéro de la demande d'instantané déposée par le tap à la PRESSION (S37).
+    ///
+    /// Zéro quand l'anneau n'était pas armé — première marque d'une session, écran
+    /// figé — auquel cas le filet RAM prend le relais. C'est la clé qui relie, au
+    /// relâchement, la marque à la frame prise une seconde plus tôt.
+    var snapshot: UInt64 = 0
 
     init(id: UUID = UUID(), number: Int, displayID: CGDirectDisplayID,
          shape: MarkShape, tool: MarkTool, target: String? = nil,
@@ -250,7 +256,8 @@ struct Mark: Identifiable, Sendable {
          timeOrigin: TimestampOrigin = .fallbackNow,
          segmentID: CaptureSegmentID? = nil,
          isRetroactive: Bool = false,
-         imageSource: ImageSource = .aucune) {
+         imageSource: ImageSource = .aucune,
+         snapshot: UInt64 = 0) {
         self.id = id
         self.number = number
         self.displayID = displayID
@@ -263,5 +270,6 @@ struct Mark: Identifiable, Sendable {
         self.segmentID = segmentID
         self.isRetroactive = isRetroactive
         self.imageSource = imageSource
+        self.snapshot = snapshot
     }
 }

@@ -48,6 +48,8 @@ final class MarkStore {
         /// geste, et `now()` au relâchement daterait la marque d'après ce qu'elle
         /// désigne.
         let stamped: StampedTime
+        /// Numéro de la demande d'instantané déposée à la pression (S37).
+        let snapshot: UInt64
     }
 
     private var live: LiveStroke?
@@ -74,7 +76,8 @@ final class MarkStore {
     ///
     /// La conversion vers le repère de la frame appartient à `FrameRef` et à
     /// `Engraver.Frame` : une couture unique, du côté des pixels, pas du côté du modèle.
-    func beginStroke(at eventPoint: CGPoint, geometry: ScreenGeometry, hostTicks: UInt64 = 0) {
+    func beginStroke(at eventPoint: CGPoint, geometry: ScreenGeometry,
+                     hostTicks: UInt64 = 0, snapshot: UInt64 = 0) {
         guard let screen = geometry.screen(containingEvent: eventPoint) else { return }
 
         // Un écran écarté refuse le geste, et le DIT.
@@ -105,7 +108,7 @@ final class MarkStore {
         // pendant le geste, donc le numéro imprononçable au moment où il en a besoin.
         live = LiveStroke(displayID: screen.displayID, panelSize: size,
                           start: norm, current: norm, tool: tool, number: nextNumber,
-                          stamped: stamped)
+                          stamped: stamped, snapshot: snapshot)
         nextNumber += 1
     }
 
@@ -151,7 +154,8 @@ final class MarkStore {
         let mark = Mark(number: stroke.number, displayID: stroke.displayID,
                         shape: shape, tool: stroke.tool,
                         target: TargetWindow.shared.target?.name,
-                        t: stroke.stamped.time, timeOrigin: stroke.stamped.origin)
+                        t: stroke.stamped.time, timeOrigin: stroke.stamped.origin,
+                        snapshot: stroke.snapshot)
         marks.append(mark)
         return mark
     }

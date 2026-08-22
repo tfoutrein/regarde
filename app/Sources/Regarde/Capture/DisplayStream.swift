@@ -107,6 +107,8 @@ final class DisplayStream: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
     /// pourrait encore corriger.
     private var writer: SegmentWriter?
     private var dossier: URL?
+    /// L'anneau de frames. Vit sur `encodeQueue`, et nulle part ailleurs.
+    private(set) lazy var anneau = FrameRing(queue: encodeQueue, segmentID: segmentID)
     /// Motif d'échec d'écriture, s'il y en a eu un. Traité comme une fin de session.
     private(set) var echecEcriture: String?
     /// Appelé quand le flux s'arrête de lui-même.
@@ -287,6 +289,15 @@ final class DisplayStream: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
 
         let rect = (info[.contentRect] as? [String: Any])
             .flatMap { CGRect(dictionaryRepresentation: $0 as CFDictionary) } ?? .zero
+
+        // La part de l'écran qui a CHANGÉ depuis la frame précédente. C'est la
+        // moitié de la double garde de l'anneau, et l'un des deux critères du plan
+        // de burst : sans elle, le curseur clignotant — fréquence élevée, surface
+        // dérisoire — déclencherait un burst à chaque marque.
+        let surface = max(rect.width * rect.height, 1)
+        let dirty = ((info[.dirtyRects] as? [[String: Any]]) ?? [])
+            .compactMap { CGRect(dictionaryRepresentation: $0 as CFDictionary) }
+            .reduce(0.0) { $0 + Double($1.width * $1.height) } / Double(surface)
         let scale = info[.scaleFactor] as? Double ?? 1
         let contentScale = info[.contentScale] as? Double ?? 1
         let pts = CMSampleBufferGetPresentationTimeStamp(sample)
@@ -320,6 +331,15 @@ final class DisplayStream: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
             }
         }
         writer?.ecrire(sample)
+
+        // L'anneau est nourri ICI, sur `encodeQueue` — la seule file qui possède
+        // les tampons. Le thread du tap, lui, s'est contenté de déposer un numéro.
+        let ref = FrameRef(segmentID: segmentID, contentRect: rect,
+                           bufferSize: taille ?? .zero, scaleFactor: scale,
+                           contentScale: contentScale, resolutionReduite: false,
+                           pts: CMTimeCodable(pts))
+        anneau.accueillir(sample, ref: ref, dirtyRatio: dirty)
+
         onFrame?(sample, rect, scale)
     }
 

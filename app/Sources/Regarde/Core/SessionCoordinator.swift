@@ -194,6 +194,9 @@ final class SessionCoordinator {
         let marked = MarkStore.shared.targets
         let seconds = sessionStart.map { Int(Date().timeIntervalSince($0).rounded()) }
         transition(to: .finalizing)
+        // L'anneau se désarme AVEC la session : le laisser armé ferait copier des
+        // frames pour personne jusqu'au prochain lancement.
+        SnapshotRing.shared.armer(false)
         Task { await CaptureEngine.shared.arreter(raison: .finDeSession) }
 
         // La cible est dégelée, pas relâchée : le mode éclair reprend la main dès la
@@ -315,6 +318,14 @@ final class SessionCoordinator {
 
     /// Le modificateur vient d'être pris ou relâché.
     func modifierChanged(armed: Bool) {
+        // L'anneau de frames s'entretient à partir de la PREMIÈRE tenue de ⌥⌘, et
+        // pas avant. Copier chaque frame brûle 440 MiB/s de bande passante mémoire
+        // en permanence, avec la pollution de cache associée — un coût qui
+        // n'apparaît PAS dans la mesure de CPU, laquelle ne regarde que l'encodage,
+        // et qui fausserait C3b sans qu'on sache pourquoi. Tant que l'utilisateur
+        // n'a pas manifesté l'intention d'annoter, il n'y a rien à retenir.
+        if armed { SnapshotRing.shared.armer(true) }
+
         // Une session explicite publie à ⌃⌥F, jamais au relâchement : c'est toute la
         // différence entre les deux modes.
         guard state == .idle else { return }
@@ -410,6 +421,7 @@ final class SessionCoordinator {
         Task { await MarkCapture.shared.reset() }
         // Et le flux s'arrête AVEC : continuer d'écrire l'écran sur disque pendant
         // une veille ou un verrouillage est précisément ce que l'ADR-0020 interdit.
+        SnapshotRing.shared.armer(false)
         Task { await CaptureEngine.shared.arreter(raison: .suspension) }
 
         // Le tracé EN COURS ne figure pas dans `count`, qui ne compte que les marques
