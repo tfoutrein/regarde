@@ -43,3 +43,8 @@ notarization-*.json
 
 # Cache de compilation Python (Tools/temoin-serveur.py)
 __pycache__/
+
+# Pages de recette : le Markdown est la source, `build-recette.py <src> <out>` la
+# rend. Commiter la sortie invite les deux à diverger — le lot 2 a payé pour le
+# savoir.
+docs/livrables/*.html

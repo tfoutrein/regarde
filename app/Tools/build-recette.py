@@ -2,9 +2,20 @@
 """Génère la page de recette depuis le markdown, pour que les deux ne divergent pas."""
 import html as H, re, sys
 
-SRC = "docs/livrables/lot2-recette.md"   # relatif à la racine du dépôt
+# La source et la sortie sont des ARGUMENTS depuis S43.
+#
+# Elles étaient codées en dur, et la sortie pointait vers un répertoire de travail
+# temporaire qui n'existe plus. Un générateur qui n'écrit que la recette d'un lot
+# est un générateur qu'il faut modifier à chaque lot — et qu'on modifie mal, en
+# oubliant de remettre la valeur précédente.
+#
+#   build-recette.py <source.md> <sortie.html>
+#
+# Sans argument, il retombe sur la recette du lot 2, pour que les commandes déjà
+# écrites ailleurs continuent de fonctionner.
 CSS = "app/Tools/recette.css"          # relatif à la racine du dépôt
-OUT = "/Users/tfoutrein2/.claude/jobs/51392cd5/tmp/lot2-recette.html"
+SRC = sys.argv[1] if len(sys.argv) > 1 else "docs/livrables/lot2-recette.md"
+OUT = sys.argv[2] if len(sys.argv) > 2 else "docs/livrables/lot2-recette.html"
 
 def inline(t):
     t = H.escape(t)

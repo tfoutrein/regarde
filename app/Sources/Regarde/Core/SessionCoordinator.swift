@@ -474,6 +474,14 @@ final class SessionCoordinator {
         let previous = state
         state = .suspended
         log.notice("suspension forcée depuis \(previous.rawValue, privacy: .public) — \(reason, privacy: .public)")
+        // Et dans le JOURNAL DISQUE, pas seulement dans `os_log`.
+        //
+        // Le lot 1 a établi qu'`os_log` ne rend rien pour ce bundle : un diagnostic
+        // qu'on ne peut pas lire ne diagnostique rien. Cette ligne-ci est celle
+        // qu'on cherche après un verrouillage d'écran pour savoir si la session a
+        // été suspendue ou si elle s'est perdue autrement — trouvée en auditant la
+        // recette du lot 3 contre le code, avant de la remettre.
+        Journal.warn(.session, "suspension forcée depuis \(previous.rawValue) — \(reason)")
         publish(state)
     }
 
