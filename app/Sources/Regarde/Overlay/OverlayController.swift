@@ -42,6 +42,13 @@ final class OverlayController {
         ) { _ in
             MainActor.assumeIsolated {
                 OverlayController.shared.rebuildPanels(reason: "changement d'écrans")
+                // Le moteur ferme les flux des écrans disparus IMMÉDIATEMENT.
+                // Attendre la fin de session les fermerait au milieu de la
+                // finalisation des autres, où une erreur emporterait des segments
+                // complets (§ 5.5).
+                let presents = Set(OverlayController.shared.geometry.screens
+                                    .map { CGDirectDisplayID($0.displayID) })
+                Task { await CaptureEngine.shared.synchroniser(avec: presents) }
             }
         }
 

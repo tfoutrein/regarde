@@ -124,6 +124,32 @@ actor CaptureEngine {
         await MainActor.run { Journal.block("FLUX", lignes) }
     }
 
+    /// Ferme les flux des écrans qui ont DISPARU, et laisse les autres tourner.
+    ///
+    /// Le § 5.5 est explicite : « le writer d'un écran disparu est finalisé AU
+    /// MOMENT DE LA DÉCONNEXION, pas en fin de session ». La raison est qu'un
+    /// writer dont l'écran n'existe plus ne recevra plus rien : attendre la fin de
+    /// session pour le fermer, c'est le fermer alors que le contexte de l'erreur
+    /// a disparu, au milieu de la finalisation des autres — et une erreur là
+    /// emporterait des segments complets.
+    ///
+    /// La session CONTINUE sur les écrans restants. Débrancher un écran externe ne
+    /// doit pas coûter la session en cours sur l'interne.
+    func synchroniser(avec presents: Set<CGDirectDisplayID>) async {
+        let disparus = flux.keys.filter { !presents.contains($0) }
+        for id in disparus {
+            await MainActor.run {
+                Journal.warn(.capture, "display \(id) débranché — finalisation immédiate de son segment")
+            }
+            await arreterEcran(id, raison: .deconnexion)
+        }
+        if !disparus.isEmpty && flux.isEmpty {
+            await MainActor.run {
+                Journal.warn(.capture, "plus aucun écran capturable — la session n'enregistre plus")
+            }
+        }
+    }
+
     /// Reconstruit les filtres de tous les flux.
     ///
     /// Le canal de reconfiguration : l'ouverture d'une application de la liste
