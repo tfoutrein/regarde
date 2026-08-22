@@ -186,7 +186,22 @@ final class StatusItemController {
             log.error("symbole SF « \(symbol, privacy: .public) » introuvable — repli sur le texte")
         }
         button.image = image
-        button.image?.isTemplate = (tint == nil)
+        // `isTemplate` TOUJOURS vrai, et c'est l'inverse de ce qui était écrit.
+        //
+        // `contentTintColor` ne teinte QUE les images template : sur une image non
+        // template, elle n'a aucun effet. Le code posait `isTemplate = (tint == nil)`
+        // — donc faux dès qu'une teinte existait — et désactivait ainsi le mécanisme
+        // qu'il utilisait à la ligne suivante. Le symbole sortait dans sa couleur
+        // par défaut, c'est-à-dire sans couleur, et l'icône ne passait jamais au
+        // rouge en session.
+        //
+        // Un SF Symbol est un glyphe monochrome : le rendre template ne lui retire
+        // rien, et lui donne au contraire le comportement attendu — teinté quand on
+        // le teinte, à la couleur de la barre de menus sinon, y compris en thème
+        // sombre où une couleur codée en dur serait illisible.
+        //
+        // Trouvé par la recette du lot 3, au test 1.1.
+        button.image?.isTemplate = true
         button.title = image == nil ? "◉" : ""
         button.contentTintColor = tint
         button.toolTip = "Regarde — \(description)"
