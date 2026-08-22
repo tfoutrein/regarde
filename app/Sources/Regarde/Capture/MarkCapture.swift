@@ -107,7 +107,9 @@ actor MarkCapture {
         let t: SessionTime
         let motion: MotionSample
         let segmentID: CaptureSegmentID?
-        let source: ImageSource
+        var source: ImageSource
+        /// Descripteur de la frame retenue, quand elle vient du flux.
+        let ref: FrameRef?
     }
 
     private var pending: [Pending] = []
@@ -250,10 +252,10 @@ actor MarkCapture {
                                   scaleX: scaleX, scaleY: scaleY,
                                   pointScale: shot.pointScale),
             t: mark.t, motion: motion, segmentID: mark.segmentID,
-            // Le chemin de S24 reste le FILET du § 5.1 : une image existe quoi
-            // qu'il arrive ensuite. L'extraction depuis le fichier encodé, qui la
-            // remplacera quand elle réussit, arrive en S39.
-            source: .filetRAM))
+            // Le chemin de S24 est le FILET du § 5.1 : une image existe quoi qu'il
+            // arrive ensuite. L'extraction depuis le fichier encodé la remplace
+            // quand elle réussit — et quand elle échoue, ceci reste.
+            source: .filetRAM, ref: nil))
         log.notice("marque \(mark.number) capturée — \(cropped.kind.rawValue) \(image.width)×\(image.height)")
 
         // Le banc C11 date l'ARRIVÉE de l'image. La différence avec `mark.t`, pris
@@ -266,14 +268,90 @@ actor MarkCapture {
         }
     }
 
+    /// Remplace, quand c'est possible, l'image du filet par celle du FICHIER.
+    ///
+    /// C'est le geste que tout le lot 3 prépare. Le filet du § 5.1 capture au
+    /// moment du relâchement ; le fichier, lui, porte l'instant que l'utilisateur
+    /// DÉSIGNAIT — celui du `mouseDown`, une à deux secondes plus tôt, quand
+    /// l'infobulle était encore ouverte.
+    ///
+    /// UN SEUL appel de générateur par segment : appelé par marque, il rouvrirait
+    /// l'asset et reconstruirait son index à chaque fois, et le budget de 3 s du
+    /// traitement final partirait en réouvertures.
+    ///
+    /// Un échec n'est PAS une panne : la marque garde son image de filet, et sa
+    /// provenance le dit. C'est la différence entre un rapport qui se trompe et un
+    /// rapport qui se sait moins précis.
+    private func remplacerParLExtraction(segments: [CaptureSegment], keep: Set<UUID>) async {
+        guard !segments.isEmpty, !pending.isEmpty else { return }
+        let debut = Date()
+
+        var remplacees = 0, refusees = 0
+        var ecarts: [Double] = []
+
+        for segment in segments {
+            let demandes = pending
+                .filter { keep.contains($0.id) && $0.segmentID == segment.id }
+                .map { AssetFrames.Demande(markID: $0.id, numero: $0.number,
+                                           t: $0.t, motion: $0.motion) }
+            guard !demandes.isEmpty else { continue }
+
+            let (images, refus) = await AssetFrames.extraire(demandes, depuis: segment,
+                                                             clock: SessionClock.shared)
+            for r in images {
+                guard let i = pending.firstIndex(where: { $0.id == r.markID }) else { continue }
+                let ancien = pending[i]
+                // Le recadrage est REFAIT sur l'image extraite : celle du filet a
+                // été prélevée dans une autre capture, et réutiliser son découpage
+                // reviendrait à découper au bon endroit dans la mauvaise image.
+                let taille = CGSize(width: r.image.width, height: r.image.height)
+                let recadre = Cropper.crop(r.image, around: ancien.shape.focusBox)
+                pending[i] = Pending(
+                    id: ancien.id, number: ancien.number, displayID: ancien.displayID,
+                    shape: ancien.shape, image: recadre.image,
+                    frame: Engraver.Frame(captureSize: taille,
+                                          sourceRect: recadre.sourceRect,
+                                          scaleX: recadre.scaleX, scaleY: recadre.scaleY,
+                                          pointScale: ancien.frame.pointScale),
+                    t: ancien.t, motion: ancien.motion, segmentID: ancien.segmentID,
+                    source: r.source, ref: ancien.ref)
+                ecarts.append(r.ecartMs)
+                remplacees += 1
+            }
+            for (id, motif) in refus {
+                refusees += 1
+                let numero = pending.first { $0.id == id }?.number ?? 0
+                await MainActor.run {
+                    Journal.warn(.capture, "marque \(numero) servie par le filet — \(motif)")
+                }
+            }
+        }
+
+        let ms = Date().timeIntervalSince(debut) * 1000
+        let pireEcart = ecarts.map(abs).max() ?? 0
+        await MainActor.run {
+            Journal.block("EXTRACTION", [
+                ("depuis le fichier", "\(remplacees)"),
+                ("servies par le filet", "\(refusees)"),
+                // L'écart entre l'instant demandé et l'instant obtenu est la mesure
+                // DIRECTE de ce que B1 aurait coûté. Il doit rester sous un
+                // intervalle d'encodage, soit 66,7 ms à 15 fps.
+                ("pire écart demandé/obtenu", String(format: "%.1f ms", pireEcart)),
+                ("durée", String(format: "%.0f ms", ms)),
+            ])
+        }
+    }
+
     /// Grave et écrit les marques encore présentes dans le modèle.
     ///
     /// Le filtre sur `keep` est ce qui fait qu'une marque annulée par ⌘Z ne laisse aucun
     /// fichier : son recadrage a été capturé, il est simplement jeté sans avoir jamais
     /// touché le disque.
-    func finalize(keeping keep: [Keep], into directory: URL) async throws -> [Frame] {
+    func finalize(keeping keep: [Keep], into directory: URL,
+                  segments: [CaptureSegment] = []) async throws -> [Frame] {
         await waitForCaptures(of: keep)
         let byID = Dictionary(uniqueKeysWithValues: keep.map { ($0.id, $0) })
+        await remplacerParLExtraction(segments: segments, keep: Set(keep.map(\.id)))
 
         var written: [Frame] = []
         for item in pending {

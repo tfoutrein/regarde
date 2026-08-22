@@ -229,8 +229,23 @@ final class SessionCoordinator {
             var overviews = 0
             if let directory {
                 do {
+                    // Les segments sont réclamés au moteur, qui les a fermés à
+                    // l'arrêt du flux. Sans eux, l'extraction n'a rien à ouvrir et
+                    // toutes les marques retombent sur le filet.
+                    let segments = await CaptureEngine.shared.segments
                     let frames = try await MarkCapture.shared.finalize(
-                        keeping: keep, into: SessionPaths.frames(of: directory))
+                        keeping: keep, into: SessionPaths.frames(of: directory),
+                        segments: segments)
+
+                    // Le `.mov` meurt ICI, une fois les images écrites — pas avant,
+                    // il était la seule source ; pas après, c'est de la vidéo de
+                    // l'écran de l'utilisateur et l'ADR-0020 en borne la vie.
+                    let supprimes = AssetFrames.supprimer(segments)
+                    if supprimes > 0 {
+                        await MainActor.run {
+                            Journal.event(.capture, "\(supprimes) fichier(s) de capture supprimé(s)")
+                        }
+                    }
                     if TestFlags.c11Bench {
                         await MainActor.run {
                             C11Bench.shared.arreter()
