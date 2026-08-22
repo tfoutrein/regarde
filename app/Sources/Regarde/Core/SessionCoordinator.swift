@@ -147,10 +147,40 @@ final class SessionCoordinator {
         sessionTarget = target.name
         sessionStart = Date()
         Task { await MarkCapture.shared.reset() }
-        OptionGate.shared.currentMode = .active
-        transition(to: .recording)
-        HUDWindow.shared.announce("Session ouverte — \(target.name)",
-                                  detail: "⌥⌘ + glisser pour tracer", duration: 3)
+
+        // Le flux démarre ENTRE `arming` et `recording`, jamais avant, jamais après.
+        //
+        // Avant : l'origine de l'horloge n'est pas encore recalée, et les premières
+        // frames porteraient des PTS rapportés à la session précédente.
+        // Après : la porte serait ouverte alors qu'aucune image ne peut être
+        // produite — l'utilisateur tracerait, avec un numéro qui s'incrémente et
+        // rien derrière.
+        //
+        // `openSession` reste synchrone et c'est le démarrage qui est asynchrone :
+        // rendre la fonction `async` obligerait chaque appelant — un rappel Carbon,
+        // un élément de menu — à s'envelopper dans une tâche, et le raccourci
+        // deviendrait moins immédiat pour rien.
+        Task { [weak self] in
+            let echec = await CaptureEngine.shared.demarrer(geometry: OverlayController.shared.geometry)
+            await MainActor.run {
+                guard let self, self.state == .arming else { return }
+                if let echec {
+                    // `arming → idle`, et pas `blocked` : le tap et les permissions
+                    // vont bien, c'est CETTE tentative qui a échoué. `blocked`
+                    // ouvrirait le diagnostic sur une ligne verte.
+                    Journal.warn(.capture, "flux non démarré — \(echec)")
+                    HUDWindow.shared.announce("Capture impossible", detail: echec, duration: 5)
+                    TargetWindow.shared.release()
+                    self.sessionDirectory = nil; self.sessionTarget = nil; self.sessionStart = nil
+                    self.transition(to: .idle)
+                    return
+                }
+                OptionGate.shared.currentMode = .active
+                self.transition(to: .recording)
+                HUDWindow.shared.announce("Session ouverte — \(target.name)",
+                                          detail: "⌥⌘ + glisser pour tracer", duration: 3)
+            }
+        }
     }
 
     /// Termine la session. `⌃⌥F`. La publication des artefacts arrive en S27.
@@ -164,6 +194,7 @@ final class SessionCoordinator {
         let marked = MarkStore.shared.targets
         let seconds = sessionStart.map { Int(Date().timeIntervalSince($0).rounded()) }
         transition(to: .finalizing)
+        Task { await CaptureEngine.shared.arreter(raison: .finDeSession) }
 
         // La cible est dégelée, pas relâchée : le mode éclair reprend la main dès la
         // session close, et ⌥⌘ doit continuer d'armer sur la fenêtre regardée.
@@ -377,6 +408,9 @@ final class SessionCoordinator {
         // Les recadrages en attente n'iront nulle part, et les garder ferait ressortir
         // des images périmées dans une session ultérieure.
         Task { await MarkCapture.shared.reset() }
+        // Et le flux s'arrête AVEC : continuer d'écrire l'écran sur disque pendant
+        // une veille ou un verrouillage est précisément ce que l'ADR-0020 interdit.
+        Task { await CaptureEngine.shared.arreter(raison: .suspension) }
 
         // Le tracé EN COURS ne figure pas dans `count`, qui ne compte que les marques
         // POSÉES. C'est pourtant l'objet le plus en vol qui soit : un geste interrompu
@@ -435,6 +469,28 @@ final class SessionCoordinator {
     func observeSystemState() {
         let dnc = DistributedNotificationCenter.default()
         let wnc = NSWorkspace.shared.notificationCenter
+
+        // Le canal de reconfiguration : une application qui SE LANCE pendant la
+        // session doit entrer dans le filtre d'exclusion à partir de cet instant.
+        //
+        // Sans lui, l'exclusion ne vaut que pour ce qui tournait déjà au démarrage
+        // du flux — et un gestionnaire de mots de passe s'ouvre précisément
+        // pendant qu'on teste ce à quoi il donne accès. Le filtre est reconstruit
+        // sans interrompre le flux, donc sans trou dans l'enregistrement.
+        wnc.addObserver(forName: NSWorkspace.didLaunchApplicationNotification,
+                        object: nil, queue: .main) { note in
+            // L'identifiant est extrait AVANT d'entrer dans l'isolation : `Notification`
+            // n'est pas `Sendable`, une chaîne l'est.
+            let bundle = (note.userInfo?[NSWorkspace.applicationUserInfoKey]
+                          as? NSRunningApplication)?.bundleIdentifier
+            MainActor.assumeIsolated {
+                guard SessionCoordinator.shared.state == .recording else { return }
+                guard let bundle,
+                      CaptureExclusions.shared.excludedBundleIDs.contains(bundle) else { return }
+                Journal.event(.capture, "\(bundle) lancée et exclue — filtre reconstruit")
+                Task { await CaptureEngine.shared.rafraichirFiltres() }
+            }
+        }
 
         for name in ["com.apple.screenIsLocked", "com.apple.screensaver.didstart"] {
             dnc.addObserver(forName: .init(name), object: nil, queue: .main) { _ in
