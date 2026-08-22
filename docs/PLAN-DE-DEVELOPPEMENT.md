@@ -892,6 +892,105 @@ préexistaient, sur des chemins voisins. Les corriger ici plutôt que plus tard 
 recette du lot 2 a établi — un correctif peut en casser un autre, et le chemin qu'on ne
 traverse pas est celui qui casse.
 
+### 7.5 Lot 4 — 13 sessions
+
+Découpé le 23 août 2026, contre le code des lots 0 à 3. Dernier lot avant le
+GO/NO-GO n°2 : ce qu'il livre sera jugé sur **dix jours d'usage réel**, pas sur sa
+complétude au dernier commit.
+
+| # | Durée | Objectif | Fini quand |
+|---|---|---|---|
+| S46 | 2 h | **Neuf seuils écrits avant la première mesure**, dont les trois du § 3.2 que personne n'avait traduits en unités relevables. Quatre trous du § 9.2 tranchés, trois reports de périmètre actés. Aucune ligne de Swift | Le rapport de référence est déclaré conforme, et **retirer une de ses six sections la fait nommer** ; les neuf seuils sont dans `lot4-seuils.md`, chacun avec son unité et sa source |
+| S47 | 3 h | Une seule porte vers `write(2)`, et une seule identité de session. `AppendOnlyLog` — boucle jusqu'à épuisement, reprise sur `EINTR`, `flock` consultatif. L'UUID de `SecureWorkspace` devient l'UUID de session, pas un second | **Deux PROCESSUS** écrivant 2 000 lignes de 4 Kio chacun laissent 4 000 lignes entières, aucune entrelacée. Un test mono-processus est **refusé** : verrous et threads ne prouvent rien ensemble. Retirer la boucle sur écriture courte fait rougir |
+| S48 | 3 h | Le barème plafonné, puis le manifeste. Cible `RegardeRender` créée ; **aucun type du modèle applicatif ne la traverse**. `schemaVersion 1.1` avec ses réservations | La section jetons rend **4 784 / 4 675 / 1 457 / 513** sur les quatre lignes du § 9.6 ; **retirer le plafond fait annoncer 9 920** et passer au rouge. Un cinquième vecteur 8:1 rend `wp = 92` — qu'aucune des quatre lignes n'aurait révélé |
+| S49 | 4 h | **La bibliothèque de rendu, posée en un seul contrat** — le piège principal du lot, et S37 a montré qu'une frontière posée à moitié ne tient pas. Deux sorties, trois profils | `--render-test` rend le rapport à partir du **seul** `manifest.json`, sans acteur ni état en mémoire, et son empreinte est celle inscrite en S46. Les trois options rendent trois sorties distinctes, exercées **sans appelant** |
+| S50 | 3 h | Arborescence et identité sur une **racine paramétrée**, donc vérifiables sur un dépôt fabriqué. `index.jsonl` sous `fcntl`, `metrics.jsonl` hors projet, publieur unique | Deux **processus** obtiennent deux numéros distincts, aucune ligne déchirée ; le mono-processus est refusé — `fcntl` verrouille par processus, la seconde demande serait accordée et le test passerait au vert sur un mécanisme absent |
+| S51 | 2 h | Le projet à trois états, **côté visible d'abord**. Pastilles comparées côte à côte avant la première ligne de pondération. Le sélecteur a sa **fenêtre clé propre** | Les trois teintes sont mesurées sur captures et le script **refuse de conclure si deux sont plus proches que le seuil** écrit en S46. Sur trois shells pointant trois projets, le sélecteur s'ouvre à `arming` avec ses trois candidats et leur motif |
+| S52 | 3 h | La détection réelle derrière les pastilles. `proc_pidinfo` sur **tous les descendants** du terminal, provider validé par `kill(pid, 0)` et fraîcheur, **titre de fenêtre en troisième signal** | Deux signaux forts concordants → certain ; un seul → probable avec son motif ; plusieurs `cwd` → **ambigu, jamais tranché**. Le titre ajoute 0,2 et ne décide jamais seul — le retirer change le verdict d'au moins un cas |
+| S53 | 3 h | **La boucle ferme, même imparfaite** — huitième session sur douze. Identité de la cible saisie avant `release()`, sept lignes de Contexte avec leurs producteurs, `state.jsonl` alimenté | Raccourci → 5 marques → raccourci écrit le dossier complet et met la phrase au presse-papiers ; collée, elle produit un diff. `git status` d'un dépôt neuf ne propose que `manifest.json`, `report.md` et `index.jsonl` |
+| S54 | 3 h | Le dernier mètre. Sauvegarde du presse-papiers **item par item et type par type**, historique des trois derniers feedbacks, et le **porteur du ⏎** : une fenêtre de grâce dans le tap | Un contenu riche (RTF + TIFF + URL) **se recolle avec ses variantes**, et l'inventaire des types vus face aux types restaurés est publié, tout écart nommé. Aucun ⏎ n'est avalé hors de la fenêtre de grâce |
+| S55 | 2 h | De quoi tenir dix jours sans impression : les quatre critères du § 3.2 relevables par commande, tous projets confondus. Repli déclaré, verdict de diff persisté | `lot4-gonogo.sh` imprime les quatre nombres face à leurs seuils et **refuse de conclure** sous dix jours de relevé, sous vingt tentatives d'injection, ou si aucun repli n'a jamais été noté |
+| S56 | 2 h | Passage du livrable : cycle complet rejoué dans **cinq projets réels** — Warp à onglets, iTerm, tmux, un IDE — et un dépôt sous `~/Documents` | `lot4-passage.md` remplit son tableau **sans case vide**, « non mesuré » étant une valeur légitime avec sa colonne « ce qu'il faut faire ». `v0.4.0` est posé sur ce commit |
+| S57 | 2 h | Recette manuelle, **auditée contre le code avant remise**, au format en quatre temps, ouverte par une section « Ne rien casser » | Les tests sont cochés un par un ; la section bloquante rejoue les livrables des lots 2 et 3, et **le mode éclair a sa section propre**. Les défauts trouvés sont corrigés puis étiquetés `v0.4.1` |
+| S58 | 3 h | **Marge** — vue `full_hires` et second palier, derrière l'option `include_hires` posée en S49 | Trois `hi/full-NN@hi.png` annoncées à **4 675** jetons et facturées à moins de 10 % près ; **`schemaVersion` vaut toujours 1.1**, la clé étant réservée depuis S48 |
+
+**32 heures pour S46 à S57**, soit 4,62 journées au taux du lot 3 (6,92 h/j) — les
+4,5 journées du lot, marge d'arrondi comprise. Les 3 h de S58 sont comptées à part.
+
+#### Ce que l'ordre impose
+
+**Les seuils avant les mesures, et ils ne se recopient pas.** S46 écrit neuf seuils
+avant la première ligne de code, dont trois que le § 3.2 énonçait en français sans
+jamais les traduire en quelque chose de relevable : « une session tous les deux
+jours », « la moitié des besoins », « 7 sur 10 ». Un seuil écrit après coup est un
+seuil ajusté au résultat — la leçon de S31, appliquée à ce qui décide de la suite du
+projet.
+
+**La bibliothèque avant ses consommateurs.** Le § 9.3 chiffre à 1,5 jour le surcoût
+d'un rendu écrit comme du code applicatif. S49 la pose en un seul contrat, avec ses
+trois profils et ses quatre options — dont trois que seul le lot 6 appellera, et qui
+sont exercées ici sans appelant. S37 a montré qu'une frontière posée à moitié n'est
+pas une frontière.
+
+**Le visible avant le pondéré.** S51 dessine et mesure les trois pastilles avant que
+S52 n'écrive la première ligne de barème. L'ordre inverse produit trois libellés
+monochromes, qui est le mode d'échec exact de R2 : un badge dont l'apparence ne
+varie pas cesse d'être lu.
+
+**La boucle tôt, à la huitième session sur douze.** Le GO/NO-GO n°2 juge dix jours
+d'usage réel. Une boucle imparfaite qu'on utilise vaut mieux qu'une moitié de boucle
+parfaite qu'on n'utilise pas — et les compteurs qui la mesurent sont armés en amont,
+en S50 et S53, faute de quoi les soirées entre la boucle et S55 ne seraient comptées
+par rien.
+
+#### Trois hypothèses que le code a invalidées
+
+Vérifiées une par une avant d'écrire ce tableau.
+
+| Hypothèse | Ce que le code dit | Conséquence |
+|---|---|---|
+| Le HUD peut porter le sélecteur de projet | `HUDWindow.swift` : `.nonactivatingPanel`, `canBecomeKey = false`, `ignoresMouseEvents = true` | Un panneau non-clé ne peut pas porter une liste à choisir. S51 lui donne une **fenêtre distincte**, et le HUD continue de ne jamais voler le focus |
+| Le `⏎` du critère a un porteur | L'application est `.accessory`, et `kVK_Return` n'apparaît **nulle part** | Aucune fenêtre ne peut recevoir la frappe. Le `⏎` devient une **fenêtre de grâce armée dans le tap**, avec sa règle de désarmement — sous peine d'avaler un `⏎` dans l'application testée (R4) |
+| `LatencyHistogram` peut chronométrer la fin de session | Son échelle s'arrête à **200 ms** — 400 seaux de 0,5 ms | Il rendrait un nombre constant sur un budget de 20 s. Le chrono va dans le manifeste |
+
+La deuxième est la plus coûteuse à découvrir tard : elle porte sur un critère
+**observable** du lot, et l'autre issue aurait été d'amender le critère.
+
+#### Ce que le lot ne fera pas, et c'est ainsi qu'il tient en 4,5 jours
+
+Trois reports, écrits au § 11.3 dès S46 plutôt que constatés en S56 :
+
+- **la vue `full` par marque** part au lot 6, avec son seul consommateur —
+  `get_feedback_frames(view: "full")`. Le schéma la réserve dès S48, donc la version
+  ne bougera pas ;
+- **le bouton « Copier pour un chat web » et l'ouverture du Finder** partent au
+  lot 6. Le profil de rendu est écrit et testé ici, sans appelant ;
+- **le rejeu du journal** part au lot 7 avec la robustesse. Le lot 4 se borne à
+  prouver que les événements survivent entiers à un `SIGKILL`.
+
+Les deux tâches de réserve du § 6.2 — gabarit et exemple de rapport (3 h), motifs de
+rédaction de secrets (2 h) — **sortent du tableau**. Le plan les désigne comme la
+parade la plus efficace contre R15 ; les souder au chemin critique supprimerait la
+soupape au pire endroit, c'est-à-dire au dernier lot avant le point d'arrêt. S46 et
+S49 les **consomment**, ne les contiennent pas.
+
+#### Ce que la réfutation a corrigé
+
+Dix-sept défauts bloquants, sur trois lentilles — code réel, couverture de la
+spécification, mesurabilité du GO/NO-GO. Les quatre qui changeaient le découpage :
+
+- **le sélecteur de projet n'existait dans aucune session**, alors que le § 8.2
+  définit l'état ambigu *par* son ouverture et qu'ADR-0017 retient l'option D ;
+- **une session présentait comme un renommage la création d'une seconde variante
+  d'image** — il n'y en a qu'une par marque aujourd'hui, et `Cropper.Kind.full` est
+  un repli au-delà de 40 %, qui aurait collisionné avec l'espace de noms `full-NN` ;
+- **deux tests passaient au vert sur un mécanisme absent** : deux publieurs du même
+  processus obtiennent toujours leur `fcntl`. Les tests exigent désormais deux
+  processus et refusent le mono-processus ;
+- **le mode éclair n'était traité par aucune brique**, alors qu'il vit entièrement à
+  `.idle` — le mode majoritaire, et le seul chemin qu'un développement centré session
+  ne traverse jamais. C'est exactement le défaut que le lot 3 y avait déjà trouvé.
+
 ---
 
 ## 8. Vérifications permanentes
