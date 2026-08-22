@@ -25,6 +25,34 @@ def inline(t):
     return t
 
 lines = open(SRC).read().split("\n")
+
+# ── L'identité du lot se LIT dans la source ──────────────────────────────────
+#
+# Elle était codée en dur — titre, chapô, durée, nombre de sections bloquantes, et
+# jusqu'à la clé de stockage local. Générer la recette du lot 3 produisait donc une
+# page qui s'annonçait « lot 2 », et cocher ses tests aurait ÉCRASÉ les coches du
+# lot 2 dans le navigateur, puisque les deux partageaient la même clé.
+#
+# Tout vient maintenant du Markdown, qui est la seule source.
+_titre = next((l for l in lines if l.startswith("# ")), "# Recette")
+LOT = (re.search(r"lot\s+(\d+)", _titre, re.I) or re.match(r".*", "0")).group(1) \
+      if re.search(r"lot\s+(\d+)", _titre, re.I) else "?"
+# Le chapô est un PARAGRAPHE, pas une ligne : le Markdown est enveloppé à 95
+# colonnes, et ne prendre que la première ligne le coupe au milieu d'une phrase —
+# et laisse un `**` non fermé, que `inline` rend alors littéralement.
+_i = next((k for k, l in enumerate(lines) if l.startswith("Ce que vous validez")), None)
+if _i is None:
+    LEDE = ""
+else:
+    _bloc = []
+    for l in lines[_i:]:
+        if not l.strip():
+            break
+        _bloc.append(l.strip())
+    LEDE = inline(re.sub(r"^Ce que vous validez\s*:\s*", "", " ".join(_bloc)))
+_duree = re.search(r"Comptez\s+\*\*([^*]+)\*\*", "\n".join(lines))
+DUREE = _duree.group(1).replace(" à ", "–").replace(" minutes", "").strip() if _duree else "—"
+BLOQUANTES = sum(1 for l in lines if re.match(r"^## \d+\..*bloquant", l))
 body, i = [], 0
 suite = None      # section de tests ouverte
 tests = []        # tests de la section courante
@@ -178,7 +206,7 @@ while i < len(lines):
 close_suite()
 
 css = open(CSS).read()
-page = f'''<title>Recette Regarde lot 2</title>
+page = f'''<title>Recette Regarde lot {LOT}</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Karla:ital,wght@0,400;0,500;0,700;1,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
@@ -186,22 +214,22 @@ page = f'''<title>Recette Regarde lot 2</title>
 <div class="progress-rail"><div class="progress-fill" id="fill"></div></div>
 <div class="wrap">
 <header class="masthead">
-  <p class="eyebrow">Regarde · réception du lot 2</p>
-  <h1>Ce que le lot 2 doit tenir</h1>
-  <p class="lede">Tracer sur une application qui tourne, <strong>sans la perturber</strong>, et obtenir des images gravées. Ni voix, ni rapport texte, ni MCP — ce sont les lots 3 à 5.</p>
+  <p class="eyebrow">Regarde · réception du lot {LOT}</p>
+  <h1>Ce que le lot {LOT} doit tenir</h1>
+  <p class="lede">{LEDE}</p>
   <div class="meta">
     <div><b id="count" class="live">0 / {n_tests}</b>tests cochés</div>
-    <div><b>35–45</b>minutes</div>
-    <div><b>2</b>sections bloquantes</div>
+    <div><b>{DUREE}</b>minutes</div>
+    <div><b>{BLOQUANTES}</b>sections bloquantes</div>
   </div>
   <div class="tools"><button class="tool" id="reset" type="button">Tout décocher</button></div>
 </header>
 {chr(10).join(body)}
-<footer class="colophon"><span>Regarde · lot 2</span><span>Vos coches restent dans ce navigateur</span></footer>
+<footer class="colophon"><span>Regarde · lot {LOT}</span><span>Vos coches restent dans ce navigateur</span></footer>
 </div>
 <script>
 (function () {{
-  var KEY = "regarde-recette-lot2-v2";
+  var KEY = "regarde-recette-lot{LOT}-v2";
   var boxes = Array.prototype.slice.call(document.querySelectorAll('input[type="checkbox"]'));
   var fill = document.getElementById("fill"), count = document.getElementById("count");
   var total = boxes.length;
