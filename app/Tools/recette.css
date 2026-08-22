@@ -269,21 +269,33 @@ h2.suite-title {
 
 ul.tests { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .3rem; }
 
-label.test {
+/* La CARTE du test. Elle ne porte plus le label : les attendus ont leurs propres
+   cases, et les imbriquer dans le label du test ferait cocher le test entier au
+   premier clic sur l'une d'elles. */
+li.test {
+  padding: .7rem .9rem;
+  background: var(--surface);
+  border: 1px solid var(--line-soft);
+  transition: border-color .15s, background .15s;
+}
+li.test:hover { border-color: var(--line); }
+li.test:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+label.maitre {
   display: grid;
   grid-template-columns: auto 4.1rem 1fr;
   gap: .85rem;
   align-items: start;
-  padding: .7rem .9rem;
-  background: var(--surface);
-  border: 1px solid var(--line-soft);
   cursor: pointer;
-  transition: border-color .15s, background .15s;
 }
-label.test:hover { border-color: var(--line); }
-label.test:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 1px; }
+/* Les recettes sans étapes gardent l'ancienne mise en page. */
+label.maitre.plein { align-items: start; }
 
-label.test input { position: absolute; opacity: 0; width: 0; height: 0; }
+li.test input { position: absolute; opacity: 0; width: 0; height: 0; }
+
+/* Le corps s'aligne sous le titre, pas sous la case. */
+.corps { margin-left: calc(1.05rem + 4.1rem + 1.7rem); }
+@media (max-width: 620px) { .corps { margin-left: 0; margin-top: .5rem; } }
 
 .box {
   width: 1.05rem;
@@ -327,7 +339,7 @@ input:checked ~ .tid { color: var(--done); }
 input:checked ~ .tbody { color: var(--muted); }
 input:checked ~ .tbody strong { color: var(--muted); }
 .tbody strong { font-weight: 700; }
-.tbody i {
+.tbody i, .corps > i {
   display: block;
   font-style: italic;
   color: var(--muted);
@@ -339,22 +351,49 @@ input:checked ~ .tbody strong { color: var(--muted); }
    Ce qu'on FAIT, où on REGARDE, ce qu'on doit VOIR. Mélangés dans une même
    phrase, on ne sait plus lequel des trois on est en train de lire — et on
    fait le geste sans savoir ce qu'on attend. */
-.tbody .titre {
+.titre {
   display: block;
   font-weight: 700;
   font-size: 1.02rem;
   margin-bottom: .55rem;
   line-height: 1.35;
 }
-.tbody .etape {
+/* Trois colonnes pour TOUTES les étapes : la première reste vide sur celles qui
+   n'ont pas de case, ce qui garde les libellés alignés. */
+.etape {
   display: grid;
-  grid-template-columns: 5.6rem 1fr;
-  gap: .2rem .8rem;
+  grid-template-columns: 1.35rem 5.6rem 1fr;
+  gap: .2rem .55rem;
   align-items: baseline;
-  margin-top: .28rem;
+  margin-top: .3rem;
   line-height: 1.5;
+  font-size: .97rem;
 }
-.tbody .etape > em {
+.etape > em {
+  grid-column: 2;
+}
+.etape > span {
+  grid-column: 3;
+}
+label.etape.fille {
+  cursor: pointer;
+  margin-left: -.35rem;
+  padding: .12rem .35rem .18rem;
+  border-radius: 3px;
+  transition: background .12s;
+}
+label.etape.fille:hover { background: var(--line-soft); }
+.box.mini {
+  width: .82rem;
+  height: .82rem;
+  margin-top: .18rem;
+  border-width: 1.4px;
+  grid-column: 1;
+  align-self: start;
+}
+.box.mini::after { left: .21rem; top: .03rem; width: .22rem; height: .45rem; border-width: 0 1.7px 1.7px 0; }
+
+.etape > em {
   font-style: normal;
   font-family: var(--mono);
   font-size: .7rem;
@@ -366,16 +405,17 @@ input:checked ~ .tbody strong { color: var(--muted); }
   white-space: nowrap;
 }
 /* L'attendu porte la couleur : c'est ce qu'on compare à l'écran. */
-.tbody .etape.attendu > em { color: var(--done); font-weight: 600; }
-.tbody .etape.attendu > span { font-weight: 500; }
-.tbody .etape.rate > em { color: var(--blocking, #d33); font-weight: 600; }
+.etape.attendu > em { color: var(--done); font-weight: 600; }
+.etape.attendu > span { font-weight: 500; }
+.etape.rate > em { color: var(--blocking, #d33); font-weight: 600; }
 
-input:checked ~ .tbody .etape > em { color: var(--muted); }
-input:checked ~ .tbody .titre { color: var(--muted); }
+li.test:has(input[data-role="master"]:checked) .etape > em { color: var(--muted); }
+input:checked ~ .titre { color: var(--muted); }
 
 @media (max-width: 620px) {
-  .tbody .etape { grid-template-columns: 1fr; gap: 0; margin-top: .5rem; }
-  .tbody .etape > em { text-align: left; }
+  .etape { grid-template-columns: 1.35rem 1fr; gap: 0 .5rem; margin-top: .55rem; }
+  .etape > em { grid-column: 2; text-align: left; }
+  .etape > span { grid-column: 2; }
 }
 
 /* ── Sections de fin ─────────────────────────────────────── */

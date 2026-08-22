@@ -80,18 +80,37 @@ def close_suite():
             "un identifiant non reconnu a fermé la section trop tôt")
         h = f'<i>{hint}</i>' if hint else ''
         if etapes:
-            # Le premier segment devient un TITRE : « ce que ce test établit »,
-            # lisible seul quand on parcourt la liste.
-            bloc = [f'<b class="titre">{text}</b>']
+            # Chaque ATTENDU porte SA case.
+            #
+            # Un test qui demande de vérifier trois choses et n'offre qu'une case
+            # oblige à tout retenir avant de cocher — et on coche en ayant vérifié
+            # la première et oublié la troisième. Les cases filles vivent HORS du
+            # label du test, sans quoi en cliquer une cocherait le test entier.
+            attendus = 0
+            lignes = []
             for genre, txt in etapes:
-                bloc.append(f'<span class="etape {CLASSE[genre]}">'
-                            f'<em>{LIBELLE[genre]}</em><span>{inline(txt)}</span></span>')
-            corps = "".join(bloc)
+                if genre == "ATTENDU":
+                    attendus += 1
+                    sid = f"{tid}-{attendus}"
+                    lignes.append(
+                        f'<label class="etape attendu fille">'
+                        f'<input type="checkbox" data-role="sub" data-id="{sid}" data-parent="{tid}">'
+                        f'<span class="box mini"></span>'
+                        f'<em>{LIBELLE[genre]}</em><span>{inline(txt)}</span></label>')
+                else:
+                    lignes.append(f'<span class="etape {CLASSE[genre]}">'
+                                  f'<em>{LIBELLE[genre]}</em><span>{inline(txt)}</span></span>')
+            body.append(
+                f'<li class="test"><label class="maitre">'
+                f'<input type="checkbox" data-role="master" data-id="{tid}">'
+                f'<span class="box"></span><span class="tid">{tid}</span>'
+                f'<b class="titre">{text}</b></label>'
+                f'<div class="corps">{"".join(lignes)}{h}</div></li>')
         else:
-            corps = text
-        body.append(f'<li><label class="test"><input type="checkbox" data-id="{tid}">'
-                    f'<span class="box"></span><span class="tid">{tid}</span>'
-                    f'<span class="tbody">{corps}{h}</span></label></li>')
+            body.append(f'<li class="test"><label class="maitre plein">'
+                        f'<input type="checkbox" data-role="master" data-id="{tid}">'
+                        f'<span class="box"></span><span class="tid">{tid}</span>'
+                        f'<span class="tbody">{text}{h}</span></label></li>')
     body.append('</ul></section>')
     suite, tests = None, []
 
@@ -251,7 +270,11 @@ while i < len(lines):
 close_suite()
 
 css = open(CSS).read()
-page = f'''<title>Recette Regarde lot {LOT}</title>
+page = f'''<!doctype html>
+<html lang="fr">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Recette Regarde lot {LOT}</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Karla:ital,wght@0,400;0,500;0,700;1,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
@@ -276,16 +299,23 @@ page = f'''<title>Recette Regarde lot {LOT}</title>
 (function () {{
   var KEY = "regarde-recette-lot{LOT}-v2";
   var boxes = Array.prototype.slice.call(document.querySelectorAll('input[type="checkbox"]'));
+  // Le décompte porte sur les TESTS, pas sur les cases : un test à trois attendus
+  // ne vaut pas trois fois un test à un seul.
+  var masters = boxes.filter(function (b) {{ return b.dataset.role === "master"; }});
   var fill = document.getElementById("fill"), count = document.getElementById("count");
-  var total = boxes.length;
+  var total = masters.length;
   function load() {{ try {{ return JSON.parse(localStorage.getItem(KEY)) || {{}}; }} catch (e) {{ return {{}}; }} }}
   function save(s) {{ try {{ localStorage.setItem(KEY, JSON.stringify(s)); }} catch (e) {{}} }}
+  function subsOf(id) {{
+    return boxes.filter(function (b) {{ return b.dataset.parent === id; }});
+  }}
   function refresh() {{
-    var done = boxes.filter(function (b) {{ return b.checked; }}).length;
+    var done = masters.filter(function (b) {{ return b.checked; }}).length;
     fill.style.width = (total ? (done / total) * 100 : 0) + "%";
     count.textContent = done + " / " + total;
     document.querySelectorAll("section.suite").forEach(function (s) {{
-      var local = Array.prototype.slice.call(s.querySelectorAll('input[type="checkbox"]'));
+      var local = Array.prototype.slice.call(
+        s.querySelectorAll('input[data-role="master"]'));
       var ok = local.filter(function (b) {{ return b.checked; }}).length;
       var t = s.querySelector(".tally");
       t.textContent = ok + "/" + local.length;
@@ -293,9 +323,25 @@ page = f'''<title>Recette Regarde lot {LOT}</title>
     }});
   }}
   var state = load();
+  boxes.forEach(function (b) {{ if (state[b.dataset.id]) b.checked = true; }});
   boxes.forEach(function (b) {{
-    if (state[b.dataset.id]) b.checked = true;
-    b.addEventListener("change", function () {{ state[b.dataset.id] = b.checked; save(state); refresh(); }});
+    b.addEventListener("change", function () {{
+      state[b.dataset.id] = b.checked;
+      if (b.dataset.role === "master") {{
+        // Cocher un test coche ses attendus : on vient de tout vérifier.
+        subsOf(b.dataset.id).forEach(function (s) {{
+          s.checked = b.checked; state[s.dataset.id] = s.checked;
+        }});
+      }} else if (b.dataset.parent) {{
+        // Un test n'est acquis que quand TOUS ses attendus le sont. Décocher un
+        // seul attendu retire le test : c'est le sens de la case.
+        var freres = subsOf(b.dataset.parent);
+        var tous = freres.every(function (s) {{ return s.checked; }});
+        var m = document.querySelector('input[data-role="master"][data-id="' + b.dataset.parent + '"]');
+        if (m) {{ m.checked = tous; state[m.dataset.id] = tous; }}
+      }}
+      save(state); refresh();
+    }});
   }});
   document.getElementById("reset").addEventListener("click", function () {{
     boxes.forEach(function (b) {{ b.checked = false; }}); state = {{}}; save(state); refresh();
