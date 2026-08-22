@@ -99,13 +99,40 @@ enum AssetFrames {
         var temps: [NSValue] = []
         var parTemps: [Double: Demande] = [:]
         var refus: [(UUID, Refus)] = []
+        // Le temps PRINCIPAL de chaque marque, pour départager le burst ensuite.
+        var principal: [UUID: Double] = [:]
+
         for d in demandes {
-            guard let at = segment.assetTime(for: d.t, clock: clock, clockID: segment.clockID) else {
+            // LE PLAN DE BURST — § 5.4.
+            //
+            // Sur écran figé, une image. Sur écran animé, trois : t−0,8, t, t+0,4.
+            // Le double critère est ce qui compte : `completeFramesLastSecond`
+            // seul laisserait passer le curseur clignotant — fréquence élevée,
+            // surface dérisoire — et `dirtyRatioLastSecond` seul laisserait passer
+            // le redraw plein écran unique — surface énorme, fréquence 1. Un burst
+            // déclenché sur l'un OU l'autre triplerait le coût pour rien.
+            let plan = segment.framePlan(pour: d.t, motion: d.motion, clock: clock)
+            guard !plan.isEmpty else {
                 refus.append((d.markID, .horsBornes(t: d.t.seconds)))
                 continue
             }
-            temps.append(NSValue(time: at))
-            parTemps[at.seconds.rounded(toPlaces: 4)] = d
+            // Le temps de la marque elle-même reste le principal ; les deux autres
+            // sont des candidats. Une borne violée disparaît du plan sans bruit —
+            // c'est `assetTime()` qui l'a écartée — et le compte demandé/obtenu le
+            // dit à la ligne suivante du journal.
+            let vise = segment.assetTime(for: d.t, clock: clock, clockID: segment.clockID)
+            for at in plan {
+                temps.append(NSValue(time: at))
+                parTemps[at.seconds.rounded(toPlaces: 4)] = d
+            }
+            if let vise { principal[d.markID] = vise.seconds.rounded(toPlaces: 4) }
+
+            await MainActor.run {
+                Journal.event(.capture, String(
+                    format: "marque %d · %d frame(s) au plan · %d frame(s)/s · %.3f de surface",
+                    d.numero, plan.count,
+                    d.motion.completeFramesLastSecond, d.motion.dirtyRatioLastSecond))
+            }
         }
         guard !temps.isEmpty else { return ([], refus) }
 
@@ -123,6 +150,7 @@ enum AssetFrames {
         // accumulateur sous verrou, plutôt que des variables capturées : Swift 6
         // refuse les secondes, et il a raison — les rappels se chevauchent.
         let collecteur = Collecteur(attendus: temps.count, index: parTemps,
+                                    principal: principal,
                                     preRoll: segment.resolutionReduite)
         await withCheckedContinuation { (suite: CheckedContinuation<Void, Never>) in
             generateur.generateCGImagesAsynchronously(forTimes: temps) {
@@ -134,6 +162,10 @@ enum AssetFrames {
             }
         }
         let (recues, refusees) = collecteur.moisson()
+        await MainActor.run {
+            Journal.event(.capture, "burst — \(collecteur.obtenues) frame(s) obtenues "
+                          + "sur \(collecteur.demandees) demandée(s)")
+        }
         return (recues, refus + refusees)
     }
 
@@ -162,10 +194,21 @@ private final class Collecteur: @unchecked Sendable {
     private let preRoll: Bool
     private var images: [AssetFrames.Resultat] = []
     private var refus: [(UUID, AssetFrames.Refus)] = []
+    /// Frames effectivement rendues, toutes marques et tout le burst confondus.
+    /// Comparé au nombre demandé, il dit combien de bornes ont été violées.
+    private(set) var obtenues = 0
+    let demandees: Int
 
-    init(attendus: Int, index: [Double: AssetFrames.Demande], preRoll: Bool) {
+    private let principal: [UUID: Double]
+    /// Écart au temps principal de la meilleure image retenue, par marque.
+    private var meilleur: [UUID: Double] = [:]
+
+    init(attendus: Int, index: [Double: AssetFrames.Demande],
+         principal: [UUID: Double], preRoll: Bool) {
         self.restants = attendus
+        self.demandees = attendus
         self.index = index
+        self.principal = principal
         self.preRoll = preRoll
     }
 
@@ -177,11 +220,22 @@ private final class Collecteur: @unchecked Sendable {
         restants -= 1
         if let d = index[demande.seconds.rounded(toPlaces: 4)] {
             if resultat == .succeeded, let image {
-                images.append(AssetFrames.Resultat(
-                    markID: d.markID, numero: d.numero, image: image,
-                    assetTime: obtenu,
-                    ecartMs: (obtenu.seconds - demande.seconds) * 1000,
-                    source: preRoll ? .preRoll : .segment))
+                // Une seule image par marque survit : celle dont le temps DEMANDÉ
+                // est le plus proche du temps principal. Les deux autres du burst
+                // ont servi à obtenir le contexte ; le rapport du lot 4 décidera
+                // s'il les publie.
+                let cible = principal[d.markID] ?? demande.seconds
+                let distance = abs(demande.seconds - cible)
+                if meilleur[d.markID].map({ $0 <= distance }) != true {
+                    meilleur[d.markID] = distance
+                    images.removeAll { $0.markID == d.markID }
+                    images.append(AssetFrames.Resultat(
+                        markID: d.markID, numero: d.numero, image: image,
+                        assetTime: obtenu,
+                        ecartMs: (obtenu.seconds - demande.seconds) * 1000,
+                        source: preRoll ? .preRoll : .segment))
+                }
+                obtenues += 1
             } else {
                 refus.append((d.markID, erreur.map { .generateurEnErreur($0.localizedDescription) }
                                         ?? .aucuneImage))
