@@ -53,13 +53,54 @@ enum Engraver {
         /// Pixels natifs par point sur l'écran d'origine. 2 sur Retina.
         let pointScale: CGFloat
 
+        /// Où le CONTENU vit dans le tampon — ADR-0009, § 3.3.
+        ///
+        /// C'est la couture, et elle est unique. Une frame de ScreenCaptureKit
+        /// peut être BOÎTÉE : l'arrondi `& ~1` des dimensions casse le ratio, et
+        /// `scalesToFit = false` centre le contenu plutôt qu'il ne l'étire. Le
+        /// tampon fait alors quelques pixels de plus que ce qu'il porte, et ces
+        /// pixels-là sont noirs.
+        ///
+        /// Sans ce rectangle, les coordonnées normalisées se rapporteraient au
+        /// tampon ENTIER : chaque marque serait décalée de la moitié de la marge
+        /// de boîtage, sur les deux axes. Un décalage petit, constant, et qu'on
+        /// diagnostiquerait comme un bug d'échelle Retina — la spécification le
+        /// dit en toutes lettres.
+        ///
+        /// Par défaut : le tampon entier, ce qui est le cas non boîté et fait que
+        /// toute la formule se réduit à ce qu'elle était.
+        let contentRect: CGRect
+
+        /// La frame est-elle boîtée dans son tampon ?
+        var boitee: Bool {
+            contentRect.width < captureSize.width - 0.5
+                || contentRect.height < captureSize.height - 0.5
+        }
+
         init(captureSize: CGSize, sourceRect: CGRect,
-             scaleX: CGFloat, scaleY: CGFloat, pointScale: CGFloat = 2) {
+             scaleX: CGFloat, scaleY: CGFloat, pointScale: CGFloat = 2,
+             contentRect: CGRect? = nil) {
             self.captureSize = captureSize
             self.sourceRect = sourceRect
             self.scaleX = scaleX
             self.scaleY = scaleY
             self.pointScale = pointScale
+            self.contentRect = contentRect ?? CGRect(origin: .zero, size: captureSize)
+        }
+
+        /// Construit le descripteur depuis une frame de flux.
+        ///
+        /// **Le modèle NE BASCULE PAS.** Une marque naît dans le repère de son
+        /// écran (voir `MarkStore.beginStroke`) et y reste ; c'est ici, du côté des
+        /// pixels, que la conversion a lieu. Faire basculer le modèle décalerait le
+        /// calque de la marge même qu'on prétend supprimer — et la frame retenue
+        /// n'existe de toute façon qu'APRÈS l'appariement, longtemps après le
+        /// `mouseDown` qui a créé la marque.
+        init(ref: FrameRef, sourceRect: CGRect, scaleX: CGFloat, scaleY: CGFloat) {
+            self.init(captureSize: ref.bufferSize, sourceRect: sourceRect,
+                      scaleX: scaleX, scaleY: scaleY,
+                      pointScale: CGFloat(ref.contentScale),
+                      contentRect: ref.contentRect)
         }
 
         init(captureSize: CGSize, sourceRect: CGRect, scale: CGFloat) {
@@ -105,8 +146,14 @@ enum Engraver {
 
         /// Point normalisé écran → point du contexte de dessin (origine en bas à gauche).
         func point(_ p: NormPoint) -> CGPoint {
-            let xCapture = CGFloat(p.x) * captureSize.width
-            let yCaptureBottom = CGFloat(p.y) * captureSize.height
+            // Les coordonnées normalisées se rapportent au CONTENU, pas au tampon.
+            // Sur une frame non boîtée les deux coïncident et la formule se réduit
+            // à ce qu'elle était.
+            let xCapture = contentRect.minX + CGFloat(p.x) * contentRect.width
+            // `contentRect` compte depuis le HAUT : son bord bas, mesuré depuis le
+            // bas du tampon, est à `captureH - contentRect.maxY`.
+            let yCaptureBottom = (captureSize.height - contentRect.maxY)
+                               + CGFloat(p.y) * contentRect.height
             // `sourceRect` compte depuis le haut : son bord bas en repère bas-gauche est
             // à `captureH - maxY`.
             let originBottom = captureSize.height - sourceRect.maxY

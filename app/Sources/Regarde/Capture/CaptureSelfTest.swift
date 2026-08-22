@@ -25,6 +25,7 @@ enum CaptureSelfTest {
         tiles(t)
         frames(t)
         engraving(t)
+        boitage(t)
         segments(t)
         print("\n── \(t.passed) vérifications passées, \(t.failed) échouées ──")
         return t.failed == 0
@@ -545,6 +546,93 @@ enum CaptureSelfTest {
             if r > 200, g < 110, b < 110, r - max(g, b) > 90 { hits += 1 }
         }
         return hits
+    }
+
+    // MARK: - La frame boîtée (S38)
+
+    /// Une frame dont le contenu n'occupe pas tout le tampon.
+    ///
+    /// `scalesToFit = false` CENTRE le contenu plutôt qu'il ne l'étire, et
+    /// l'arrondi `& ~1` des dimensions casse le ratio : le tampon fait quelques
+    /// pixels de plus que ce qu'il porte, et ces pixels-là sont noirs. Sans le
+    /// `contentRect`, chaque marque serait décalée de la moitié de cette marge,
+    /// sur les deux axes — un décalage petit, constant, et qu'on diagnostiquerait
+    /// comme un bug d'échelle Retina.
+    private static func boitage(_ t: Tally) {
+        print("\n· Frame boîtée")
+
+        // Un tampon de 3456×2234, du contenu de 3440×2160 centré : 8 px de marge
+        // horizontale, 37 verticale. Les dimensions du contenu sont paires.
+        let tampon = CGSize(width: 3456, height: 2234)
+        let contenu = CGRect(x: 8, y: 37, width: 3440, height: 2160)
+        let boitee = Engraver.Frame(captureSize: tampon,
+                                    sourceRect: CGRect(origin: .zero, size: tampon),
+                                    scaleX: 1, scaleY: 1, pointScale: 2,
+                                    contentRect: contenu)
+        let pleine = Engraver.Frame(captureSize: tampon,
+                                    sourceRect: CGRect(origin: .zero, size: tampon),
+                                    scaleX: 1, scaleY: 1, pointScale: 2)
+
+        check(t, "une frame boîtée se déclare comme telle", boitee.boitee && !pleine.boitee)
+
+        // Le centre du contenu tombe au centre du CONTENU, pas du tampon.
+        let centre = boitee.point(NormPoint(x: 0.5, y: 0.5))
+        let attenduX = contenu.midX
+        // En repère bas-gauche : le bas du contenu est à captureH − contentRect.maxY.
+        let attenduY = (tampon.height - contenu.maxY) + contenu.height / 2
+        check(t, "le centre de l'écran tombe au centre du CONTENU",
+              abs(centre.x - attenduX) < 0.5 && abs(centre.y - attenduY) < 0.5,
+              String(format: "(%.1f, %.1f) attendu (%.1f, %.1f)",
+                     centre.x, centre.y, attenduX, attenduY))
+
+        // Le CENTRE, lui, coïncide — et c'est normal : `scalesToFit = false` CENTRE
+        // le contenu, donc les deux milieux se superposent. C'est aux BORDS que la
+        // marge se voit, et c'est là qu'il faut regarder. Le test l'a appris en
+        // rougissant sur un contrôle mal placé.
+        let centreTampon = pleine.point(NormPoint(x: 0.5, y: 0.5))
+        check(t, "le centre coïncide avec celui du tampon — le contenu est CENTRÉ",
+              abs(centre.x - centreTampon.x) < 0.5 && abs(centre.y - centreTampon.y) < 0.5)
+        let droiteTampon = pleine.point(NormPoint(x: 1.0, y: 0.5))
+        let droiteBoitee = boitee.point(NormPoint(x: 1.0, y: 0.5))
+        check(t, "mais le bord droit est décalé de la marge de boîtage",
+              abs(droiteBoitee.x - droiteTampon.x) > 3,
+              String(format: "écart %.1f px sur %.1f de marge",
+                     abs(droiteBoitee.x - droiteTampon.x), tampon.width - contenu.maxX))
+
+        // Le BORD DROIT est le cas qui compte : c'est là que la marge se voit le
+        // plus, et c'est le scénario du livrable — une marque au bord droit de
+        // l'écran externe non-Retina à origine négative.
+        let droite = boitee.point(NormPoint(x: 1.0, y: 0.5))
+        check(t, "une marque au bord droit tombe au bord droit du CONTENU",
+              abs(droite.x - contenu.maxX) < 0.5,
+              String(format: "%.1f attendu %.1f", droite.x, contenu.maxX))
+        let bas = boitee.point(NormPoint(x: 0.5, y: 0.0))
+        check(t, "une marque au bord bas tombe au bord bas du CONTENU",
+              abs(bas.y - (tampon.height - contenu.maxY)) < 0.5,
+              String(format: "%.1f attendu %.1f", bas.y, tampon.height - contenu.maxY))
+
+        // Non boîtée, la formule doit rendre EXACTEMENT ce qu'elle rendait avant.
+        var identiques = 0
+        for (x, y) in [(0.0, 0.0), (0.25, 0.75), (0.5, 0.5), (1.0, 1.0)] {
+            let p = pleine.point(NormPoint(x: x, y: y))
+            if abs(p.x - x * tampon.width) < 0.001 && abs(p.y - y * tampon.height) < 0.001 {
+                identiques += 1
+            }
+        }
+        check(t, "sur une frame NON boîtée, la formule est inchangée",
+              identiques == 4, "\(identiques)/4")
+
+        // La construction depuis un FrameRef reprend le contentRect sans le
+        // recalculer : une seule couture, pas deux occasions de se tromper.
+        let ref = FrameRef(segmentID: CaptureSegmentID(), contentRect: contenu,
+                           bufferSize: tampon, scaleFactor: 1, contentScale: 2,
+                           resolutionReduite: false, pts: CMTimeCodable(.zero))
+        let depuisRef = Engraver.Frame(ref: ref,
+                                       sourceRect: CGRect(origin: .zero, size: tampon),
+                                       scaleX: 1, scaleY: 1)
+        let viaRef = depuisRef.point(NormPoint(x: 1.0, y: 0.5))
+        check(t, "Engraver.Frame(ref:) reprend le contentRect de la frame",
+              abs(viaRef.x - droite.x) < 0.001 && depuisRef.pointScale == 2)
     }
 
     // MARK: - Segments et temps de l'asset (S32)
