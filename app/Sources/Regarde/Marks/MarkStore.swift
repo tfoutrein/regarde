@@ -76,6 +76,20 @@ final class MarkStore {
     /// `Engraver.Frame` : une couture unique, du côté des pixels, pas du côté du modèle.
     func beginStroke(at eventPoint: CGPoint, geometry: ScreenGeometry, hostTicks: UInt64 = 0) {
         guard let screen = geometry.screen(containingEvent: eventPoint) else { return }
+
+        // Un écran écarté refuse le geste, et le DIT.
+        //
+        // Laisser tracer serait pire que refuser : le trait apparaîtrait, le numéro
+        // s'incrémenterait, l'utilisateur croirait sa marque posée — et le dossier
+        // sortirait sans son image, ou pire, avec l'image d'un autre écran dans le
+        // cas de la recopie. Le § 3.3 demande un refus PROPRE, pas une absence.
+        if let refus = screen.refus {
+            Journal.warn(.mark, "geste refusé sur l'écran \(screen.displayID) — \(refus)")
+            HUDWindow.shared.announce("Écran non annotable",
+                                      detail: "\(refus) — \(refus.conseil)", duration: 4)
+            return
+        }
+
         // Horodaté ICI, au plus près de la pression. `stamp` rend toujours un instant
         // utilisable : jamais on ne perd une marque à cause d'un timestamp aberrant,
         // c'est l'origine qui dit s'il est fiable.

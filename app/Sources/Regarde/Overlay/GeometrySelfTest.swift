@@ -62,6 +62,8 @@ enum GeometrySelfTest {
     private final class Tally {
         var failures = 0
         var checks = 0
+        /// Pour les vérifications qui ne comparent pas deux points ou deux tailles.
+        func record(_ ok: Bool) { checks += 1; if !ok { failures += 1 } }
     }
 
     private static func expect(_ t: Tally, _ label: String, _ got: CGPoint, _ want: CGPoint,
@@ -92,10 +94,78 @@ enum GeometrySelfTest {
 
     // MARK: - Les cas
 
+    /// Les six dispositions du refus d'écran — S33, spécification § 3.3.
+    ///
+    /// Fabriquées, parce qu'on ne met pas un moniteur en rotation portrait ni un
+    /// jeu de recopie en place pour lancer un test. C'est toute la raison pour
+    /// laquelle la décision est une fonction pure sur trois entrées.
+    private static func refusDEcran(_ t: Tally) {
+        section(t, "écrans écartés — rotation portrait et recopie vidéo") {
+            func cas(_ nom: String, rotation: Double, mirrorSet: Bool, recopieDe: UInt32,
+                     attendu: RefusEcran?) {
+                let got = ScreenInfo.refus(rotation: rotation,
+                                           dansJeuDeRecopie: mirrorSet, recopieDe: recopieDe)
+                let ok = got == attendu
+                t.record(ok)
+                // Muet en cas de succès, comme le reste du fichier : une table de
+                // cas qui déroule ses trente lignes vertes noie celle qui rougit.
+                if !ok {
+                    print("      ✗ \(nom) → \(got.map(\.rawValue) ?? "capturable"), "
+                          + "attendu \(attendu.map(\.rawValue) ?? "capturable")")
+                }
+            }
+
+            // 1 — L'écran ordinaire, qui doit rester capturable.
+            cas("paysage, hors recopie", rotation: 0, mirrorSet: false, recopieDe: 0, attendu: nil)
+            // 2 — La rotation portrait : largeur et hauteur inversées entre
+            //     CGDisplayBounds et le tampon, donc toute conversion transposée.
+            cas("rotation 90°", rotation: 90, mirrorSet: false, recopieDe: 0,
+                attendu: .rotationPortrait)
+            // 3 — L'autre sens, tout aussi cassant.
+            cas("rotation 270°", rotation: 270, mirrorSet: false, recopieDe: 0,
+                attendu: .rotationPortrait)
+            // 4 — 180° n'inverse PAS les dimensions : la conversion y reste juste,
+            //     et refuser serait refuser une fois de trop.
+            cas("rotation 180°", rotation: 180, mirrorSet: false, recopieDe: 0, attendu: nil)
+            // 5 — Le SECONDAIRE d'un jeu de recopie : c'est lui qu'on écarte.
+            cas("recopie d'un autre écran", rotation: 0, mirrorSet: true, recopieDe: 3,
+                attendu: .recopieVideo)
+            // 6 — La SOURCE du jeu de recopie reste capturable. Écarter les deux
+            //     ne laisserait aucun écran, et la session n'aurait plus rien à
+            //     capturer — un refus juste appliqué une fois de trop.
+            cas("source du jeu de recopie", rotation: 0, mirrorSet: true, recopieDe: 0,
+                attendu: nil)
+            // La combinaison : la recopie prime, parce qu'elle dit sur QUEL écran
+            // la marque atterrirait, ce qui est le défaut le plus grave des deux.
+            cas("en recopie ET en rotation", rotation: 90, mirrorSet: true, recopieDe: 3,
+                attendu: .recopieVideo)
+
+            // Une disposition complète : deux écrans, dont un écarté.
+            let g = ScreenGeometry(screens: [
+                ScreenInfo(displayID: 1, cocoaFrame: CGRect(x: 0, y: 0, width: 1728, height: 1117),
+                           scale: 2),
+                ScreenInfo(displayID: 3, cocoaFrame: CGRect(x: -971, y: 1117, width: 3440, height: 1440),
+                           scale: 1, refus: .recopieVideo),
+            ])
+            let ok = g.capturables.count == 1 && g.refuses.count == 1
+                  && g.capturables[0].displayID == 1 && g.refuses[0].displayID == 3
+            t.record(ok)
+            if !ok { print("      ✗ la disposition ne sépare pas capturables et écartés") }
+
+            // Et l'écran écarté reste TROUVABLE par un point : c'est ce qui permet
+            // de refuser en le NOMMANT, au lieu de ne rien trouver et de se taire.
+            let dessus = g.screen(containingEvent: CGPoint(x: -500, y: 200))
+            let trouve = dessus?.displayID == 3 && dessus?.refus == .recopieVideo
+            t.record(trouve)
+            if !trouve { print("      ✗ un point sur l'écran écarté ne le trouve pas avec sa raison") }
+        }
+    }
+
     static func runAll() -> Int {
         let t = Tally()
         print("\nConversion de coordonnées — table de cas")
         print("────────────────────────────────────────")
+        refusDEcran(t)
 
         section(t, "écran unique Retina") {
             let g = soloRetina
@@ -205,7 +275,7 @@ enum GeometrySelfTest {
         print("")
         if t.failures == 0 {
             print("  ✓ \(t.checks) vérifications passent.")
-            print("    Les conversions tiennent sur cinq dispositions, dont trois")
+            print("    Le refus d'écran tient sur sept cas, dont aucun n'est branché ici.\n    Les conversions tiennent sur cinq dispositions, dont trois")
             print("    absentes de cette machine.")
         } else {
             print("  ✗ \(t.failures) échec(s) sur \(t.checks) vérifications.")

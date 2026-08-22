@@ -320,6 +320,14 @@ final class OverlayController {
         var kept: [CGDirectDisplayID: OverlayPanel] = [:]
         var created: [CGDirectDisplayID] = []
 
+        // Les écrans écartés sont NOMMÉS à chaque reconstruction. Un écran
+        // silencieusement absent donne un ⌥⌘-glisser qui trace, un numéro qui
+        // s'incrémente, et un dossier où l'image manque — panne découverte en
+        // relisant le rapport, quand la scène a disparu.
+        for ecarte in Self.currentGeometry().refuses {
+            Journal.warn(.system, "écran \(ecarte.displayID) écarté — \(ecarte.refus!)")
+        }
+
         for screen in NSScreen.screens {
             let id = OverlayPanel.displayID(of: screen)
             // Un identifiant nul signale un écran que le système ne sait pas nommer :
@@ -371,9 +379,18 @@ final class OverlayController {
     /// sur des dispositions absentes de la machine (S17).
     static func currentGeometry() -> ScreenGeometry {
         ScreenGeometry(screens: NSScreen.screens.map { screen in
-            ScreenInfo(displayID: OverlayPanel.displayID(of: screen),
-                       cocoaFrame: screen.frame,
-                       scale: screen.backingScaleFactor)
+            let id = OverlayPanel.displayID(of: screen)
+            // Les trois questions à Core Graphics sont posées ICI, à la frontière,
+            // et leur RÉPONSE traverse sous forme de donnée. La décision, elle,
+            // est une fonction pure — donc vérifiable sur un écran en rotation
+            // portrait, ce qu'on ne met pas en place pour lancer un test.
+            return ScreenInfo(displayID: id,
+                              cocoaFrame: screen.frame,
+                              scale: screen.backingScaleFactor,
+                              refus: ScreenInfo.refus(
+                                rotation: Double(CGDisplayRotation(id)),
+                                dansJeuDeRecopie: CGDisplayIsInMirrorSet(id) != 0,
+                                recopieDe: CGDisplayMirrorsDisplay(id)))
         })
     }
 

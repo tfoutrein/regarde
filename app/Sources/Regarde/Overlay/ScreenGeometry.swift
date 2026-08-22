@@ -30,6 +30,40 @@ import Foundation
 // placé à gauche, une échelle mixte, un écran plus haut que le principal.
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// Pourquoi un écran est écarté de la capture — spécification § 3.3.
+///
+/// Deux cas, et le § 3.3 les veut « refusés proprement, non silencieusement ».
+/// La nuance est tout : un écran silencieusement absent donne un ⌥⌘-glisser qui
+/// trace normalement, un numéro qui s'incrémente, et un dossier où l'image manque
+/// sans que rien n'ait prévenu. L'utilisateur découvre la panne en relisant son
+/// rapport, quand la scène a disparu.
+enum RefusEcran: String, Sendable, Codable, CustomStringConvertible {
+    /// Rotation de 90 ou 270° : largeur et hauteur sont inversées entre
+    /// `CGDisplayBounds` et le tampon de capture. Toute conversion de coordonnées
+    /// y serait fausse — non pas décalée, mais transposée.
+    case rotationPortrait
+    /// Cet écran recopie un autre. `SCShareableContent` remonte deux `SCDisplay`
+    /// pour la MÊME surface : sans ce filtre, la marque atterrit sur le mauvais
+    /// `displayID`, et la capture vient d'un écran que l'utilisateur ne regardait
+    /// pas.
+    case recopieVideo
+
+    var description: String {
+        switch self {
+        case .rotationPortrait: "écran en rotation — largeur et hauteur inversées"
+        case .recopieVideo: "écran en recopie vidéo — il duplique un autre écran"
+        }
+    }
+
+    /// Ce qu'on dit à l'utilisateur au moment où il tente d'y tracer.
+    var conseil: String {
+        switch self {
+        case .rotationPortrait: "remets-le en paysage dans Réglages > Moniteurs"
+        case .recopieVideo: "annote l'écran source, ou désactive la recopie"
+        }
+    }
+}
+
 /// Un écran, réduit à ce dont la conversion a besoin.
 ///
 /// Volontairement découplé de `NSScreen`, pour deux raisons : `NSScreen` n'est pas
@@ -41,11 +75,40 @@ struct ScreenInfo: Equatable, Sendable {
     let cocoaFrame: CGRect
     /// 1,0 sur un écran ordinaire, 2,0 sur un Retina. Propriété PAR ÉCRAN.
     let scale: CGFloat
+    /// Pourquoi cet écran est écarté, s'il l'est. `nil` = capturable.
+    ///
+    /// Portée comme une DONNÉE et calculée à la construction : c'est ce qui garde
+    /// la structure pure, donc testable sur des dispositions absentes de la
+    /// machine — et un écran en rotation portrait n'est pas quelque chose qu'on
+    /// met en place pour lancer un test.
+    let refus: RefusEcran?
 
-    init(displayID: UInt32, cocoaFrame: CGRect, scale: CGFloat) {
+    var capturable: Bool { refus == nil }
+
+    init(displayID: UInt32, cocoaFrame: CGRect, scale: CGFloat, refus: RefusEcran? = nil) {
         self.displayID = displayID
         self.cocoaFrame = cocoaFrame
         self.scale = scale
+        self.refus = refus
+    }
+
+    /// Décide du refus à partir de ce que Core Graphics rapporte.
+    ///
+    /// Fonction PURE sur trois entrées, donc vérifiable sans brancher d'écran ni
+    /// faire tourner un moniteur.
+    ///
+    /// Sur la recopie, la règle demande une précision qui n'est pas évidente :
+    /// on écarte l'écran qui RECOPIE un autre (`recopieDe != 0`), jamais la source.
+    /// Écarter tout membre du jeu de recopie écarterait les deux, et la session
+    /// n'aurait plus aucun écran — un refus juste appliqué une fois de trop.
+    static func refus(rotation: Double, dansJeuDeRecopie: Bool, recopieDe: UInt32) -> RefusEcran? {
+        if dansJeuDeRecopie && recopieDe != 0 { return .recopieVideo }
+        let angle = ((rotation.truncatingRemainder(dividingBy: 360)) + 360)
+            .truncatingRemainder(dividingBy: 360)
+        // 90 et 270 inversent les dimensions ; 180 ne les inverse pas, et la
+        // conversion y reste juste. On ne refuse que ce qui casse vraiment.
+        if abs(angle - 90) < 1 || abs(angle - 270) < 1 { return .rotationPortrait }
+        return nil
     }
 }
 
@@ -56,6 +119,11 @@ struct ScreenGeometry: Sendable {
     init(screens: [ScreenInfo]) {
         self.screens = screens
     }
+
+    /// Les écrans sur lesquels on peut réellement capturer.
+    var capturables: [ScreenInfo] { screens.filter(\.capturable) }
+    /// Ceux qui sont écartés, avec leur raison. Jamais vidé en silence.
+    var refuses: [ScreenInfo] { screens.filter { !$0.capturable } }
 
     /// Hauteur de l'espace global Cocoa : celle de l'écran dont l'origine est (0, 0).
     ///
