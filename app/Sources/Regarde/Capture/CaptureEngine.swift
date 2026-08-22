@@ -25,6 +25,10 @@ actor CaptureEngine {
     private let log = Logger(subsystem: logSubsystem, category: "moteur")
     private var flux: [CGDirectDisplayID: DisplayStream] = [:]
     private var debut: Date?
+    /// Les segments fermés de la session courante, dans l'ordre de fermeture.
+    private(set) var segments: [CaptureSegment] = []
+    /// Répertoire de travail sécurisé de la session — 0700, hors sauvegarde.
+    private var dossier: URL?
 
     var actif: Bool { !flux.isEmpty }
     var displaysActifs: [CGDirectDisplayID] { flux.keys.sorted() }
@@ -37,13 +41,46 @@ actor CaptureEngine {
     /// dont il ne se servait peut-être pas.
     func demarrer(geometry: ScreenGeometry) async -> String? {
         await arreter(raison: .basculePreRoll)
+        segments.removeAll()
 
         let cibles = geometry.capturables.map { CGDirectDisplayID($0.displayID) }
         guard !cibles.isEmpty else { return "aucun écran capturable" }
 
+        // La purge d'abord, l'ouverture ensuite.
+        //
+        // Les `.mov` d'une session précédente qui aurait été tuée — plantage,
+        // coupure — resteraient sinon sur disque indéfiniment. C'est de la vidéo
+        // de l'écran de l'utilisateur : l'ADR-0020 en fait un artefact à durée de
+        // vie bornée, pas un fichier qu'on oublie.
+        do {
+            let purges = try SecureWorkspace.purge()
+            if purges > 0 {
+                await MainActor.run {
+                    Journal.event(.system, "\(purges) répertoire(s) de session purgé(s)")
+                }
+            }
+            dossier = try SecureWorkspace.beginSession()
+        } catch {
+            return "répertoire de travail impossible — \(error.localizedDescription)"
+        }
+
         var echecs: [String] = []
         for id in cibles {
-            let s = DisplayStream(displayID: id)
+            let s = DisplayStream(displayID: id, dossier: dossier)
+            // Un `$TMPDIR` saturé ou inaccessible n'est pas rattrapable en cours
+            // de route : continuer produirait une session dont les marques
+            // n'auront jamais d'image, découverte à la publication. On clôt
+            // proprement, avec ce qui a déjà été capturé.
+            s.onArret = { raison, motif in
+                Task { @MainActor in
+                    Journal.warn(.capture, "flux interrompu sur display \(id) — \(motif)")
+                    if raison == .disquePlein {
+                        HUDWindow.shared.announce("Écriture impossible",
+                                                  detail: "session close — \(motif)", duration: 6)
+                        SessionCoordinator.shared.closeSession()
+                    }
+                }
+            }
             do {
                 try await s.demarrer()
                 flux[id] = s
@@ -69,7 +106,7 @@ actor CaptureEngine {
         // Chaque flux se ferme INDÉPENDAMMENT : l'échec de l'un ne doit jamais
         // emporter les autres (§ 5.5).
         for (_, s) in flux {
-            await s.arreter(raison: raison)
+            if let seg = await s.arreter(raison: raison) { segments.append(seg) }
             let lignes = s.bilan(duree: duree)
             await MainActor.run { Journal.block("FLUX", lignes) }
         }
@@ -82,7 +119,7 @@ actor CaptureEngine {
     func arreterEcran(_ id: CGDirectDisplayID, raison: StopReason) async {
         guard let s = flux.removeValue(forKey: id) else { return }
         let duree = debut.map { Date().timeIntervalSince($0) } ?? 0
-        await s.arreter(raison: raison)
+        if let seg = await s.arreter(raison: raison) { segments.append(seg) }
         let lignes = s.bilan(duree: duree)
         await MainActor.run { Journal.block("FLUX", lignes) }
     }

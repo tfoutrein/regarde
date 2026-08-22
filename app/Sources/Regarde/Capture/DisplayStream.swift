@@ -95,13 +95,26 @@ final class DisplayStream: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
     private let verrou = OSAllocatedUnfairLock(initialState: StreamStats())
     var stats: StreamStats { verrou.withLock { $0 } }
 
-    /// Appelé sur `encodeQueue` pour chaque frame complète. Branché en S35.
+    /// Appelé sur `encodeQueue` pour chaque frame complète.
     var onFrame: ((CMSampleBuffer, CGRect, Double) -> Void)?
+
+    /// Le writer, créé à la PREMIÈRE frame et pas avant.
+    ///
+    /// Avant, on ne connaît pas les dimensions réelles du tampon — seulement
+    /// celles qu'on a demandées, et le § 5.2 dit précisément qu'elles peuvent ne
+    /// pas être honorées. Créer le writer sur une taille supposée produirait un
+    /// fichier dont chaque frame serait rejetée, sans erreur au moment où on
+    /// pourrait encore corriger.
+    private var writer: SegmentWriter?
+    private var dossier: URL?
+    /// Motif d'échec d'écriture, s'il y en a eu un. Traité comme une fin de session.
+    private(set) var echecEcriture: String?
     /// Appelé quand le flux s'arrête de lui-même.
     var onArret: ((StopReason, String) -> Void)?
 
-    init(displayID: CGDirectDisplayID) {
+    init(displayID: CGDirectDisplayID, dossier: URL? = nil) {
         self.displayID = displayID
+        self.dossier = dossier
         self.encodeQueue = DispatchQueue(label: "regarde.encode.\(displayID)", qos: .userInitiated)
         super.init()
     }
@@ -199,15 +212,34 @@ final class DisplayStream: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
         }
     }
 
-    func arreter(raison: StopReason) async {
-        guard let flux = stream else { return }
+    /// Ferme le flux, finalise son segment, et rend le descripteur.
+    ///
+    /// La finalisation est ICI et non dans le moteur, pour que l'échec de CE
+    /// segment reste le sien : un écran débranché aussitôt n'a aucun échantillon,
+    /// et son `finishWriting()` échouerait — dans une séquence linéaire, il
+    /// emporterait les marques d'un autre écran, qui sont complètes (§ 5.5).
+    @discardableResult
+    func arreter(raison: StopReason) async -> CaptureSegment? {
+        guard let flux = stream else { return nil }
         stream = nil
         try? await flux.stopCapture()
+
+        var segment: CaptureSegment?
+        if let w = writer {
+            let seg = await w.finaliser(raison: raison, fin: SessionClock.shared.now())
+            SegmentWriter.ecrireManifeste(seg, echantillons: w.compte, sautees: w.sautees)
+            segment = seg
+            writer = nil
+        }
+
         let s = stats
+        let vide = segment?.vide ?? true
         await MainActor.run {
             Journal.event(.capture, "flux fermé sur display \(self.displayID) — "
-                          + "\(s.framesComplete) frame(s) complètes, \(raison.rawValue)")
+                          + "\(s.framesComplete) frame(s) complètes, \(raison.rawValue)"
+                          + (vide ? " — SEGMENT VIDE, aucun échantillon" : ""))
         }
+        return segment
     }
 
     /// Reconstruit le filtre sans interrompre le flux.
@@ -273,6 +305,21 @@ final class DisplayStream: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
             s.dernierPTS = pts
         }
 
+        // Le writer naît ici, à la première frame, quand la taille est CONNUE.
+        if writer == nil, let dossier, let taille = taille, echecEcriture == nil {
+            do {
+                writer = try SegmentWriter(displayID: displayID, segment: segmentID,
+                                           taille: taille, dossier: dossier,
+                                           debut: SessionClock.shared.now())
+            } catch {
+                // Un `$TMPDIR` inaccessible ou saturé n'est pas rattrapable en
+                // cours de route : on le retient, on cesse d'essayer, et le
+                // coordinateur en fait une fin de session.
+                echecEcriture = error.localizedDescription
+                onArret?(.disquePlein, error.localizedDescription)
+            }
+        }
+        writer?.ecrire(sample)
         onFrame?(sample, rect, scale)
     }
 
