@@ -72,14 +72,26 @@ def close_suite():
     if note:
         body.append(f'<p class="suite-note">{note}</p>')
     body.append('<ul class="tests">')
-    for tid, text, hint in tests:
+    CLASSE = {"FAIRE": "action", "REGARDER": "ou", "ATTENDU": "attendu", "SI ÇA RATE": "rate"}
+    LIBELLE = {"FAIRE": "Faire", "REGARDER": "Regarder", "ATTENDU": "Attendu", "SI ÇA RATE": "Si ça rate"}
+    for tid, text, hint, etapes in tests:
         assert tid.split(".")[0] == num, (
             f"le test {tid} est tombé dans la section {num} — "
             "un identifiant non reconnu a fermé la section trop tôt")
         h = f'<i>{hint}</i>' if hint else ''
+        if etapes:
+            # Le premier segment devient un TITRE : « ce que ce test établit »,
+            # lisible seul quand on parcourt la liste.
+            bloc = [f'<b class="titre">{text}</b>']
+            for genre, txt in etapes:
+                bloc.append(f'<span class="etape {CLASSE[genre]}">'
+                            f'<em>{LIBELLE[genre]}</em><span>{inline(txt)}</span></span>')
+            corps = "".join(bloc)
+        else:
+            corps = text
         body.append(f'<li><label class="test"><input type="checkbox" data-id="{tid}">'
                     f'<span class="box"></span><span class="tid">{tid}</span>'
-                    f'<span class="tbody">{text}{h}</span></label></li>')
+                    f'<span class="tbody">{corps}{h}</span></label></li>')
     body.append('</ul></section>')
     suite, tests = None, []
 
@@ -115,16 +127,49 @@ while i < len(lines):
     if m:
         tid, text = m.group(1), m.group(2)
         cont, hint = [], []
+        # Les quatre temps d'un test : ce qu'on FAIT, où on REGARDE, ce qu'on doit
+        # VOIR, et ce qu'on fait si ça rate. Mélangés dans un paragraphe, on ne sait
+        # plus lequel des quatre on lit — et on fait le geste sans savoir ce qu'on
+        # attend. Séparés, chaque ligne a un seul rôle.
+        etapes = []           # [(genre, texte)]
+        dans_note = False
         i += 1
         while i < len(lines) and lines[i].startswith("      "):
             s = lines[i].strip()
-            # Une note commence par UNE étoile ; deux, c'est du gras qui continue.
-            is_hint = s.startswith("*") and not s.startswith("**")
-            (hint if is_hint else cont).append(s)
+            # Une note est un BLOC, pas une ligne.
+            # Le test se faisait ligne par ligne : la première commençait par `*` et
+            # partait en note, les suivantes non et retombaient dans le texte
+            # principal. Une note de trois lignes sortait donc coupée en deux, avec
+            # sa fin recollée au milieu de l'énoncé et son début affiché après.
+            #
+            # Les DEUX recettes en souffraient. Celle du lot 2 a été lue comme ça,
+            # soixante-quatre tests durant, par un outil dont toute la raison d'être
+            # est d'empêcher la recette et le code de diverger.
+            #
+            # Une note s'ouvre sur une étoile SIMPLE — deux, c'est du gras — et se
+            # ferme sur la ligne qui se termine par une étoile simple.
+            m_etape = re.match(r'^(FAIRE|REGARDER|ATTENDU|SI ÇA RATE)\s*:\s*(.*)$', s)
+            if m_etape and not dans_note:
+                etapes.append([m_etape.group(1), m_etape.group(2)])
+            elif etapes and not dans_note and not s.startswith("*"):
+                # Continuation de l'étape précédente : le Markdown enveloppe à 95
+                # colonnes, et une étape de deux lignes ne doit pas se scinder.
+                etapes[-1][1] += " " + s
+            elif not dans_note and s.startswith("*") and not s.startswith("**"):
+                dans_note = True
+                hint.append(s)
+                if len(s) > 1 and s.endswith("*") and not s.endswith("**"):
+                    dans_note = False
+            elif dans_note:
+                hint.append(s)
+                if len(s) > 1 and s.endswith("*") and not s.endswith("**"):
+                    dans_note = False
+            else:
+                cont.append(s)
             i += 1
         full = inline(" ".join([text] + cont))
         hint_html = inline(" ".join(hint).strip("*")) if hint else ""
-        tests.append((tid, full, hint_html))
+        tests.append((tid, full, hint_html, etapes))
         n_tests += 1
         continue
 
