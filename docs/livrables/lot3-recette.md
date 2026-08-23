@@ -314,9 +314,16 @@ Pour ne pas le chercher :
       `while :; do printf '\r|'; sleep 0.05; printf '\r-'; sleep 0.05; done`
       (dix changements par seconde — le critère de fréquence sera franchi, c'est
       voulu : seul celui de surface doit retenir le burst).
-      Aucun `tail -F` du journal sur cet écran, et rien d'autre qui bouge — fermez en
-      particulier tout témoin resté en plein écran d'une campagne précédente. Une
-      session, une marque sur la vignette, fermer.
+      FAIRE : poser la vignette **sur le Bureau nu** — pas au-dessus d'une
+      application en plein écran. Une application GPU derrière la vignette salit tout
+      l'écran à sa place : mesuré le 23 août, 0.986 de surface pour une vignette de
+      1,3 % posée sur un WhatsApp plein écran, dont le simple curseur de saisie fait
+      re-soumettre la fenêtre entière. Aucun `tail -F` sur cet écran, pas de témoin
+      résiduel d'une campagne précédente. Une session, une marque sur la vignette,
+      fermer.
+      REGARDER : dans le bloc `FLUX`, les nouvelles lignes `salie par frame`
+      (distribution) et `dernière frame` (les `dirtyRects` déclarés par le système) —
+      elles disent QUI salit l'écran quand le résultat surprend.
       REGARDER : la ligne `marque 1 · … frame(s)/s · … de surface`.
       ATTENDU : `1 frame(s) au plan`.
       ATTENDU : dans la même ligne, **≥ 6 frames/s** ET une surface **sous 0.02** —

@@ -63,6 +63,20 @@ struct StreamStats: Sendable {
     /// quatre. Le voir écrit est le seul moyen de trancher entre les deux.
     var salieMax: Double = 0
     var salieSomme: Double = 0
+    /// Distribution des surfaces salies par frame : nulle, dérisoire (< 2 %),
+    /// partielle (< 25 %), large (< 90 %), quasi totale.
+    ///
+    /// La moyenne seule ne distingue pas « toutes les frames à 0,98 » de « la
+    /// moitié à 2,0 » — bornée, la seconde afficherait la même moyenne. Et c'est
+    /// la première qui s'est produite le 23 août : 0,986 de moyenne sur un écran
+    /// dont la seule animation était une vignette de 1,3 % — quelque chose
+    /// déclarait l'écran ENTIER changé à chaque frame, et la moyenne ne pouvait
+    /// pas dire si c'était chaque frame ou une frame sur deux.
+    var salieHisto = [Int](repeating: 0, count: 5)
+    /// Les `dirtyRects` bruts de la dernière frame : combien, et lesquels.
+    /// C'est la seule ligne qui montre ce que ScreenCaptureKit DÉCLARE, plutôt
+    /// qu'un ratio qui l'agrège.
+    var derniersRects = ""
     var scaleFactor: Double = 0
     var contentScale: Double = 0
     var premierPTS: CMTime?
@@ -97,10 +111,19 @@ struct StreamStats: Sendable {
     /// se rapporte plus au même repère qu'une marque posée après. Rien d'autre ne
     /// le signalerait.
     mutating func noterFrame(rect: CGRect, tampon: CGSize?, scale: Double,
-                             echelleContenu: Double, pts: CMTime, salie: Double) {
+                             echelleContenu: Double, pts: CMTime, salie: Double,
+                             rects: String = "") {
         framesComplete += 1
         salieMax = max(salieMax, salie)
         salieSomme += salie
+        switch salie {
+        case 0: salieHisto[0] += 1
+        case ..<0.02: salieHisto[1] += 1
+        case ..<0.25: salieHisto[2] += 1
+        case ..<0.90: salieHisto[3] += 1
+        default: salieHisto[4] += 1
+        }
+        if !rects.isEmpty { derniersRects = rects }
         if bufferSize == nil { bufferSize = tampon }
         if let precedent = contentRect, precedent != rect { variationsContentRect += 1 }
         contentRect = rect
@@ -377,9 +400,17 @@ final class DisplayStream: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
         let taille = CMSampleBufferGetImageBuffer(sample).map {
             CGSize(width: CVPixelBufferGetWidth($0), height: CVPixelBufferGetHeight($0))
         }
+        // Le résumé des rects bruts — borné à trois, ils se ressemblent tous quand
+        // ça déborde, et c'est justement ce qu'on veut voir.
+        let rectsBruts = ((info[.dirtyRects] as? [[String: Any]]) ?? [])
+            .compactMap { CGRect(dictionaryRepresentation: $0 as CFDictionary) }
+        let resume = "\(rectsBruts.count) rect(s) — "
+            + rectsBruts.prefix(3).map {
+                String(format: "(%.0f, %.0f) %.0f×%.0f", $0.minX, $0.minY, $0.width, $0.height)
+            }.joined(separator: " · ")
         verrou.withLock { $0.noterFrame(rect: rect, tampon: taille, scale: scale,
                                         echelleContenu: contentScale, pts: pts,
-                                        salie: dirtyBrut) }
+                                        salie: dirtyBrut, rects: resume) }
 
         // Le writer naît ici, à la première frame, quand la taille est CONNUE.
         if writer == nil, let dossier, let taille = taille, echecEcriture == nil {
@@ -450,6 +481,13 @@ final class DisplayStream: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
                     texte += "  ← IMPOSSIBLE : recouvrement ou unités"
                 }
                 lignes.append(("surface salie", texte))
+                let h = s.salieHisto
+                lignes.append(("salie par frame", String(
+                    format: "nulle %d · <2 %%  %d · <25 %%  %d · <90 %%  %d · ≥90 %%  %d",
+                    h[0], h[1], h[2], h[3], h[4])))
+                if !s.derniersRects.isEmpty {
+                    lignes.append(("dernière frame", s.derniersRects))
+                }
             }
         }
         return lignes
