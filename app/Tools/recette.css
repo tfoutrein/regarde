@@ -463,3 +463,39 @@ footer.colophon {
 blockquote { margin: 0 0 1.5rem; padding: 1rem 1.2rem; background: var(--surface); border-left: 2px solid var(--accent); color: var(--muted); font-size: .95rem; }
 blockquote strong { color: var(--ink); }
 h2.block { margin-top: 2.5rem; }
+
+
+/* ── Boutons de copie ─────────────────────────────────────────────────────
+   Une commande recopiée à la main se recopie mal — et une commande suivie d'un
+   point se recopie encore plus mal. Le bouton porte le texte BRUT, sans la
+   ponctuation de la phrase ni les entités du rendu. */
+.bloc-cmd { position: relative; }
+.bloc-cmd .copie {
+  position: absolute;
+  top: .5rem;
+  right: .5rem;
+}
+.cmd-en-ligne {
+  display: inline-flex;
+  align-items: baseline;
+  gap: .3rem;
+  white-space: nowrap;
+}
+button.copie {
+  font-family: var(--mono);
+  font-size: .68rem;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  color: var(--muted);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  padding: .1rem .4rem .15rem;
+  cursor: pointer;
+  transition: color .12s, border-color .12s, background .12s;
+  vertical-align: baseline;
+}
+button.copie:hover { color: var(--ink); border-color: var(--muted); }
+button.copie.ok { color: var(--done); border-color: var(--done); }
+button.copie:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+@media (prefers-reduced-motion: reduce) { button.copie { transition: none; } }

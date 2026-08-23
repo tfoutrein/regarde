@@ -17,6 +17,26 @@ CSS = "app/Tools/recette.css"          # relatif à la racine du dépôt
 SRC = sys.argv[1] if len(sys.argv) > 1 else "docs/livrables/lot2-recette.md"
 OUT = sys.argv[2] if len(sys.argv) > 2 else "docs/livrables/lot2-recette.html"
 
+# Ce qui ressemble à une commande à lancer, et mérite donc un bouton de copie.
+#
+# Volontairement restrictif : `⌃⌥S` ou `idle` sont des `<kbd>` eux aussi, et leur
+# coller un bouton noierait ceux qui servent. Un bouton par ligne de code, pas un
+# par bout de texte en chasse fixe.
+RE_COMMANDE = re.compile(
+    r'(^|\s)(\./|~/|cd\s|grep\s|ls\s|find\s|curl\s|open\s|tail\s|pkill\s|kill\s'
+    r'|python3\s|swift\s|git\s|screencapture\s)')
+
+def ressemble_a_une_commande(txt):
+    return bool(RE_COMMANDE.search(txt)) or ".sh" in txt or ".py" in txt
+
+_n_copie = [0]
+
+def bouton_copie(texte):
+    """Un bouton qui copie `texte`. La valeur voyage en attribut, pas en contenu."""
+    _n_copie[0] += 1
+    return (f'<button class="copie" type="button" data-copie="{H.escape(texte, quote=True)}" '
+            f'aria-label="Copier la commande">copier</button>')
+
 def inline(t):
     t = H.escape(t)
     # Une commande suivie d'une ponctuation COLLÉE est un piège de copier-coller :
@@ -24,7 +44,13 @@ def inline(t):
     # file or directory » sur un fichier qui existe. On l'écarte à la source plutôt
     # que de compter sur la relecture — c'est arrivé au premier test de la section 2.
     t = re.sub(r'`([^`]*\.(?:sh|py)[^`]*)`([.,])', r'`\1`', t)
-    t = re.sub(r'`([^`]+)`', r'<kbd>\1</kbd>', t)
+    def kbd(m):
+        contenu = m.group(1)
+        if not ressemble_a_une_commande(H.unescape(contenu)):
+            return f'<kbd>{contenu}</kbd>'
+        return ('<span class="cmd-en-ligne"><kbd>' + contenu + '</kbd>'
+                + bouton_copie(H.unescape(contenu)) + '</span>')
+    t = re.sub(r'`([^`]+)`', kbd, t)
     t = re.sub(r'\*\*([^*]+)\*\*', r'<strong>\1</strong>', t)
     t = re.sub(r'\*([^*]+)\*', r'<em>\1</em>', t)
     return t
@@ -207,13 +233,21 @@ while i < len(lines):
         close_suite()
         i += 1
         code = []
+        # DEUX collectes, et c'est le point : ce qu'on AFFICHE et ce qu'on COPIE ne
+        # sont pas le même texte. L'affichage porte l'échappement HTML et la
+        # coloration des commentaires ; les coller dans un shell y déverserait des
+        # `<span class="c">` et des `&#x27;`. Le bouton porte les lignes telles
+        # qu'elles sont dans le Markdown.
+        source = []
         while i < len(lines) and not lines[i].startswith("```"):
+            source.append(lines[i])
             c = H.escape(lines[i])
             c = re.sub(r'(#.*)$', r'<span class="c">\1</span>', c)
             code.append(c)
             i += 1
         i += 1
-        body.append('<pre class="cmd">' + "\n".join(code) + '</pre>')
+        body.append('<div class="bloc-cmd"><pre class="cmd">' + "\n".join(code) + '</pre>'
+                    + bouton_copie("\n".join(source).strip()) + '</div>')
         continue
 
     if ln.startswith("|"):
@@ -348,6 +382,41 @@ page = f'''<!doctype html>
       save(state); refresh();
     }});
   }});
+  // ── Les boutons de copie ────────────────────────────────────────────────
+  //
+  // `stopPropagation` et `preventDefault` sont indispensables : un bouton posé dans
+  // une ligne ATTENDU vit à l'intérieur d'un `<label>`, et un clic y cocherait la
+  // case en même temps qu'il copie. On copierait sans le vouloir ET on cocherait
+  // un attendu qu'on n'a pas encore vérifié.
+  document.querySelectorAll("button.copie").forEach(function (b) {{
+    b.addEventListener("click", function (e) {{
+      e.preventDefault(); e.stopPropagation();
+      var texte = b.dataset.copie || "";
+      var fini = function (ok) {{
+        b.textContent = ok ? "copié" : "refusé";
+        b.classList.toggle("ok", ok);
+        setTimeout(function () {{ b.textContent = "copier"; b.classList.remove("ok"); }}, 1400);
+      }};
+      if (navigator.clipboard && navigator.clipboard.writeText) {{
+        navigator.clipboard.writeText(texte).then(function () {{ fini(true); }},
+                                                  function () {{ repli(); }});
+      }} else {{ repli(); }}
+      // Repli pour les contextes où l'API du presse-papiers est refusée — une page
+      // ouverte en `file://` selon la version du navigateur. Une recette qui ne
+      // copie plus selon la façon dont on l'ouvre ne sert à rien.
+      function repli() {{
+        var z = document.createElement("textarea");
+        z.value = texte; z.setAttribute("readonly", "");
+        z.style.position = "fixed"; z.style.opacity = "0";
+        document.body.appendChild(z); z.select();
+        var ok = false;
+        try {{ ok = document.execCommand("copy"); }} catch (err) {{ ok = false; }}
+        document.body.removeChild(z);
+        fini(ok);
+      }}
+    }});
+  }});
+
   document.getElementById("reset").addEventListener("click", function () {{
     boxes.forEach(function (b) {{ b.checked = false; }}); state = {{}}; save(state); refresh();
   }});
