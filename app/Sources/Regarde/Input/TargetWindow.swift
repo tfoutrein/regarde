@@ -94,6 +94,41 @@ final class TargetWindow {
             return nil
         }
 
+        // Une cible qui ressemble à une BARRE est refusée, pas gelée.
+        //
+        // Constaté le 23 août : cible figée sur (0, 33) 3440×88 pour Chrome en plein
+        // écran, alors qu'une autre session sur la même application donnait
+        // 3440×1440. L'arithmétique est exacte — Chrome expose 33 + 41 + 47 + 996,
+        // la barre de 33 est écartée par la garde de taille, et 41 + 47 = 88 : la
+        // liste ne contenait QUE les deux barres du milieu. Le contenu en était
+        // absent, ce qui arrive pendant une transition plein écran ou un changement
+        // d'espace.
+        //
+        // Geler là-dessus n'arme ⌥⌘ que dans une bande de 88 points où il n'y a rien
+        // à désigner, et l'utilisateur trace sans que rien ne se passe — sans le
+        // moindre message. Refuser lui dit de recommencer une seconde plus tard, ce
+        // qui suffit.
+        let ecran = NSScreen.screens
+            .map(\.frame)
+            .first { $0.intersects(frame) } ?? NSScreen.main?.frame ?? .zero
+        if Self.ressembleAUneBarre(frame, ecran: ecran) {
+            let (retenus, ecartes) = Self.derniersMorceaux
+            Journal.warn(.target, String(
+                format: "%@ — cible refusée : (%.0f, %.0f) %.0f×%.0f est une barre, pas une fenêtre",
+                name, frame.minX, frame.minY, frame.width, frame.height))
+            Journal.section("Morceaux de fenêtre", [
+                "retenus    " + (retenus.isEmpty ? "aucun" : retenus.map {
+                    String(format: "(%.0f,%.0f) %.0f×%.0f", $0.minX, $0.minY, $0.width, $0.height)
+                }.joined(separator: "  ")),
+                "écartés    " + (ecartes.isEmpty ? "aucun" : ecartes.map {
+                    String(format: "%.0f×%.0f", $0.width, $0.height)
+                }.joined(separator: "  ")) + "  (moins de 40 points de côté)",
+                "→ le contenu de la fenêtre n'était pas dans la liste. Transition plein",
+                "  écran ou changement d'espace : réessaie dans une seconde.",
+            ])
+            return nil
+        }
+
         let t = Target(pid: app.processIdentifier, bundleID: app.bundleIdentifier,
                        name: name, frame: frame)
         target = t
@@ -251,16 +286,36 @@ final class TargetWindow {
         // `layer == 0` écarte les panneaux flottants et les infobulles, dont le cadre
         // ferait rétrécir la cible à leur taille.
         var pieces: [CGRect] = []
+        var ecartes: [CGRect] = []
         for info in list {
             guard let owner = info[kCGWindowOwnerPID as String] as? pid_t, owner == pid,
                   let layer = info[kCGWindowLayer as String] as? Int, layer == 0,
                   let bounds = info[kCGWindowBounds as String] as? [String: Any],
                   let rect = CGRect(dictionaryRepresentation: bounds as CFDictionary)
             else { continue }
-            guard rect.width > 40, rect.height > 40 else { continue }
+            guard rect.width > 40, rect.height > 40 else { ecartes.append(rect); continue }
             pieces.append(rect)
         }
+        derniersMorceaux = (pieces, ecartes)
         return merge(pieces)
+    }
+
+    /// Ce que la dernière lecture système a vu, pour le diagnostic.
+    ///
+    /// Le journal ne disait que le RÉSULTAT de l'agrégation. Quand la cible sort à
+    /// 3440×88 au lieu de 3440×1440, savoir qu'elle est fausse ne dit pas si le
+    /// contenu manquait de la liste ou s'il n'a pas été agrégé — deux causes, deux
+    /// remèdes. On garde donc les morceaux.
+    private(set) static var derniersMorceaux: (retenus: [CGRect], ecartes: [CGRect]) = ([], [])
+
+    /// Le cadre retenu ressemble-t-il à une BARRE plutôt qu'à une fenêtre ?
+    ///
+    /// Pleine largeur d'écran et très court : une fenêtre réelle de cette forme
+    /// n'est essentiellement jamais ce qu'on veut annoter, et la geler comme cible
+    /// n'arme ⌥⌘ que dans une bande où il n'y a rien à désigner.
+    static func ressembleAUneBarre(_ frame: CGRect, ecran: CGRect) -> Bool {
+        guard ecran.width > 0, ecran.height > 0 else { return false }
+        return frame.width >= ecran.width * 0.9 && frame.height < ecran.height * 0.15
     }
 
     /// Agrège les morceaux qui touchent le premier, de proche en proche.
@@ -268,11 +323,28 @@ final class TargetWindow {
     /// Séparée de la lecture système pour être vérifiable : c'est de la géométrie, et
     /// c'est là qu'était le défaut.
     static func merge(_ pieces: [CGRect]) -> CGRect? {
-        guard var frame = pieces.first else { return nil }
+        // On part du PLUS GRAND morceau, pas du premier.
+        //
+        // `CGWindowListCopyWindowInfo` ne garantit aucun ordre, et le premier morceau
+        // est parfois une barre. Le correctif du lot 2 agrégeait déjà les voisins,
+        // mais il SEMAIT toujours sur le premier : si ce premier ne touchait pas le
+        // contenu, l'agrégation s'arrêtait sur la barre.
+        //
+        // Le symptôme est intermittent, ce qui le rend coûteux : deux sessions sur
+        // la même application, l'une avec une cible de 3440×1440 et l'autre de
+        // 3440×88, sans que rien n'ait changé entre les deux. Et une cible de 88
+        // points de haut n'arme ⌥⌘ que dans ces 88 points — ailleurs, tracer ne fait
+        // rien du tout.
+        //
+        // Le plus grand morceau est le contenu par construction ; les barres le
+        // touchent et sont absorbées ensuite.
+        guard let plusGrand = pieces.max(by: { $0.width * $0.height < ($1.width * $1.height) })
+        else { return nil }
+        var frame = plusGrand
 
         // Répété, parce qu'une barre peut en toucher une autre qui touche la fenêtre —
         // les trois barres de Chrome en plein écran.
-        var remaining = Array(pieces.dropFirst())
+        var remaining = pieces.filter { $0 != plusGrand }
         var merged = true
         while merged {
             merged = false

@@ -395,6 +395,65 @@ enum MarksSelfTest {
         check(t, "une fenêtre distante n'est pas absorbée",
               TargetWindow.merge([front, elsewhere]) == front)
 
+        // ── L'ORDRE de la liste ne doit rien changer ────────────────────────
+        //
+        // C'est la cause du défaut intermittent du 23 août. Le journal portait deux
+        // sessions sur la même application, l'une avec une cible de 3440×1440 et
+        // l'autre de 3440×88, sans que rien n'ait changé entre les deux :
+        // l'agrégation semait sur le PREMIER morceau, et `CGWindowListCopyWindowInfo`
+        // ne garantit aucun ordre.
+        let attendu = CGRect(x: 0, y: 0, width: 1728, height: 1117)
+        var ordresFautifs = 0
+        for depart in 0..<chrome.count {
+            let tourne = Array(chrome[depart...] + chrome[..<depart])
+            if TargetWindow.merge(tourne) != attendu { ordresFautifs += 1 }
+        }
+        check(t, "les quatre ordres de liste donnent la même cible",
+              ordresFautifs == 0,
+              ordresFautifs == 0 ? "" : "\(ordresFautifs) ordre(s) donnent autre chose")
+
+        // Et l'inverse strict, qui est l'ordre le plus défavorable : les barres
+        // d'abord, le contenu en dernier.
+        check(t, "barres en tête, contenu en queue — même résultat",
+              TargetWindow.merge(chrome.reversed()) == attendu,
+              "→ \(String(describing: TargetWindow.merge(chrome.reversed())))")
+
+        // ── LE CAS RÉEL DU 23 AOÛT, reconstitué ────────────────────────────
+        //
+        // La liste ne contenait que les deux barres du milieu : celle de 33 points
+        // est écartée par la garde de taille, et le contenu était absent — ce qui
+        // arrive pendant une transition plein écran. 41 + 47 = 88, à partir de
+        // y = 33 : exactement le cadre relevé.
+        //
+        // Aucun ensemencement ne répare cela, et c'est le point : le contenu n'est
+        // pas là. La seule conduite juste est de REFUSER la cible.
+        let barresSeules = [CGRect(x: 0, y: 33, width: 3440, height: 41),
+                            CGRect(x: 0, y: 74, width: 3440, height: 47)]
+        let cadreFautif = TargetWindow.merge(barresSeules)
+        check(t, "deux barres seules donnent bien le cadre observé",
+              cadreFautif == CGRect(x: 0, y: 33, width: 3440, height: 88),
+              "→ \(String(describing: cadreFautif))")
+        check(t, "et ce cadre est reconnu comme une barre, donc refusable",
+              cadreFautif.map {
+                  TargetWindow.ressembleAUneBarre($0, ecran: CGRect(x: 0, y: 0, width: 3440, height: 1440))
+              } == true)
+
+        // ── Une cible qui ressemble à une barre se reconnaît ────────────────
+        //
+        // Le cadre relevé dans le journal du 23 août, face à l'écran qui le portait.
+        let ecran3 = CGRect(x: 0, y: 0, width: 3440, height: 1440)
+        check(t, "une bande pleine largeur de 88 points est reconnue comme barre",
+              TargetWindow.ressembleAUneBarre(CGRect(x: 0, y: 33, width: 3440, height: 88),
+                                              ecran: ecran3))
+        check(t, "la fenêtre entière n'est PAS prise pour une barre",
+              !TargetWindow.ressembleAUneBarre(CGRect(x: 0, y: 0, width: 3440, height: 1440),
+                                               ecran: ecran3))
+        // Une petite fenêtre — une boîte de dialogue — reste annotable : ce qui
+        // trahit la barre est d'être pleine largeur ET courte, pas d'être petite.
+        check(t, "une boîte de dialogue n'est pas prise pour une barre",
+              !TargetWindow.ressembleAUneBarre(CGRect(x: 900, y: 500, width: 600, height: 200),
+                                               ecran: ecran3))
+
         // Un seul morceau reste lui-même, et zéro morceau ne donne pas de cible.
         check(t, "une fenêtre unique est rendue telle quelle",
               TargetWindow.merge([front]) == front)
