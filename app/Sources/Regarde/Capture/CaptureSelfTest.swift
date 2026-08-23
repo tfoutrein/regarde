@@ -25,6 +25,7 @@ enum CaptureSelfTest {
         tiles(t)
         frames(t)
         engraving(t)
+        bilanDeFlux(t)
         boitage(t)
         segments(t)
         print("\n── \(t.passed) vérifications passées, \(t.failed) échouées ──")
@@ -546,6 +547,83 @@ enum CaptureSelfTest {
             if r > 200, g < 110, b < 110, r - max(g, b) > 90 { hits += 1 }
         }
         return hits
+    }
+
+    // MARK: - Le bilan d'un flux
+
+    /// Ce que le bloc FLUX compte, et notamment un compteur qu'il faut savoir
+    /// faire bouger.
+    ///
+    /// « Pourquoi variations est-il toujours à zéro ? » — la question posée par
+    /// l'auteur pendant la recette, et la bonne réponse n'était pas « c'est normal »
+    /// mais « je ne sais pas le faire bouger ». Ce projet s'est fait avoir deux fois
+    /// par des compteurs qui ne pouvaient pas monter : le filtre des captures
+    /// manquantes, vide par construction, et le diagnostic de barre de menus qui se
+    /// taisait quand il avait le plus à dire. Un zéro qu'on ne sait pas contredire
+    /// ne rassure pas, il ne dit rien.
+    private static func bilanDeFlux(_ t: Tally) {
+        print("\n· Bilan d'un flux")
+
+        let plein = CGRect(x: 0, y: 0, width: 1728, height: 1117)
+        var s = StreamStats()
+        s.demande = CGSize(width: 3456, height: 2234)
+
+        // Vingt frames identiques : le contentRect ne bouge pas.
+        for i in 0..<20 {
+            s.noterFrame(rect: plein, tampon: CGSize(width: 3456, height: 2234),
+                         scale: 2, echelleContenu: 1,
+                         pts: CMTime(value: CMTimeValue(i), timescale: 15))
+        }
+        check(t, "vingt frames stables ne comptent aucune variation",
+              s.variationsContentRect == 0 && s.framesComplete == 20)
+        check(t, "et les dimensions demandées sont honorées", s.dimensionsHonorees)
+
+        // Puis l'écran change de résolution en cours de segment. C'est ce que le
+        // compteur existe pour attraper : les marques d'avant et d'après ne se
+        // rapportent plus au même repère.
+        let autre = CGRect(x: 0, y: 0, width: 1512, height: 982)
+        s.noterFrame(rect: autre, tampon: CGSize(width: 3456, height: 2234),
+                     scale: 2, echelleContenu: 1, pts: CMTime(value: 20, timescale: 15))
+        check(t, "un changement de contentRect est compté",
+              s.variationsContentRect == 1, "\(s.variationsContentRect)")
+
+        // Et rester sur la nouvelle valeur ne compte pas une seconde fois : c'est
+        // le CHANGEMENT qui est l'événement, pas l'écart à la valeur d'origine.
+        for i in 21..<25 {
+            s.noterFrame(rect: autre, tampon: nil, scale: 2, echelleContenu: 1,
+                         pts: CMTime(value: CMTimeValue(i), timescale: 15))
+        }
+        check(t, "rester sur la nouvelle valeur ne recompte pas",
+              s.variationsContentRect == 1, "\(s.variationsContentRect)")
+
+        // Un aller-retour compte DEUX variations : l'écran est revenu, mais il a
+        // bougé deux fois, et deux marques peuvent être tombées de part et d'autre.
+        s.noterFrame(rect: plein, tampon: nil, scale: 2, echelleContenu: 1,
+                     pts: CMTime(value: 25, timescale: 15))
+        check(t, "un aller-retour compte deux variations",
+              s.variationsContentRect == 2, "\(s.variationsContentRect)")
+
+        // Le premier PTS est retenu, le dernier suit.
+        check(t, "premier et dernier PTS encadrent le segment",
+              s.premierPTS == CMTime(value: 0, timescale: 15)
+                && s.dernierPTS == CMTime(value: 25, timescale: 15))
+
+        // Le piège du § 5.2, nommé séparément des autres écarts de dimensions.
+        var replique = StreamStats()
+        replique.demande = CGSize(width: 3456, height: 2234)
+        replique.noterFrame(rect: plein, tampon: CGSize(width: 1920, height: 1080),
+                            scale: 2, echelleContenu: 1, pts: .zero)
+        check(t, "un tampon en 1920×1080 non demandé est nommé comme tel",
+              replique.suspicionDeReplique1080 && !replique.dimensionsHonorees)
+
+        // Et une capture qui SORT vraiment en 1920×1080 parce qu'on l'a demandé
+        // n'est pas suspecte : le piège est l'écart, pas la taille.
+        var voulue = StreamStats()
+        voulue.demande = CGSize(width: 1920, height: 1080)
+        voulue.noterFrame(rect: plein, tampon: CGSize(width: 1920, height: 1080),
+                          scale: 1, echelleContenu: 1, pts: .zero)
+        check(t, "un 1920×1080 DEMANDÉ n'est pas suspect",
+              !voulue.suspicionDeReplique1080 && voulue.dimensionsHonorees)
     }
 
     // MARK: - La frame boîtée (S38)

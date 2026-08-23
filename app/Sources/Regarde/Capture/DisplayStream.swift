@@ -68,6 +68,32 @@ struct StreamStats: Sendable {
         guard let b = bufferSize else { return false }
         return abs(b.width - demande.width) < 2 && abs(b.height - demande.height) < 2
     }
+
+    /// Enregistre une frame complète.
+    ///
+    /// La décision « le `contentRect` a-t-il changé ? » vit ICI plutôt que dans le
+    /// rappel du flux, et pour une raison que ce projet a apprise deux fois : un
+    /// compteur qu'on ne sait pas faire bouger ne dit rien, et son zéro rassure à
+    /// tort. Le filtre des captures manquantes était vide par construction ; le
+    /// diagnostic de barre de menus se taisait quand il avait le plus à dire. Cette
+    /// décision-ci est donc dans une fonction pure, exercée par l'autotest.
+    ///
+    /// Ce qu'elle surveille : le `contentRect` appartient à la FRAME et peut
+    /// changer en cours de flux — résolution, bascule d'espace, échelle. Toute la
+    /// géométrie des marques en dépend, et une marque posée avant le changement ne
+    /// se rapporte plus au même repère qu'une marque posée après. Rien d'autre ne
+    /// le signalerait.
+    mutating func noterFrame(rect: CGRect, tampon: CGSize?, scale: Double,
+                             echelleContenu: Double, pts: CMTime) {
+        framesComplete += 1
+        if bufferSize == nil { bufferSize = tampon }
+        if let precedent = contentRect, precedent != rect { variationsContentRect += 1 }
+        contentRect = rect
+        scaleFactor = scale
+        contentScale = echelleContenu
+        if premierPTS == nil { premierPTS = pts }
+        dernierPTS = pts
+    }
 }
 
 /// Un flux de capture attaché à un écran.
@@ -305,16 +331,8 @@ final class DisplayStream: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
         let taille = CMSampleBufferGetImageBuffer(sample).map {
             CGSize(width: CVPixelBufferGetWidth($0), height: CVPixelBufferGetHeight($0))
         }
-        verrou.withLock { s in
-            s.framesComplete += 1
-            if s.bufferSize == nil { s.bufferSize = taille }
-            if let precedent = s.contentRect, precedent != rect { s.variationsContentRect += 1 }
-            s.contentRect = rect
-            s.scaleFactor = scale
-            s.contentScale = contentScale
-            if s.premierPTS == nil { s.premierPTS = pts }
-            s.dernierPTS = pts
-        }
+        verrou.withLock { $0.noterFrame(rect: rect, tampon: taille, scale: scale,
+                                        echelleContenu: contentScale, pts: pts) }
 
         // Le writer naît ici, à la première frame, quand la taille est CONNUE.
         if writer == nil, let dossier, let taille = taille, echecEcriture == nil {
