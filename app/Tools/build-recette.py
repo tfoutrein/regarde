@@ -48,15 +48,29 @@ def inline(t):
     # file or directory » sur un fichier qui existe. On l'écarte à la source plutôt
     # que de compter sur la relecture — c'est arrivé au premier test de la section 2.
     t = re.sub(r'`([^`]*\.(?:sh|py)[^`]*)`([.,])', r'`\1`', t)
+    # Les segments de code sont mis à l'ABRI avant l'emphase, et restaurés après.
+    #
+    # Sans cela, un `*` de glob dans une commande devient de l'italique — et le
+    # piège est retors : la commande figure DEUX fois dans le HTML produit, dans
+    # le <kbd> affiché et dans l'attribut data-copie du bouton. Deux astérisques,
+    # que la regex d'italique appariait entre eux : <em> planté dans l'un, </em>
+    # dans l'autre. Le 23 août, le bouton du test 6.3 a copié
+    # « ls -la $TMPDIR/regarde</em> 2>/dev/null » — un bouton créé pour éviter
+    # les fautes de frappe en fabriquait une.
+    sanctuaires = []
     def kbd(m):
         contenu = m.group(1)
         if not ressemble_a_une_commande(H.unescape(contenu)):
-            return f'<kbd>{contenu}</kbd>'
-        return ('<span class="cmd-en-ligne"><kbd>' + contenu + '</kbd>'
-                + bouton_copie(H.unescape(contenu)) + '</span>')
+            html = f'<kbd>{contenu}</kbd>'
+        else:
+            html = ('<span class="cmd-en-ligne"><kbd>' + contenu + '</kbd>'
+                    + bouton_copie(H.unescape(contenu)) + '</span>')
+        sanctuaires.append(html)
+        return f'\x00{len(sanctuaires) - 1}\x00'
     t = re.sub(r'`([^`]+)`', kbd, t)
     t = re.sub(r'\*\*([^*]+)\*\*', r'<strong>\1</strong>', t)
     t = re.sub(r'\*([^*]+)\*', r'<em>\1</em>', t)
+    t = re.sub(r'\x00(\d+)\x00', lambda m: sanctuaires[int(m.group(1))], t)
     return t
 
 lines = open(SRC).read().split("\n")
