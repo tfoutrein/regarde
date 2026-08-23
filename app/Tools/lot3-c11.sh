@@ -168,11 +168,44 @@ for png in "${PLEINS[@]}"; do
     fi
 done
 
+# ── 5 bis. La monotonie des numéros lus ──────────────────────────────────────
+#
+# Le contrôle qui manquait, et qui a trouvé un défaut que le journal ne pouvait
+# pas voir. Les marques sont tracées dans l'ordre du temps ; le compteur du
+# témoin ne décroît jamais. Si le numéro lu sur la marque N+1 est inférieur ou
+# égal à celui de la marque N, une des deux images vient du mauvais instant.
+#
+# Mesuré le 23 août 2026 : sur dix marques, la deuxième portait un numéro
+# INFÉRIEUR à la première — une image 1,40 s trop tôt, rendue par le repli de
+# tolérance qui avait écrasé l'image exacte du premier passage. Le bloc
+# EXTRACTION annonçait pourtant « 548 ms » d'âge, et rien d'autre ne clochait.
+echo
+echo "── Monotonie des numéros ──"
+python3 - "${DEPOT}/lectures.txt" <<'MONO'
+import sys
+lignes = [l.split() for l in open(sys.argv[1]) if l.strip()]
+lus = [(n, int(v)) for n, v in lignes if v.isdigit()]
+if len(lus) < 2:
+    print("  ⚠ moins de deux réglettes lues — contrôle impossible")
+    sys.exit(0)
+casses = [(a, b) for (a, va), (b, vb) in zip(lus, lus[1:]) if vb <= va]
+for a, b in casses:
+    print(f"  ✗ {a} → {b} : le numéro ne croît pas")
+if casses:
+    print(f"  {len(casses)} rupture(s) — au moins une image vient du mauvais instant.")
+    print("  C'est un refus opposable : la chaîne d'extraction se trompe de frame.")
+    sys.exit(1)
+ecarts = [vb - va for (_, va), (_, vb) in zip(lus, lus[1:])]
+print(f"  ✓ {len(lus)} numéros strictement croissants "
+      f"(écarts de {min(ecarts)} à {max(ecarts)} images)")
+MONO
+MONOTONE=$?
+
 cp "${FRAMES}/c11.json" "${DEPOT}/" 2>/dev/null || true
 
 # ── 6. Les quatre refus, et la ligne de base ─────────────────────────────────
 echo
-python3 - "${DEPOT}" "${SORTIE}/${RUN}" <<'PY'
+MONOTONE="${MONOTONE}" python3 - "${DEPOT}" "${SORTIE}/${RUN}" <<'PY'
 import glob, json, os, statistics, sys
 
 depot, depotPage = sys.argv[1], sys.argv[2]
@@ -183,6 +216,17 @@ try:
     c11 = json.load(open(os.path.join(depot, "c11.json")))
 except Exception as e:
     print(f"✗ c11.json illisible : {e}"); sys.exit(3)
+
+# Refus 5 — les numéros lus ne croissent pas.
+#
+# Ajouté le 23 août 2026, après qu'il eut trouvé ce que rien d'autre ne voyait :
+# une image 1,40 s trop tôt sur la deuxième marque de dix, pendant que le bloc
+# EXTRACTION annonçait un âge de 548 ms et qu'aucun autre indicateur ne bougeait.
+# C'est le seul contrôle qui compare la CHAÎNE à elle-même plutôt qu'à ses
+# propres déclarations.
+if os.environ.get("MONOTONE", "0") not in ("0", ""):
+    refus.append("les numéros lus sur les réglettes ne croissent pas : au moins "
+                 "une image vient du mauvais instant. Voir le détail plus haut.")
 
 # Refus 4 — la capture visible.
 if c11.get("captureVisible"):

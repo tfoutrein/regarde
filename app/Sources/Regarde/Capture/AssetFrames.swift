@@ -154,6 +154,16 @@ enum AssetFrames {
         }
         guard !temps.isEmpty else { return ([], refus) }
 
+        // TRIÉS. `generateCGImagesAsynchronously` traite le tableau dans l'ordre
+        // reçu, et les temps sortaient groupés par marque : t−0,8 · t · t+0,4, puis
+        // un saut en arrière de 1,2 s pour la marque suivante. Chaque saut en
+        // arrière oblige le décodeur à repartir de l'image clé précédente.
+        //
+        // Avec les tolérances nulles, ce coût n'est plus amorti par le saut à
+        // l'image clé : 3 808 ms mesurés sur trente instants le 23 août, contre un
+        // budget de 3 s au § 5.5. Un ordre croissant laisse le décodeur avancer.
+        temps.sort { $0.timeValue.seconds < $1.timeValue.seconds }
+
         let asset = AVURLAsset(url: segment.fileURL)
         let generateur = AVAssetImageGenerator(asset: asset)
         generateur.appliesPreferredTrackTransform = true
@@ -196,7 +206,23 @@ enum AssetFrames {
         //
         // Le résultat est marqué `repli` : le journal le dit, plutôt que de laisser
         // croire à une extraction exacte.
-        let aRejouer = collecteur.aRejouer
+        // Et il ne concerne QUE les marques restées sans image. Le premier
+        // passage demande trois instants par marque ; il suffit qu'un seul des
+        // trois échoue — celui d'après la marque, hors des bornes du segment —
+        // pour que le repli soit déclenché. Sans ce filtre, il rendait alors une
+        // image sautée à l'image clé qui ÉCRASAIT l'image exacte déjà obtenue.
+        //
+        // Mesuré le 23 août 2026 : la marque 2 d'une session de dix portait une
+        // image 1,40 s trop tôt, et le bloc EXTRACTION annonçait « depuis le
+        // fichier 11 » pour dix marques — une marque remplacée deux fois. Le
+        // journal ne pouvait pas le voir : l'âge annoncé, 548 ms, était celui de
+        // l'image de repli, pas l'erreur réelle. C'est la RÉGLETTE qui l'a
+        // attrapé, en refusant d'être monotone.
+        let dejaServies = Set(recues.map(\.markID))
+        let aRejouer = collecteur.aRejouer.filter { t in
+            guard let d = parTemps[t.seconds.rounded(toPlaces: 4)] else { return false }
+            return !dejaServies.contains(d.markID)
+        }
         if !aRejouer.isEmpty {
             let secours = AVAssetImageGenerator(asset: asset)
             secours.appliesPreferredTrackTransform = true

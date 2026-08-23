@@ -245,6 +245,10 @@ Pour ne pas le chercher :
       FAIRE : `./Tools/lot3-c11.sh` et suivre ses instructions.
       REGARDER : le verdict en fin de script.
       ATTENDU : aucun refus opposable, et une latence dans la plage annoncée.
+      ATTENDU : le bloc `Monotonie des numéros` dit `✓ N numéros strictement
+      croissants`. C'est le contrôle qui compare la chaîne à elle-même : les marques
+      sont tracées dans l'ordre du temps, donc le compteur du témoin ne peut pas
+      reculer d'une marque à la suivante.
       SI ÇA RATE : le script nomme lequel de ses quatre refus s'applique. Il ne rend
       **pas** de verdict C11 sur cette chaîne — c'est voulu, et c'est écrit dans sa
       sortie.
