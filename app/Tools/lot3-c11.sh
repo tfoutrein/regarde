@@ -110,7 +110,7 @@ if [[ "${SIG}" != *'regarde-temoin'* ]]; then
     done
 fi
 open -a "Google Chrome" \
-     "http://127.0.0.1:${PORT}/index.html?run=${RUN}&plan=c11&mode=compteur&duree=30&hud=0&auto=armer&depot=run"
+     "http://127.0.0.1:${PORT}/index.html?run=${RUN}&plan=c11&mode=compteur&duree=900&hud=0&auto=armer&depot=run"
 sleep 3
 osascript -e 'tell application "Google Chrome" to activate' >/dev/null
 osascript <<'AS' >/dev/null 2>&1 || echo "  ⚠ menu Présentation inatteignable — plein écran à la main"
@@ -129,10 +129,60 @@ sleep 2
 echo
 echo "── Pont d'horloge — ${PONTS} clics nus ──"
 echo "  Lance Regarde avec --c11-bench et ouvre une session (⌃⌥S) AVANT de continuer."
-echo "  Puis clique ${PONTS} fois au centre de l'écran, sans modificateur."
+echo "  Puis clique ${PONTS} fois au centre de l'écran, sans modificateur —"
+echo "  les clics doivent atterrir SUR LA PAGE, pas sur un terminal."
 echo "  Enfin trace ${MARQUES} marques en ⌥⌘-glisser, et ferme par ⌃⌥F."
 echo
 read -r -p "  Appuie sur Entrée quand la session est publiée… " _
+
+# ── 4 bis. Faire déposer la page, APRÈS coup ─────────────────────────────────
+#
+# C'est l'ordre qui compte, et il était faux. La page était ouverte avec
+# `duree=30` : son plan s'achevait et elle déposait trente secondes après
+# l'armement — donc avant même que Regarde soit lancé. Les clics du pont, tracés
+# ensuite, n'étaient dans aucun dépôt, et le banc s'abstenait pour « 0 clic vu
+# par la page » alors que la page les avait bien vus.
+#
+# Le plan dure maintenant quinze minutes, et c'est ICI qu'on demande le dépôt,
+# une fois le travail fait. ⌃⌥D est le verbe de dépôt du témoin ; ⌃⌥S, F, M et L
+# sont interdits, Regarde les capte en raccourcis globaux.
+echo
+echo "── Dépôt du relevé de la page ──"
+osascript <<'AS' >/dev/null 2>&1 || echo "  ⚠ dépôt automatique impossible — fais ⌃⌥D dans Chrome à la main"
+tell application "Google Chrome" to activate
+delay 1
+tell application "System Events" to key code 2 using {control down, option down}
+AS
+sleep 2
+
+# Et on VÉRIFIE, au lieu de le découvrir au verdict. Le dépôt peut manquer pour
+# trois raisons — Chrome pas au premier plan, plan déjà clos, page rechargée — et
+# les trois se rattrapent en dix secondes si on les nomme tout de suite.
+for essai in 1 2 3; do
+    ALIGNS="$(python3 - "${SORTIE}/${RUN}" <<'CHK'
+import glob, json, os, sys
+n = 0
+for f in glob.glob(os.path.join(sys.argv[1], "*.json")):
+    try: o = json.load(open(f))
+    except Exception: continue
+    n += len((o.get("c11") or {}).get("clockAligns") or [])
+print(n)
+CHK
+)"
+    [[ "${ALIGNS}" -gt 0 ]] && break
+    echo "  ⚠ aucun clic dans le dépôt (essai ${essai}/3)."
+    if [[ ${essai} -lt 3 ]]; then
+        echo "    Passe sur Chrome et fais ⌃⌥D, puis reviens ici."
+        read -r -p "    Entrée pour revérifier… " _
+    fi
+done
+if [[ "${ALIGNS}" -gt 0 ]]; then
+    echo "  ✓ ${ALIGNS} clic(s) déposé(s) par la page"
+else
+    echo "  ✗ la page n'a déposé aucun clic — le pont d'horloge ne pourra pas se faire."
+    echo "    Les clics doivent être NUS (sans modificateur) et atterrir sur la page"
+    echo "    en plein écran, pas sur le terminal."
+fi
 
 # ── 5. Dépouillement ─────────────────────────────────────────────────────────
 DERNIERE="$(ls -1dt "${HOME}/Regarde/sessions"/*/ 2>/dev/null | head -1)"
@@ -285,6 +335,10 @@ if premiere is not None and decalages:
 # ── Ligne de base ────────────────────────────────────────────────────────────
 print()
 print("── Ligne de base — chaîne PONCTUELLE du lot 2 ──")
+print("  Cette latence mesure le FILET RAM, qui capture au relâchement. Depuis le")
+print("  lot 3 il n'est plus le chemin normal : l'image publiée vient du FICHIER, à")
+print("  l'instant du mouseDown. Un dépassement ici ne dit rien de C11 — c'est la")
+print("  monotonie des réglettes, plus haut, qui juge la chaîne continue.")
 if releves:
     lat = sorted((r["arrivee"] - r["t"]) * 1000 for r in releves)
     med = lat[len(lat)//2]
