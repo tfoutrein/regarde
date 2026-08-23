@@ -38,15 +38,16 @@ fi
 echo "  ✓ AVAssetImageGenerator n'est appelé que dans ${PORTEUR}"
 
 # Les tolérances doivent y être posées explicitement, et dans le bon sens.
-AVANT=$(grep -c "requestedTimeToleranceBefore = .positiveInfinity" "${SRC}/Capture/${PORTEUR}" || echo 0)
+AVANT=$(grep -c "requestedTimeToleranceBefore = .zero" "${SRC}/Capture/${PORTEUR}" || echo 0)
 APRES=$(grep -c "requestedTimeToleranceAfter = .zero" "${SRC}/Capture/${PORTEUR}" || echo 0)
 if [[ "${AVANT}" -lt 1 || "${APRES}" -lt 1 ]]; then
     echo "  ✗ les tolérances ne sont pas posées explicitement"
-    echo "    before = .positiveInfinity autorise à remonter, after = .zero interdit d'avancer."
-    echo "    Par défaut, le générateur rendrait « la plus proche » — parfois celle d'APRÈS."
+    echo "    Les deux à zéro : le générateur rend la frame dont l'intervalle CONTIENT"
+    echo "    l'instant demandé. Avec .positiveInfinity avant, il rendait l'image clé"
+    echo "    précédente — mesuré à 812 ms d'écart, sous le GOP d'une seconde."
     exit 5
 fi
-echo "  ✓ tolérances explicites — before = ∞, after = 0"
+echo "  ✓ tolérances explicites — zéro des deux côtés"
 
 # Et un seul appel de génération : un par marque rouvrirait l'asset à chaque fois.
 # Commentaires exclus ici aussi : l'en-tête du fichier EXPLIQUE pourquoi il n'y a

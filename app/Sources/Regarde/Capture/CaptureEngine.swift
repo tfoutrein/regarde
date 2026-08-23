@@ -173,6 +173,18 @@ actor CaptureEngine {
         flux[displayID]?.segmentID
     }
 
+    /// L'instantané pris à la PRESSION pour une marque, s'il existe.
+    ///
+    /// C'est ce qui transporte le MOUVEMENT jusqu'à la marque. Sans lui, le plan de
+    /// burst voyait `0 frame(s)/s · 0.000 de surface` sur chaque marque, quel que
+    /// soit ce qui bougeait à l'écran — et rendait donc toujours une image, jamais
+    /// trois. Le mécanisme entier de S40 était inerte, et son journal l'annonçait
+    /// sans que personne ne lise le zéro comme une panne.
+    func instantane(pour displayID: CGDirectDisplayID, sequence: UInt64) -> FrameSnapshot? {
+        guard sequence != 0 else { return nil }
+        return flux[displayID]?.anneau.reclamer(sequence)
+    }
+
     /// Les statistiques par écran, pour le journal et le banc.
     func bilans() -> [(CGDirectDisplayID, StreamStats)] {
         flux.map { ($0.key, $0.value.stats) }.sorted { $0.0 < $1.0 }

@@ -197,7 +197,7 @@ actor MarkCapture {
 
     /// Capture et recadre une marque, sans rien écrire. La gravure viendra à la
     /// fermeture de session, quand l'intention est connue et la marque confirmée.
-    func capture(mark: Mark, motion: MotionSample = MotionSample()) async throws {
+    func capture(mark: Mark) async throws {
         let shot = try await ScreenCapture.shared.capture(displayID: mark.displayID)
         let capture = shot.image
         let captureSize = CGSize(width: capture.width, height: capture.height)
@@ -244,6 +244,16 @@ actor MarkCapture {
         } else {
             segment = await CaptureEngine.shared.segmentID(pour: mark.displayID)
         }
+
+        // Le MOUVEMENT vient de l'instantané que le tap a demandé à la pression.
+        //
+        // Il ne pouvait pas venir d'ailleurs : il se mesure sur `encodeQueue`, au fil
+        // des frames, et la marque n'y a pas accès. Le paramètre par défaut valait
+        // `MotionSample()` — tout à zéro — et personne ne le renseignait : le plan de
+        // burst voyait donc un écran immobile même en pleine animation.
+        let instantane = await CaptureEngine.shared.instantane(pour: mark.displayID,
+                                                               sequence: mark.snapshot)
+        let motion = instantane?.motion ?? MotionSample()
 
         // Une capture peut atterrir ICI après que l'utilisateur a annulé sa marque : la
         // tâche part au relâchement, ScreenCaptureKit prend quelques dizaines de

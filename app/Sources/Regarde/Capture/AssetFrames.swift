@@ -21,20 +21,31 @@ import os
 //                                réouvertures. Un appel, tous les temps, par
 //                                segment.
 //
-//   les TOLÉRANCES ne sont pas   `before = .positiveInfinity` autorise à remonter
-//   symétriques                  aussi loin qu'il faut ; `after = .zero` interdit
-//                                d'avancer. Le générateur rend donc TOUJOURS la
-//                                frame à l'instant demandé ou AVANT — jamais
-//                                après.
+//   les TOLÉRANCES sont NULLES   des deux côtés, et c'est un amendement au § 5.2,
+//                                obtenu par la mesure.
 //
-//                                C'est la sémantique voulue, et elle est le
-//                                pendant exact de l'appariement du § 5.3 :
-//                                l'utilisateur désigne ce qu'il VOIT, donc la
-//                                dernière image affichée. Laisser les tolérances
-//                                par défaut rendrait « l'image la plus proche »,
-//                                qui est parfois celle d'après — et l'infobulle
-//                                s'y est déjà refermée. Ce serait B1 à l'échelle
-//                                d'une frame, plus discret et tout aussi faux.
+//                                La spécification demandait
+//                                `before = .positiveInfinity`, en citant un coût
+//                                de seek de 31 ms. Mais cette tolérance AUTORISE
+//                                le générateur à remonter aussi loin qu'il veut :
+//                                il rend donc l'IMAGE CLÉ précédente, qui est la
+//                                moins chère à produire. Avec le GOP forcé à une
+//                                seconde, l'image rendue peut être fausse d'une
+//                                seconde entière — et C11 ne pourrait jamais
+//                                passer.
+//
+//                                Mesuré sur la machine de l'auteur le 23 août :
+//                                812,8 ms d'écart entre l'instant demandé et
+//                                l'instant obtenu, sur huit marques. Juste sous
+//                                l'intervalle d'image clé, ce qui nomme la cause.
+//
+//                                À zéro des deux côtés, le générateur rend la
+//                                frame dont l'intervalle de présentation CONTIENT
+//                                l'instant demandé : celle que l'utilisateur avait
+//                                sous les yeux. Le décodage coûte alors le trajet
+//                                depuis l'image clé précédente — et c'est
+//                                précisément ce que le GOP d'une seconde borne.
+//                                Le GOP sert la PRÉCISION, pas la paresse.
 // ─────────────────────────────────────────────────────────────────────────────
 
 enum AssetFrames {
@@ -139,11 +150,9 @@ enum AssetFrames {
         let asset = AVURLAsset(url: segment.fileURL)
         let generateur = AVAssetImageGenerator(asset: asset)
         generateur.appliesPreferredTrackTransform = true
-        // LES TOLÉRANCES. Voir l'en-tête : jamais après, aussi loin avant qu'il
-        // faut. C'est le pendant de l'appariement « au PTS inférieur le plus
-        // proche » du § 5.3, et les deux disent la même chose — on rend ce que
-        // l'utilisateur VOYAIT.
-        generateur.requestedTimeToleranceBefore = .positiveInfinity
+        // LES TOLÉRANCES, à zéro des deux côtés. Voir l'en-tête : `.positiveInfinity`
+        // avant faisait rendre l'image clé précédente, jusqu'à une seconde trop tôt.
+        generateur.requestedTimeToleranceBefore = .zero
         generateur.requestedTimeToleranceAfter = .zero
 
         // Le rappel du générateur est appelé depuis plusieurs threads. Un

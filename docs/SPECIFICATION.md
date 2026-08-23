@@ -397,6 +397,14 @@ Sans pré-roll, le parcours réel est : le bug survient → raccourci → `armin
 
 L'anneau de 4 frames ne couvre que **0,27 s à 15 fps** : il sert à l'appariement du `mouseDown` (§ 5.3), jamais aux marques rétroactives. Le dimensionner pour couvrir 4 s demanderait 60 frames, soit 1,77 GiB à pleine résolution — exclu par la même arithmétique qui a écarté le ring buffer RAM (§ 4.1). Le seek dans le fichier encodé coûte 31 ms avec le GOP forcé à 1 s, ce qui reste sous le seuil de perception.
 
+> **Amendement (S43, par la mesure).** Cette section demandait à l'origine une tolérance de seek `before = .positiveInfinity` / `after = .zero`, en s'appuyant sur les 31 ms citées plus haut. C'était une erreur de raisonnement, et elle rendait **C11 structurellement impassable**.
+>
+> `requestedTimeToleranceBefore = .positiveInfinity` n'exprime pas « rends la frame juste avant » : elle *autorise* le générateur à remonter aussi loin qu'il veut. Il choisit donc l'option la moins chère — l'**image clé** précédente. Avec le GOP forcé à une seconde, l'image rendue peut être fausse d'une seconde entière.
+>
+> Mesuré le 23 août 2026 sur une session de 18 s à 15 fps : **812,8 ms** de pire écart entre l'instant demandé et l'instant obtenu, sur huit marques. Juste sous l'intervalle d'image clé, ce qui nomme la cause sans ambiguïté. Les 8 images venaient bien du fichier, l'appariement était juste, l'horloge était recalée — et l'utilisateur aurait reçu l'écran d'il y a huit dixièmes de seconde. B1 sous un autre nom.
+>
+> Les tolérances sont donc **nulles des deux côtés**. Le générateur rend alors la frame dont l'intervalle de présentation *contient* l'instant demandé : celle que l'utilisateur avait sous les yeux. Le décodage coûte le trajet depuis l'image clé précédente — au plus 15 frames — et c'est exactement ce que le GOP d'une seconde borne. **Le GOP sert la précision, pas la paresse** : sans tolérance nulle, il ne bornait rien du tout, il autorisait l'erreur.
+
 **Filet supplémentaire :** au tout premier instant du raccourci, avant `arming`, un `SCScreenshotManager.captureImage` synchrone. Une image existe quoi qu'il arrive ensuite.
 
 ### 5.2 Session : configuration et budget
@@ -420,7 +428,7 @@ Sans `width`/`height` explicites, la capture sort en 1920×1080 : perte de réso
 | CPU encodage | 0,30 s pour 20 s de capture 3456×2234 à 15 fps = 1,5 % d'un cœur |
 | RSS | 33 MiB stable, plus l'anneau de 4 frames (≈ 120 MiB à pleine résolution) |
 | Disque | 6,2 Mb/s HEVC = 46,7 MiB/min, ~470 MiB pour 10 min |
-| Seek | 31 ms par frame, GOP forcé à 1 s, tolérance `before = .positiveInfinity` / `after = .zero` |
+| Seek | GOP forcé à 1 s, tolérance **`.zero` des deux côtés** — voir l'amendement ci-dessous |
 
 **Poste non chiffré dans la conception initiale et à surveiller :** la copie de chaque frame `.complete` dans l'anneau applicatif brûle 440 MiB/s de bande passante mémoire en permanence, avec la pollution de cache associée. Ce n'est pas dans les 1,5 % de CPU, qui mesurent l'encodage. Mitigation : ne copier dans l'anneau que si l'écran a bougé (`dirtyRatio > 0`) et n'entretenir l'anneau qu'à partir de la première tenue de ⌥⌘ de la session.
 
