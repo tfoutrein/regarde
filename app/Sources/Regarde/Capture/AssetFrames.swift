@@ -72,6 +72,13 @@ enum AssetFrames {
         /// marque : c'est la mesure directe de ce que B1 aurait coûté.
         let ecartMs: Double
         let source: ImageSource
+        /// L'image a-t-elle demandé un SECOND passage, tolérance relâchée ?
+        var repli: Bool = false
+        /// L'écran de cette marque bougeait-il ? C'est ce qui rend `ecartMs`
+        /// interprétable : sur un écran immobile, un écart de 650 ms est l'âge de
+        /// la dernière image encodée, et son contenu est exact — rien n'avait
+        /// changé. Sur un écran animé, le même écart est une image fausse.
+        var ecranBougeait: Bool = false
     }
 
     /// Pourquoi une marque n'a pas eu son image du fichier.
@@ -170,7 +177,64 @@ enum AssetFrames {
                 }
             }
         }
-        let (recues, refusees) = collecteur.moisson()
+        var (recues, refusees) = collecteur.moisson()
+
+        // LE SECOND PASSAGE, tolérance relâchée — S43 quinquies.
+        //
+        // La tolérance nulle est juste, mais elle peut ÉCHOUER : sur un écran
+        // immobile, l'encodeur n'écrit presque rien, et aucune frame ne couvre
+        // l'instant demandé. Le générateur rend alors « Cannot Decode » et la
+        // marque retombe sur le filet RAM — une image prise au relâchement, donc
+        // une à deux secondes trop tard. C'est exactement ce que le lot 3 corrige,
+        // remis par la porte de derrière.
+        //
+        // Ces temps-là sont donc rejoués avec `before = .positiveInfinity`. Le
+        // risque de cette tolérance est le saut à l'image clé, jusqu'à une seconde
+        // en arrière — mais il ne se paie QUE là où le premier passage a échoué,
+        // c'est-à-dire sur un écran qui ne produit pas de frames. Et sur un écran
+        // qui ne change pas, l'image d'il y a une seconde est la bonne.
+        //
+        // Le résultat est marqué `repli` : le journal le dit, plutôt que de laisser
+        // croire à une extraction exacte.
+        let aRejouer = collecteur.aRejouer
+        if !aRejouer.isEmpty {
+            let secours = AVAssetImageGenerator(asset: asset)
+            secours.appliesPreferredTrackTransform = true
+            secours.requestedTimeToleranceBefore = .positiveInfinity
+            secours.requestedTimeToleranceAfter = .zero
+            let second = Collecteur(attendus: aRejouer.count, index: parTemps,
+                                    principal: principal,
+                                    preRoll: segment.resolutionReduite)
+            await withCheckedContinuation { (suite: CheckedContinuation<Void, Never>) in
+                secours.generateCGImagesAsynchronously(forTimes: aRejouer.map { NSValue(time: $0) }) {
+                    demande, image, obtenu, resultat, erreur in
+                    if second.recevoir(demande: demande, image: image, obtenu: obtenu,
+                                       resultat: resultat, erreur: erreur) {
+                        suite.resume()
+                    }
+                }
+            }
+            let (sauvees, echecs) = second.moisson()
+            // Les marques sauvées quittent la liste des refus : elles ont bien leur
+            // image du fichier, seulement obtenue au second essai.
+            let idsSauvees = Set(sauvees.map(\.markID))
+            refusees.removeAll { idsSauvees.contains($0.0) }
+            recues.append(contentsOf: sauvees.map {
+                var r = $0; r.repli = true; return r
+            })
+            refusees.append(contentsOf: echecs)
+            await MainActor.run {
+                Journal.event(.capture, "repli de tolérance — \(sauvees.count) image(s) "
+                              + "récupérée(s) sur \(aRejouer.count) instant(s) sans frame exacte")
+            }
+        }
+
+        // Chaque image sait si son écran bougeait : sans ça, l'écart demandé/obtenu
+        // n'est pas interprétable.
+        let bouge = Dictionary(demandes.map { ($0.markID, $0.motion.screenWasMoving) },
+                               uniquingKeysWith: { a, _ in a })
+        for i in recues.indices { recues[i].ecranBougeait = bouge[recues[i].markID] ?? false }
+
         await MainActor.run {
             Journal.event(.capture, "burst — \(collecteur.obtenues) frame(s) obtenues "
                           + "sur \(collecteur.demandees) demandée(s)")
@@ -203,6 +267,8 @@ private final class Collecteur: @unchecked Sendable {
     private let preRoll: Bool
     private var images: [AssetFrames.Resultat] = []
     private var refus: [(UUID, AssetFrames.Refus)] = []
+    /// Les temps que le générateur n'a pas su rendre, pour un second passage.
+    private var tempsRefuses: [CMTime] = []
     /// Frames effectivement rendues, toutes marques et tout le burst confondus.
     /// Comparé au nombre demandé, il dit combien de bornes ont été violées.
     private(set) var obtenues = 0
@@ -246,6 +312,7 @@ private final class Collecteur: @unchecked Sendable {
                 }
                 obtenues += 1
             } else {
+                tempsRefuses.append(demande)
                 refus.append((d.markID, erreur.map { .generateurEnErreur($0.localizedDescription) }
                                         ?? .aucuneImage))
             }
@@ -256,6 +323,11 @@ private final class Collecteur: @unchecked Sendable {
     func moisson() -> ([AssetFrames.Resultat], [(UUID, AssetFrames.Refus)]) {
         verrou.lock(); defer { verrou.unlock() }
         return (images, refus)
+    }
+
+    var aRejouer: [CMTime] {
+        verrou.lock(); defer { verrou.unlock() }
+        return tempsRefuses
     }
 }
 

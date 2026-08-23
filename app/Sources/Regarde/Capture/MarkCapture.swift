@@ -327,8 +327,8 @@ actor MarkCapture {
         }
         let debut = Date()
 
-        var remplacees = 0, refusees = 0
-        var ecarts: [Double] = []
+        var remplacees = 0, refusees = 0, replis = 0
+        var ecarts: [(ms: Double, bougeait: Bool)] = []
 
         // L'appariement se fait sur l'ÉCRAN, et non sur l'identité du segment.
         //
@@ -375,7 +375,8 @@ actor MarkCapture {
                                           pointScale: ancien.frame.pointScale),
                     t: ancien.t, motion: ancien.motion, segmentID: ancien.segmentID,
                     source: r.source, ref: ancien.ref)
-                ecarts.append(r.ecartMs)
+                ecarts.append((ms: r.ecartMs, bougeait: r.ecranBougeait))
+                if r.repli { replis += 1 }
                 remplacees += 1
             }
             for (id, motif) in refus {
@@ -388,15 +389,42 @@ actor MarkCapture {
         }
 
         let ms = Date().timeIntervalSince(debut) * 1000
-        let pireEcart = ecarts.map(abs).max() ?? 0
+
+        // DEUX écarts, et les confondre rendait le nombre ininterprétable.
+        //
+        // Sur un écran ANIMÉ, l'écart entre l'instant demandé et l'instant obtenu
+        // est la mesure directe de ce que B1 aurait coûté : il doit rester sous un
+        // intervalle d'encodage, 66,7 ms à 15 fps. C'est le chiffre du critère C11.
+        //
+        // Sur un écran IMMOBILE, le même nombre ne mesure rien de tel. L'encodeur
+        // n'écrit que ce qui change ; un écart de 650 ms y veut dire « la dernière
+        // image date de 650 ms », et son contenu est EXACT puisque rien n'avait
+        // changé depuis. Le présenter comme un défaut a failli me faire corriger
+        // une capture qui était juste.
+        let pireAnime = ecarts.filter(\.bougeait).map { abs($0.ms) }.max() ?? 0
+        let pireFige = ecarts.filter { !$0.bougeait }.map { abs($0.ms) }.max() ?? 0
+        let combienAnimes = ecarts.filter(\.bougeait).count
         await MainActor.run {
-            Journal.block("EXTRACTION", [
+            var lignes: [(String, String)] = [
                 ("depuis le fichier", "\(remplacees)"),
                 ("servies par le filet", "\(refusees)"),
-                // L'écart entre l'instant demandé et l'instant obtenu est la mesure
-                // DIRECTE de ce que B1 aurait coûté. Il doit rester sous un
-                // intervalle d'encodage, soit 66,7 ms à 15 fps.
-                ("pire écart demandé/obtenu", String(format: "%.1f ms", pireEcart)),
+            ]
+            if combienAnimes > 0 {
+                lignes.append(("pire écart demandé/obtenu",
+                               String(format: "%.1f ms  sur %d marque(s) à l'écran animé",
+                                      pireAnime, combienAnimes)))
+            } else {
+                lignes.append(("pire écart demandé/obtenu",
+                               "sans objet — aucune marque sur un écran animé"))
+            }
+            if pireFige > 0 {
+                lignes.append(("âge de l'image, écran immobile",
+                               String(format: "%.1f ms  attendu : rien n'avait changé", pireFige)))
+            }
+            if replis > 0 {
+                lignes.append(("obtenues au second essai", "\(replis)  tolérance relâchée"))
+            }
+            Journal.block("EXTRACTION", lignes + [
                 ("durée", String(format: "%.0f ms", ms)),
             ])
         }

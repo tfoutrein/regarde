@@ -210,10 +210,16 @@ Pour ne pas le chercher :
       juste au-dessus du bloc.
 
 - [ ] **3.3** L'image extraite est celle du bon instant
+      FAIRE : cette mesure n'a de sens que sur un écran qui BOUGE. Reprenez la session
+      du 3.1, témoin en mode compteur animé.
       REGARDER : dans le bloc `EXTRACTION`, la ligne `pire écart demandé/obtenu`.
       ATTENDU : une valeur **inférieure à 67 ms**.
+      ATTENDU : la ligne précise `sur N marque(s) à l'écran animé`, avec N égal au
+      nombre de marques tracées.
       SI ÇA RATE : 67 ms est l'intervalle entre deux images encodées à 15 fps. Au-delà,
-      le générateur a rendu une autre image que celle demandée.
+      le générateur a rendu une autre image que celle demandée. Si la ligne dit
+      `sans objet — aucune marque sur un écran animé`, l'écran ne bougeait pas assez :
+      la mesure n'a pas eu lieu, ce n'est ni un succès ni un échec.
 
 - [ ] **3.4** La réglette est lisible dans chaque image
       FAIRE : pour chaque image, lancer
@@ -233,15 +239,31 @@ Pour ne pas le chercher :
       **pas** de verdict C11 sur cette chaîne — c'est voulu, et c'est écrit dans sa
       sortie.
 
-- [ ] **3.6** Sur un écran immobile, la capture de secours prend le relais et le dit
-      FAIRE : passer le témoin en mode horloge et **le laisser immobile** (ou annoter
-      une fenêtre figée). Ouvrir une session, tracer trois marques, fermer.
-      REGARDER : le bloc `EXTRACTION` et les lignes qui le précèdent.
-      ATTENDU : `servies par le filet   3`, avec pour chacune un motif nommé —
-      probablement `segment vide`.
-      SI ÇA RATE : un écran strictement immobile ne produit aucune image : le segment
-      est vide, et c'est normal. Ce qui compterait comme défaut, c'est que ça ne se
-      dise pas.
+- [ ] **3.6** Sur un écran immobile, l'image reste juste et le journal le dit
+      FAIRE : annoter une fenêtre vraiment figée — le Finder, ou une image ouverte dans
+      Aperçu. Pas un navigateur : ils recomposent en continu. Ouvrir une session,
+      tracer trois marques, fermer.
+      REGARDER : le bloc `EXTRACTION` et le bloc `FLUX` de l'écran annoté.
+      ATTENDU : `depuis le fichier   3` — l'écran immobile n'empêche pas l'extraction.
+      ATTENDU : dans le bloc `FLUX`, `autres statuts` **non nul** : c'est la preuve que
+      l'écran était bien au repos.
+      ATTENDU : `1 frame(s) au plan` sur les trois marques — pas de burst sur un écran
+      qui ne bouge pas.
+      SI ÇA RATE : une ligne `âge de l'image, écran immobile` de plusieurs centaines de
+      millisecondes n'est **pas** un défaut : l'encodeur n'écrit que ce qui change, et
+      l'image d'il y a 600 ms est exacte puisque rien n'avait bougé depuis. De même,
+      `obtenues au second essai` est normal ici. Le vrai défaut serait
+      `servies par le filet` non nul : ni le passage exact ni le repli n'auraient
+      trouvé d'image.
+
+- [ ] **3.7** La part de l'écran qui change est mesurée dans la bonne unité
+      FAIRE : n'importe quelle session sur un Mac à écran Retina (facteur 2×).
+      REGARDER : dans chaque bloc `FLUX`, la ligne `surface salie`.
+      ATTENDU : `max` **inférieur ou égal à 1.000** sur tous les écrans.
+      ATTENDU : **aucune** mention `← IMPOSSIBLE : recouvrement ou unités`.
+      SI ÇA RATE : une part de surface ne peut pas dépasser 1. Une valeur de 4.000 sur
+      un écran 2× et de 1.000 sur un écran 1× dans la même session veut dire que les
+      rectangles salis, qui arrivent en pixels, sont divisés par une surface en points.
 
 ## 4. Le burst — plusieurs images quand l'écran bouge
 

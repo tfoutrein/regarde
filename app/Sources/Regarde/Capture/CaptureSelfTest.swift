@@ -29,6 +29,7 @@ enum CaptureSelfTest {
         boitage(t)
         segments(t)
         demandesMultiEcrans(t)
+        surfaceSalie(t)
         print("\n── \(t.passed) vérifications passées, \(t.failed) échouées ──")
         return t.failed == 0
     }
@@ -1044,5 +1045,72 @@ enum CaptureSelfTest {
         anneau.armer(false)
         check(t, "désarmé, la pression n'entre pas dans la file",
               anneau.demander(hostTicks: 999) == 0)
+    }
+
+    /// La part salie, et ses unités — S43 quinquies.
+    ///
+    /// Ce test rejoue la mesure du 23 août 2026 : sur un écran 2× au repos, le
+    /// journal annonçait `max 4.000`, et sur l'écran 1× de la même session
+    /// `max 1.000`. Exactement le carré du facteur d'échelle — `contentRect` est en
+    /// POINTS, `dirtyRects` en PIXELS, et personne ne convertissait.
+    ///
+    /// Ce que ça coûtait : sur un écran Retina immobile, le critère de surface du
+    /// § 5.4 était franchi en permanence et le burst se déclenchait pour rien. Le
+    /// double critère ne tenait plus que par la fréquence.
+    private static func surfaceSalie(_ t: Tally) {
+        print("\n· Part de l'écran qui a changé")
+
+        // Un écran 2× : 1728×1117 points, donc 3456×2234 pixels.
+        let retina = CGRect(x: 0, y: 0, width: 1728, height: 1117)
+        let toutSale2x = [CGRect(x: 0, y: 0, width: 3456, height: 2234)]
+        let r2 = SurfaceSalie.ratio(dirtyRects: toutSale2x,
+                                    contentRectEnPoints: retina, scaleFactor: 2)
+        check(t, "écran 2× entièrement sali — ratio 1, et non 4",
+              abs(r2.brut - 1.0) < 0.001, String(format: "%.3f", r2.brut))
+
+        // Le même écran, la moitié salie.
+        let moitie2x = [CGRect(x: 0, y: 0, width: 3456, height: 1117)]
+        check(t, "écran 2× à moitié sali — ratio 0,5",
+              abs(SurfaceSalie.ratio(dirtyRects: moitie2x, contentRectEnPoints: retina,
+                                     scaleFactor: 2).brut - 0.5) < 0.001)
+
+        // Un écran 1× : points et pixels coïncident, la conversion ne doit rien
+        // changer. C'est ce qui a caché le défaut — l'écran annoté était en 1×.
+        let large = CGRect(x: 0, y: 0, width: 3440, height: 1440)
+        let toutSale1x = [large]
+        check(t, "écran 1× entièrement sali — ratio 1",
+              abs(SurfaceSalie.ratio(dirtyRects: toutSale1x, contentRectEnPoints: large,
+                                     scaleFactor: 1).brut - 1.0) < 0.001)
+
+        // Un curseur de 32×32 pixels sur le grand écran : dérisoire, et il doit le
+        // rester. C'est le cas que le critère de surface existe pour écarter.
+        let curseur = [CGRect(x: 100, y: 100, width: 32, height: 32)]
+        let rc = SurfaceSalie.ratio(dirtyRects: curseur, contentRectEnPoints: large,
+                                    scaleFactor: 1).brut
+        check(t, "un curseur de 32×32 reste sous le seuil de burst",
+              rc < MotionSample.seuilDirty, String(format: "%.6f", rc))
+
+        // Le MÊME curseur sur l'écran 2×. Sans conversion il valait quatre fois
+        // plus : le seuil restait hors d'atteinte ici, mais c'est l'échelle du
+        // défaut qui compte, pas ce cas-ci.
+        let rc2 = SurfaceSalie.ratio(dirtyRects: curseur, contentRectEnPoints: retina,
+                                     scaleFactor: 2).brut
+        check(t, "et sur l'écran 2×, il ne quadruple pas",
+              abs(rc2 - 1024.0 / (3456.0 * 2234.0)) < 1e-9,
+              String(format: "%.8f", rc2))
+
+        // Le bornage, et le brut conservé.
+        let deTrop = [CGRect(x: 0, y: 0, width: 3456, height: 2234),
+                      CGRect(x: 0, y: 0, width: 3456, height: 2234)]
+        let rd = SurfaceSalie.ratio(dirtyRects: deTrop, contentRectEnPoints: retina,
+                                    scaleFactor: 2)
+        check(t, "deux rectangles qui se recouvrent — borné à 1", rd.borne == 1.0)
+        check(t, "mais le brut garde le 2, pour que le journal puisse le dire",
+              abs(rd.brut - 2.0) < 0.001, String(format: "%.3f", rd.brut))
+
+        // Aucun rectangle sale : l'écran n'a pas bougé.
+        check(t, "aucun rectangle sale — ratio nul",
+              SurfaceSalie.ratio(dirtyRects: [], contentRectEnPoints: large,
+                                 scaleFactor: 1).brut == 0)
     }
 }

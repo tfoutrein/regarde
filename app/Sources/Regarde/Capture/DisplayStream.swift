@@ -331,11 +331,33 @@ final class DisplayStream: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
         let rect = (info[.contentRect] as? [String: Any])
             .flatMap { CGRect(dictionaryRepresentation: $0 as CFDictionary) } ?? .zero
 
+        // Lu AVANT la surface salie : c'est lui qui convertit les points du
+        // `contentRect` vers les pixels des `dirtyRects`.
+        let scale = info[.scaleFactor] as? Double ?? 1
+
         // La part de l'écran qui a CHANGÉ depuis la frame précédente. C'est la
         // moitié de la double garde de l'anneau, et l'un des deux critères du plan
         // de burst : sans elle, le curseur clignotant — fréquence élevée, surface
         // dérisoire — déclencherait un burst à chaque marque.
-        let surface = max(rect.width * rect.height, 1)
+        //
+        // EN PIXELS, et c'est la correction de S43 quinquies. `contentRect` arrive
+        // en POINTS — c'est établi depuis S38 — mais `dirtyRects` arrive en
+        // PIXELS. Diviser l'un par l'autre gonflait la mesure du CARRÉ du facteur
+        // d'échelle : ×4 sur un écran 2×.
+        //
+        // La preuve est dans le journal du 23 août : `max 4.000` sur l'écran 2× et
+        // `max 1.000` sur l'écran 1×, à la frame près. Un recouvrement de
+        // rectangles aurait donné des valeurs quelconques, pas exactement le carré
+        // de l'échelle sur l'un et exactement 1 sur l'autre.
+        //
+        // Ce que ça coûtait : sur un écran Retina AU REPOS, le critère de surface
+        // était franchi en permanence et le burst se déclenchait pour rien. Seul le
+        // critère de fréquence retenait encore quelque chose — le double critère du
+        // § 5.4 marchait sur une jambe.
+        // Le calcul lui-même vit dans `SurfaceSalie`, hors du gestionnaire de
+        // frame. C'est la deuxième fois qu'une confusion points/pixels passe ici —
+        // S38 pour la géométrie, S43 pour la surface — et les deux fois parce que
+        // le calcul était noyé dans une fonction qu'aucun test ne peut appeler.
         //
         // La somme, et non l'union : deux rectangles sales qui se recouvrent sont
         // comptés deux fois. C'est l'approximation par excès assumée — faire
@@ -343,11 +365,12 @@ final class DisplayStream: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
         // qu'un seuil à franchir. Mais elle impose de BORNER : un ratio de surface
         // ne peut pas dépasser 1, et le laisser filer ferait franchir le seuil du
         // burst à un écran presque immobile dont le compositeur bavarde.
-        let dirtyBrut = ((info[.dirtyRects] as? [[String: Any]]) ?? [])
-            .compactMap { CGRect(dictionaryRepresentation: $0 as CFDictionary) }
-            .reduce(0.0) { $0 + Double($1.width * $1.height) } / Double(surface)
-        let dirty = min(dirtyBrut, 1.0)
-        let scale = info[.scaleFactor] as? Double ?? 1
+        let salie = SurfaceSalie.ratio(
+            dirtyRects: ((info[.dirtyRects] as? [[String: Any]]) ?? [])
+                .compactMap { CGRect(dictionaryRepresentation: $0 as CFDictionary) },
+            contentRectEnPoints: rect, scaleFactor: scale)
+        let dirtyBrut = salie.brut
+        let dirty = salie.borne
         let contentScale = info[.contentScale] as? Double ?? 1
         let pts = CMSampleBufferGetPresentationTimeStamp(sample)
 
@@ -430,5 +453,42 @@ final class DisplayStream: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
             }
         }
         return lignes
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// La part de l'écran qui a changé — S43 quinquies
+//
+// Extraite du gestionnaire de frame pour être TESTABLE. Deux défauts d'unités
+// sont passés par cet endroit du code, et les deux fois parce que le calcul
+// vivait dans une fonction qu'aucun test ne peut appeler : elle prend un
+// `CMSampleBuffer` et des attachements de ScreenCaptureKit.
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum SurfaceSalie {
+
+    /// Rend la part salie, bornée et brute.
+    ///
+    /// - `contentRectEnPoints` vient des attachements, donc en POINTS.
+    /// - `dirtyRects` vient des mêmes attachements, mais en PIXELS.
+    ///
+    /// Les diviser l'un par l'autre sans convertir gonfle la mesure du CARRÉ du
+    /// facteur d'échelle. Mesuré le 23 août 2026 : `max 4.000` sur un écran 2×
+    /// contre `max 1.000` sur un écran 1×, dans la même session.
+    ///
+    /// Le BRUT est rendu à côté du borné parce qu'une valeur au-dessus de 1 est
+    /// impossible pour un ratio de surface, et que c'est le seul signal qui
+    /// distingue une erreur d'unités d'un simple recouvrement de rectangles.
+    static func ratio(dirtyRects: [CGRect], contentRectEnPoints rect: CGRect,
+                      scaleFactor scale: Double) -> (borne: Double, brut: Double) {
+        let s = CGFloat(scale)
+        let surfaceEnPixels = max(rect.width * s * rect.height * s, 1)
+        // La somme, et non l'union : deux rectangles qui se recouvrent comptent
+        // deux fois. Approximation par excès assumée — l'union exacte coûterait un
+        // balayage par frame pour un critère qui n'a qu'un seuil à franchir — mais
+        // c'est elle qui impose de borner.
+        let brut = dirtyRects.reduce(0.0) { $0 + Double($1.width * $1.height) }
+            / Double(surfaceEnPixels)
+        return (min(brut, 1.0), brut)
     }
 }
