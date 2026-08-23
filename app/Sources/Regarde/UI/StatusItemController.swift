@@ -202,7 +202,9 @@ final class StatusItemController {
         case .fault:     ("exclamationmark.circle", "permission manquante",  .systemRed)
         }
 
-        let image = NSImage(systemSymbolName: symbol, accessibilityDescription: "Regarde — \(description)")
+        // La couleur voyage DANS l'image — voir `StatusIcon`, et l'autotest
+        // `--icone-test` qui compte les pixels plutôt que de raisonner dessus.
+        let image = StatusIcon.image(symbole: symbol, teinte: tint)
         if image == nil {
             // Un symbole absent rendrait l'élément large de zéro pixel : invisible, alors
             // que son unique raison d'être est de ne pas mentir sur l'état. On bascule sur
@@ -210,24 +212,19 @@ final class StatusItemController {
             log.error("symbole SF « \(symbol, privacy: .public) » introuvable — repli sur le texte")
         }
         button.image = image
-        // `isTemplate` TOUJOURS vrai, et c'est l'inverse de ce qui était écrit.
-        //
-        // `contentTintColor` ne teinte QUE les images template : sur une image non
-        // template, elle n'a aucun effet. Le code posait `isTemplate = (tint == nil)`
-        // — donc faux dès qu'une teinte existait — et désactivait ainsi le mécanisme
-        // qu'il utilisait à la ligne suivante. Le symbole sortait dans sa couleur
-        // par défaut, c'est-à-dire sans couleur, et l'icône ne passait jamais au
-        // rouge en session.
-        //
-        // Un SF Symbol est un glyphe monochrome : le rendre template ne lui retire
-        // rien, et lui donne au contraire le comportement attendu — teinté quand on
-        // le teinte, à la couleur de la barre de menus sinon, y compris en thème
-        // sombre où une couleur codée en dur serait illisible.
-        //
-        // Trouvé par la recette du lot 3, au test 1.1.
-        button.image?.isTemplate = true
         button.title = image == nil ? "◉" : ""
-        button.contentTintColor = tint
+        // `contentTintColor` reste NIL, et ce n'est pas un oubli.
+        //
+        // Deux corrections s'y sont trompées avant qu'un pixel soit compté. Elle ne
+        // teinte que les images template ; et sur un `NSStatusBarButton`, une image
+        // template est de toute façon repeinte par le SYSTÈME à la couleur de la
+        // barre de menus, ce qui écrase toute teinte. Les deux chemins mènent au
+        // noir, ce que l'auteur a constaté deux fois de suite.
+        //
+        // La couleur est donc DANS l'image (`StatusIcon`), et il n'y a plus rien à
+        // teindre ici. `--icone-test` le mesure : 1114 pixels colorés sur 1114
+        // opaques avec la palette, zéro sans elle.
+        button.contentTintColor = nil
         button.toolTip = "Regarde — \(description)"
 
         stateItem.title = SessionCoordinator.shared.blockingReason

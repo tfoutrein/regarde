@@ -46,6 +46,12 @@ if CommandLine.arguments.contains("--marks-test") {
 // Le décodeur de réglette — l'instrument de C11, donc le seul instrument existant
 // contre B1. Il fabrique ses propres images : un instrument dont la vérification
 // exigerait l'appareil qu'il mesure ne se vérifierait jamais.
+// L'icône de la barre de menus se mesure hors écran : deux corrections plausibles
+// s'y sont trompées avant qu'un pixel soit compté.
+if CommandLine.arguments.contains("--icone-test") {
+    exit(MainActor.assumeIsolated { IconSelfTest.run() } ? 0 : 1)
+}
+
 if CommandLine.arguments.contains("--reglette-test") {
     exit(RegletteSelfTest.run() ? 0 : 1)
 }
