@@ -398,12 +398,19 @@ Pour ne pas le chercher :
 ## 6. Ce qui ne doit pas se retrouver dans les images
 
 - [ ] **6.1** Une application sensible ouverte en cours de session est exclue
-      FAIRE : ouvrir une session, puis **lancer** 1Password ou Trousseau d'accès.
+      FAIRE : **quitter d'abord complètement** (⌘Q) le gestionnaire de mots de passe —
+      la ligne attendue ne s'écrit qu'au *lancement*, pas pour une application qui
+      tournait déjà. Puis ouvrir une session, et **lancer** « Mots de passe »,
+      1Password ou le Trousseau d'accès.
       REGARDER : le journal.
       ATTENDU : une ligne `com.xxx lancée et exclue — filtre reconstruit`.
       SI ÇA RATE : sans ce mécanisme, l'exclusion ne vaudrait que pour ce qui tournait
       déjà au démarrage — et un gestionnaire de mots de passe s'ouvre précisément
-      pendant qu'on teste ce à quoi il donne accès.
+      pendant qu'on teste ce à quoi il donne accès. Historique : la première
+      exécution de ce test, le 23 août, a trouvé que « Mots de passe » — le
+      gestionnaire livré avec macOS 15 — manquait à la liste noire, qui ne
+      connaissait que l'ancien Trousseau. Une session l'a capturé sans obstacle.
+      L'exclusion vieillit avec l'OS ; ce test est le seul qui s'en aperçoive.
 
 - [ ] **6.2** Le calque de Regarde n'est pas dans les images
       FAIRE : ouvrir n'importe quelle image publiée dans Aperçu.

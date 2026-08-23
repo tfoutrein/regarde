@@ -28,6 +28,15 @@ final class CaptureExclusions {
         "com.1password.1password",       // 1Password 8
         "com.agilebits.onepassword7",    // 1Password 7
         "com.apple.keychainaccess",      // Trousseau d'accès
+        // « Mots de passe », l'application autonome livrée depuis macOS 15 — le
+        // gestionnaire que macOS propose par défaut, donc celui qu'un utilisateur
+        // ouvre le plus naturellement. Son absence a été trouvée par la recette du
+        // 23 août : une session l'a prise pour CIBLE et a capturé son contenu sans
+        // qu'une seule ligne s'y oppose. La liste contenait l'ancienne application
+        // (le Trousseau) et pas la nouvelle — l'exclusion vieillit avec l'OS, et
+        // c'est le genre de dérive qu'aucun test unitaire n'attrape : il fallait
+        // quelqu'un devant l'écran avec l'application ouverte.
+        "com.apple.Passwords",           // Mots de passe (macOS 15+)
         "com.apple.MobileSMS",           // Messages
         "com.apple.mail",                // Mail
         "org.whispersystems.signal-desktop",
