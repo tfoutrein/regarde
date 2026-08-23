@@ -51,7 +51,27 @@ final class SnapshotRing: @unchecked Sendable {
     private let sequences: UnsafeMutableBufferPointer<UInt64>
     private let ticks: UnsafeMutableBufferPointer<UInt64>
     private let ecrites = Atomic<UInt64>(0)
-    private let lues = Atomic<UInt64>(0)
+    /// Il n'y a PLUS de curseur de lecture partagé ici, et c'est le correctif de
+    /// S43 quater.
+    ///
+    /// Il y en avait un, et `drainer()` l'avançait jusqu'à `ecrites`. Or
+    /// `servirDemandes` est appelé par le flux de CHAQUE écran, chacun sur sa
+    /// propre `encodeQueue` : les écrans couraient après la même file. Celui qui
+    /// drainait le premier rangeait l'instantané dans SON anneau, et la marque,
+    /// qui le cherche dans l'anneau de son écran, ne trouvait rien une fois sur
+    /// deux.
+    ///
+    /// Le symptôme était trompeur : `0 frame(s)/s · 0.000 de surface`, qui se lit
+    /// « l'écran était figé » alors qu'il fallait lire « l'instantané a été volé
+    /// par l'autre écran ». Il ne s'est vu qu'à deux écrans TOUS DEUX actifs —
+    /// quand l'un des deux était au repos, il ne drainait presque jamais et
+    /// l'autre gagnait toutes les courses.
+    ///
+    /// Chaque lecteur porte désormais son propre curseur. Une pression est un
+    /// INSTANT, pas un écran : chaque écran enregistre indépendamment ce qu'il
+    /// montrait à cet instant-là, et le consommateur prend celui dont il a besoin.
+    /// Le tap reste inchangé — lui demander de résoudre l'écran coûterait un appel
+    /// système là où la règle de B2 n'autorise que trois écritures.
     /// L'anneau est-il entretenu ? Lu depuis le thread du tap, hors du main actor.
     private let arme = Atomic<Bool>(false)
 
@@ -80,11 +100,19 @@ final class SnapshotRing: @unchecked Sendable {
         return n
     }
 
-    /// Drainé par `encodeQueue`. Rend les demandes non encore servies.
-    func drainer() -> [(sequence: UInt64, hostTicks: UInt64)] {
+    /// Où en est le producteur — pour qu'un lecteur qui arrive se place à la fin
+    /// plutôt que de rejouer les demandes des sessions précédentes.
+    var curseurActuel: UInt64 { ecrites.load(ordering: .acquiring) }
+
+    /// Drainé par `encodeQueue`, avec le curseur PROPRE à l'appelant.
+    ///
+    /// Ne mute rien : l'avancement du curseur appartient au lecteur. C'est ce qui
+    /// rend la structure sûre à N lecteurs sans verrou ni coordination.
+    func drainer(depuis debut0: UInt64) -> (demandes: [(sequence: UInt64, hostTicks: UInt64)],
+                                            fin: UInt64) {
         let fin = ecrites.load(ordering: .acquiring)
-        var debut = lues.load(ordering: .relaxed)
-        guard fin > debut else { return [] }
+        var debut = debut0
+        guard fin > debut else { return ([], fin) }
         // Si le producteur a débordé l'anneau, on repart de ce qui est encore là
         // plutôt que de rendre des entrées écrasées.
         if fin - debut > UInt64(Self.capacite) { debut = fin - UInt64(Self.capacite) }
@@ -95,8 +123,7 @@ final class SnapshotRing: @unchecked Sendable {
             if sequences[i] == n { sortie.append((n, ticks[i])) }
             n += 1
         }
-        lues.store(fin, ordering: .releasing)
-        return sortie
+        return (sortie, fin)
     }
 }
 
@@ -158,9 +185,16 @@ final class FrameRing: @unchecked Sendable {
     private var fenetre: [(t: Double, dirty: Double)] = []
     private var motion = MotionSample()
 
+    /// Curseur de lecture des demandes, propre à CET anneau. Touché uniquement
+    /// sur `queue`, donc sans verrou.
+    private var curseurDemandes: UInt64
+
     init(queue: DispatchQueue, segmentID: CaptureSegmentID) {
         self.queue = queue
         self.segmentID = segmentID
+        // Placé à la fin de ce qui existe déjà : un anneau qui s'ouvre ne doit pas
+        // rejouer les pressions d'avant son ouverture.
+        self.curseurDemandes = SnapshotRing.shared.curseurActuel
     }
 
     /// Appelé pour CHAQUE frame complète, sur `encodeQueue`.
@@ -213,7 +247,8 @@ final class FrameRing: @unchecked Sendable {
     /// VOIT, donc la dernière image affichée avant sa pression — pas celle qui
     /// arrive après, où l'infobulle s'est déjà refermée.
     private func servirDemandes(pts: CMTime, ref: FrameRef, t: SessionTime, sample: CMSampleBuffer?) {
-        let demandes = SnapshotRing.shared.drainer()
+        let (demandes, fin) = SnapshotRing.shared.drainer(depuis: curseurDemandes)
+        curseurDemandes = fin
         guard !demandes.isEmpty else { return }
 
         for (sequence, ticks) in demandes {

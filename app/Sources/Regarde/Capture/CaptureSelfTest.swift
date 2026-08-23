@@ -28,6 +28,7 @@ enum CaptureSelfTest {
         bilanDeFlux(t)
         boitage(t)
         segments(t)
+        demandesMultiEcrans(t)
         print("\n── \(t.passed) vérifications passées, \(t.failed) échouées ──")
         return t.failed == 0
     }
@@ -572,7 +573,7 @@ enum CaptureSelfTest {
         for i in 0..<20 {
             s.noterFrame(rect: plein, tampon: CGSize(width: 3456, height: 2234),
                          scale: 2, echelleContenu: 1,
-                         pts: CMTime(value: CMTimeValue(i), timescale: 15))
+                         pts: CMTime(value: CMTimeValue(i), timescale: 15), salie: 0)
         }
         check(t, "vingt frames stables ne comptent aucune variation",
               s.variationsContentRect == 0 && s.framesComplete == 20)
@@ -583,7 +584,7 @@ enum CaptureSelfTest {
         // rapportent plus au même repère.
         let autre = CGRect(x: 0, y: 0, width: 1512, height: 982)
         s.noterFrame(rect: autre, tampon: CGSize(width: 3456, height: 2234),
-                     scale: 2, echelleContenu: 1, pts: CMTime(value: 20, timescale: 15))
+                     scale: 2, echelleContenu: 1, pts: CMTime(value: 20, timescale: 15), salie: 0)
         check(t, "un changement de contentRect est compté",
               s.variationsContentRect == 1, "\(s.variationsContentRect)")
 
@@ -591,7 +592,7 @@ enum CaptureSelfTest {
         // le CHANGEMENT qui est l'événement, pas l'écart à la valeur d'origine.
         for i in 21..<25 {
             s.noterFrame(rect: autre, tampon: nil, scale: 2, echelleContenu: 1,
-                         pts: CMTime(value: CMTimeValue(i), timescale: 15))
+                         pts: CMTime(value: CMTimeValue(i), timescale: 15), salie: 0)
         }
         check(t, "rester sur la nouvelle valeur ne recompte pas",
               s.variationsContentRect == 1, "\(s.variationsContentRect)")
@@ -599,9 +600,28 @@ enum CaptureSelfTest {
         // Un aller-retour compte DEUX variations : l'écran est revenu, mais il a
         // bougé deux fois, et deux marques peuvent être tombées de part et d'autre.
         s.noterFrame(rect: plein, tampon: nil, scale: 2, echelleContenu: 1,
-                     pts: CMTime(value: 25, timescale: 15))
+                     pts: CMTime(value: 25, timescale: 15), salie: 0)
         check(t, "un aller-retour compte deux variations",
               s.variationsContentRect == 2, "\(s.variationsContentRect)")
+
+        // La surface salie, retenue BRUTE au bilan.
+        //
+        // Le ratio remis à l'anneau est borné à 1 — un burst ne doit pas se
+        // déclencher parce que le compositeur a rapporté deux rectangles qui se
+        // recouvrent. Mais le bilan garde le brut : c'est lui qui dit s'il y a
+        // recouvrement, ou une confusion points/pixels sur un écran 2×.
+        var d = StreamStats()
+        d.noterFrame(rect: plein, tampon: CGSize?.none, scale: 2, echelleContenu: 1,
+                     pts: .zero, salie: 0.25)
+        d.noterFrame(rect: plein, tampon: CGSize?.none, scale: 2, echelleContenu: 1,
+                     pts: .zero, salie: 2.5)
+        check(t, "le bilan retient la surface salie la plus forte, non bornée",
+              d.salieMax == 2.5, String(format: "%.2f", d.salieMax))
+        check(t, "et la moyenne se calcule sur les frames complètes",
+              abs(d.salieSomme / Double(d.framesComplete) - 1.375) < 0.001,
+              String(format: "%.3f", d.salieSomme / Double(d.framesComplete)))
+        check(t, "une surface > 1 est impossible et doit se voir dans le journal",
+              d.salieMax > 1.0)
 
         // Le premier PTS est retenu, le dernier suit.
         check(t, "premier et dernier PTS encadrent le segment",
@@ -612,7 +632,7 @@ enum CaptureSelfTest {
         var replique = StreamStats()
         replique.demande = CGSize(width: 3456, height: 2234)
         replique.noterFrame(rect: plein, tampon: CGSize(width: 1920, height: 1080),
-                            scale: 2, echelleContenu: 1, pts: .zero)
+                            scale: 2, echelleContenu: 1, pts: .zero, salie: 0)
         check(t, "un tampon en 1920×1080 non demandé est nommé comme tel",
               replique.suspicionDeReplique1080 && !replique.dimensionsHonorees)
 
@@ -621,7 +641,7 @@ enum CaptureSelfTest {
         var voulue = StreamStats()
         voulue.demande = CGSize(width: 1920, height: 1080)
         voulue.noterFrame(rect: plein, tampon: CGSize(width: 1920, height: 1080),
-                          scale: 1, echelleContenu: 1, pts: .zero)
+                          scale: 1, echelleContenu: 1, pts: .zero, salie: 0)
         check(t, "un 1920×1080 DEMANDÉ n'est pas suspect",
               !voulue.suspicionDeReplique1080 && voulue.dimensionsHonorees)
     }
@@ -963,5 +983,66 @@ enum CaptureSelfTest {
               clock.fromStream(CMClockGetTime(CMClockGetHostTimeClock())) != nil
               && clock.horlogeDeFluxID == "essai")
         clock.oublierHorlogeDeFlux()
+    }
+
+    /// Les demandes d'instantané, à DEUX écrans — S43 quater.
+    ///
+    /// Ce test manquait, et son absence a coûté une panne entière. `SnapshotRing`
+    /// n'était couvert par rien : ni sa file, ni son curseur, ni le fait que
+    /// PLUSIEURS flux la drainent. Elle était écrite comme une file à un seul
+    /// consommateur et utilisée par autant de consommateurs qu'il y a d'écrans.
+    ///
+    /// Le symptôme, sur la machine de l'auteur : quatre marques sur huit
+    /// rapportaient « 0 frame(s)/s · 0.000 de surface », donc pas de burst. Et le
+    /// message se lisait « l'écran était figé », ce qui était faux — l'instantané
+    /// avait été drainé par l'autre écran, qui l'avait rangé chez lui.
+    ///
+    /// Il ne se voyait qu'avec DEUX écrans tous deux actifs. Un écran au repos ne
+    /// draine presque jamais, et l'autre gagne toutes les courses : la session
+    /// précédente, où un seul écran bougeait, avait ses huit marques servies.
+    private static func demandesMultiEcrans(_ t: Tally) {
+        let anneau = SnapshotRing.shared
+        anneau.armer(true)
+        defer { anneau.armer(false) }
+
+        // Deux lecteurs, comme deux écrans. Chacun part de la position courante.
+        var ecranA = anneau.curseurActuel
+        var ecranB = anneau.curseurActuel
+
+        let n = anneau.demander(hostTicks: 12_345)
+        check(t, "une pression armée rend un numéro de demande", n != 0)
+
+        let (vuesParA, finA) = anneau.drainer(depuis: ecranA)
+        ecranA = finA
+        let (vuesParB, finB) = anneau.drainer(depuis: ecranB)
+        ecranB = finB
+
+        // LE CŒUR DU TEST. Avec le curseur partagé d'avant, B rendait une liste
+        // VIDE : A l'avait déjà avancé jusqu'à la fin.
+        check(t, "le premier écran voit la demande", vuesParA.contains { $0.sequence == n })
+        check(t, "et le SECOND aussi — le curseur n'est plus partagé",
+              vuesParB.contains { $0.sequence == n },
+              vuesParB.isEmpty ? "liste vide : un écran a drainé pour l'autre" : "")
+
+        // Et l'instant est le même des deux côtés : c'est ce qui autorise chaque
+        // écran à enregistrer ce que LUI montrait, sans se coordonner.
+        check(t, "les deux lisent le même instant de pression",
+              vuesParA.first { $0.sequence == n }?.hostTicks
+                == vuesParB.first { $0.sequence == n }?.hostTicks)
+
+        // Drainer deux fois ne rejoue pas : le curseur du lecteur a avancé.
+        check(t, "un second drainage ne rejoue pas la demande",
+              anneau.drainer(depuis: ecranA).demandes.isEmpty)
+
+        // Un anneau qui s'ouvre APRÈS la pression ne doit pas la rejouer : sinon
+        // une session neuve servirait les pressions de la précédente.
+        let tardif = anneau.curseurActuel
+        check(t, "un lecteur qui arrive après ne rejoue pas le passé",
+              anneau.drainer(depuis: tardif).demandes.isEmpty)
+
+        // Désarmé, rien n'entre — la garde du § 5.3 tient au niveau de la file.
+        anneau.armer(false)
+        check(t, "désarmé, la pression n'entre pas dans la file",
+              anneau.demander(hostTicks: 999) == 0)
     }
 }

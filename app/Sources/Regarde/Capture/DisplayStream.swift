@@ -50,6 +50,19 @@ struct StreamStats: Sendable {
     /// Dernier `contentRect` observé, et le nombre de fois qu'il a changé.
     var contentRect: CGRect?
     var variationsContentRect = 0
+    /// Surface salie : la plus forte observée, et la somme, pour la moyenne.
+    ///
+    /// Au bilan parce que la question « l'écran bougeait-il ? » se pose APRÈS la
+    /// session, sur le journal, et qu'un « écran figé » qui livre 208 frames
+    /// complètes sur 211 doit pouvoir être contredit par un chiffre.
+    ///
+    /// La valeur BRUTE, avant bornage. Un ratio supérieur à 1 est impossible et
+    /// signale l'un de deux défauts : des rectangles sales qui se recouvrent et
+    /// qu'on additionne au lieu d'en faire l'union, ou une confusion points/pixels
+    /// comme celle de S38 — qui, sur un écran 2×, multiplierait la mesure par
+    /// quatre. Le voir écrit est le seul moyen de trancher entre les deux.
+    var salieMax: Double = 0
+    var salieSomme: Double = 0
     var scaleFactor: Double = 0
     var contentScale: Double = 0
     var premierPTS: CMTime?
@@ -84,8 +97,10 @@ struct StreamStats: Sendable {
     /// se rapporte plus au même repère qu'une marque posée après. Rien d'autre ne
     /// le signalerait.
     mutating func noterFrame(rect: CGRect, tampon: CGSize?, scale: Double,
-                             echelleContenu: Double, pts: CMTime) {
+                             echelleContenu: Double, pts: CMTime, salie: Double) {
         framesComplete += 1
+        salieMax = max(salieMax, salie)
+        salieSomme += salie
         if bufferSize == nil { bufferSize = tampon }
         if let precedent = contentRect, precedent != rect { variationsContentRect += 1 }
         contentRect = rect
@@ -321,9 +336,17 @@ final class DisplayStream: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
         // de burst : sans elle, le curseur clignotant — fréquence élevée, surface
         // dérisoire — déclencherait un burst à chaque marque.
         let surface = max(rect.width * rect.height, 1)
-        let dirty = ((info[.dirtyRects] as? [[String: Any]]) ?? [])
+        //
+        // La somme, et non l'union : deux rectangles sales qui se recouvrent sont
+        // comptés deux fois. C'est l'approximation par excès assumée — faire
+        // l'union exacte coûterait un balayage par frame pour un critère qui n'a
+        // qu'un seuil à franchir. Mais elle impose de BORNER : un ratio de surface
+        // ne peut pas dépasser 1, et le laisser filer ferait franchir le seuil du
+        // burst à un écran presque immobile dont le compositeur bavarde.
+        let dirtyBrut = ((info[.dirtyRects] as? [[String: Any]]) ?? [])
             .compactMap { CGRect(dictionaryRepresentation: $0 as CFDictionary) }
             .reduce(0.0) { $0 + Double($1.width * $1.height) } / Double(surface)
+        let dirty = min(dirtyBrut, 1.0)
         let scale = info[.scaleFactor] as? Double ?? 1
         let contentScale = info[.contentScale] as? Double ?? 1
         let pts = CMSampleBufferGetPresentationTimeStamp(sample)
@@ -332,7 +355,8 @@ final class DisplayStream: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
             CGSize(width: CVPixelBufferGetWidth($0), height: CVPixelBufferGetHeight($0))
         }
         verrou.withLock { $0.noterFrame(rect: rect, tampon: taille, scale: scale,
-                                        echelleContenu: contentScale, pts: pts) }
+                                        echelleContenu: contentScale, pts: pts,
+                                        salie: dirtyBrut) }
 
         // Le writer naît ici, à la première frame, quand la taille est CONNUE.
         if writer == nil, let dossier, let taille = taille, echecEcriture == nil {
@@ -396,6 +420,14 @@ final class DisplayStream: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
                                                  r.origin.x, r.origin.y, r.width, r.height,
                                                  s.scaleFactor, s.contentScale)))
             lignes.append(("variations", "\(s.variationsContentRect)"))
+            if s.framesComplete > 0 {
+                let moy = s.salieSomme / Double(s.framesComplete)
+                var texte = String(format: "moy. %.3f · max %.3f", moy, s.salieMax)
+                if s.salieMax > 1.0 {
+                    texte += "  ← IMPOSSIBLE : recouvrement ou unités"
+                }
+                lignes.append(("surface salie", texte))
+            }
         }
         return lignes
     }

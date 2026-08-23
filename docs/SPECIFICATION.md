@@ -450,6 +450,10 @@ func framePlan(for mark: Mark) -> [SessionTime] {
 
 Seuils : `completeFramesLastSecond ≥ 6` **et** `dirtyRatioLastSecond ≥ 0,02`. Le double critère élimine le curseur clignotant (fréquence élevée, surface dérisoire) et le redraw plein écran unique (surface énorme, fréquence 1).
 
+La demande d'instantané du § 5.3 est **globale, et lue par chaque écran avec son propre curseur**. Une pression est un *instant*, pas un écran : chaque flux enregistre indépendamment ce qu'il montrait à cet instant-là, et la marque prend celui de son écran. Un curseur de lecture partagé — ce qu'il y avait jusqu'en S43 — faisait courir les écrans après la même file : celui qui drainait le premier rangeait l'instantané chez lui, et une marque sur deux ne trouvait rien. Le symptôme se lisait `0 frame(s)/s · 0.000 de surface`, c'est-à-dire « écran figé », alors qu'il fallait lire « instantané pris par l'autre écran ». Il ne se manifeste qu'avec **deux écrans tous deux actifs**, ce qui l'a tenu caché.
+
+La surface salie d'une frame est la **somme** des `dirtyRects`, donc une approximation par excès : deux rectangles qui se recouvrent sont comptés deux fois. Elle est **bornée à 1** avant d'entrer dans le critère — un ratio de surface ne peut pas dépasser 1, et le laisser filer ferait franchir le seuil de burst à un écran presque immobile dont le compositeur bavarde. La valeur brute reste au bilan de flux : au-dessus de 1, elle signale soit ce recouvrement, soit une confusion points/pixels comme celle de S38.
+
 `dirtyRatioLastSecond` est la **moyenne** des surfaces salies sur la fenêtre d'une seconde, pas leur somme — précision ajoutée en S43 après qu'une somme s'y soit glissée. Une somme vaut `fréquence × surface moyenne` : elle fait entrer la fréquence dans l'axe surface et détruit l'indépendance dont ce critère dépend entièrement. Sous la somme, un spinner de 86×86 px à 15 fps cumulait 0,0225 et franchissait le seuil — le cas même que le critère existe pour écarter. Une moyenne reste bornée par 1 ; toute valeur au-dessus signale que la somme est revenue.
 
 ### 5.5 Finalisation, par segment
