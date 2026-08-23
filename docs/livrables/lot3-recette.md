@@ -304,13 +304,20 @@ Pour ne pas le chercher :
       15 frames/s, 0.025 de surface, zéro frame idle sur toute la session.
 
 - [ ] **4.3** Un curseur qui clignote ne suffit pas à déclencher un burst
-      FAIRE : ouvrir un terminal vide où **seul le curseur clignote**, rien d'autre.
-      Une session, une marque dessus, fermer.
-      REGARDER : la même ligne.
+      FAIRE : ouvrir **Terminal.app** — pas Warp, pas iTerm GPU — une fenêtre vide où
+      seul le curseur clignote. Aucun `tail -F` du journal sur cet écran : la session
+      écrit des lignes, le tail les affiche, et vous observeriez l'expérience depuis
+      l'intérieur. Une session, une marque dessus, fermer.
+      REGARDER : la même ligne, et `surface salie` dans le bloc `FLUX`.
       ATTENDU : `1 frame(s) au plan`.
-      SI ÇA RATE : si vous obtenez 3, le double critère ne fonctionne pas — un curseur
-      change souvent mais sur une surface dérisoire. Chaque marque coûterait alors
-      trois fois son prix pour rien.
+      SI ÇA RATE : lisez la surface AVANT d'accuser le critère. Un terminal GPU comme
+      Warp re-soumet sa surface entière à chaque battement de curseur, et les
+      `dirtyRects` rapportent ce que le compositeur considère changé, pas ce qui a
+      changé en pixels — mesuré le 23 août : 0.981 de surface moyenne sur un Warp
+      « immobile ». Le critère ne peut pas distinguer une surface re-soumise d'une
+      vraie animation sans comparer les pixels, ce que le § 5.1 exclut par coût.
+      Sur Terminal.app, à rendu CPU, seul le rectangle du curseur est sale et le
+      double critère doit tenir : un 3 y serait un vrai échec.
 
 - [ ] **4.4** Une marque juste avant la fin perd une image, et le dit
       FAIRE : témoin animé, une session, tracer une marque puis fermer **dans la
