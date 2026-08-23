@@ -128,11 +128,21 @@ Pour ne pas le chercher :
       PIXELS ; le rapport entre les deux doit être exactement `scale`. Une variation
       en cours de segment signale un changement de résolution ou une bascule d'espace.
 
-- [ ] **1.4** Chaque écran ferme son propre flux
+- [ ] **1.4** Chaque écran ferme son propre flux, avant que la session publie
       FAIRE : rien de plus, la session vient d'être fermée.
-      REGARDER : le journal, juste après `⌃⌥F`.
-      ATTENDU : une ligne `flux fermé sur display N` **par écran branché**.
-      ATTENDU : puis un bloc `EXTRACTION`.
+      REGARDER : le journal, juste après `⌃⌥F`, **en lisant l'ORDRE des lignes**.
+      ATTENDU : une ligne `flux fermé sur display N` **par écran branché**, chacune
+      suivie de son bloc `FLUX`.
+      ATTENDU : puis `N fichier(s) de capture supprimé(s)`.
+      ATTENDU : et le bloc `FIN DE SESSION` **en dernier**.
+      SI ÇA RATE : si `FIN DE SESSION` s'imprime AVANT les « flux fermé », la
+      publication a gagné la course sur la fermeture des flux. Le symptôme visible
+      est un `.mov` qui reste ; le vrai dégât est que l'extraction n'a rien à ouvrir
+      et que toutes les marques retombent sur la capture au relâchement. Le lot
+      entier serait inopérant, en silence.
+      *Il n'y a de bloc `EXTRACTION` que s'il y a des marques : sans marque, il n'y a
+      rien à extraire, et l'imprimer dirait « 0 sur 0 ». Le bloc apparaît à partir du
+      test 3.2.*
 
 - [ ] **1.5** Aucune vidéo ne survit à la publication
       FAIRE : dans un terminal, `ls $TMPDIR/regarde*/ 2>/dev/null`.
