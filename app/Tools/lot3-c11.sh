@@ -144,7 +144,18 @@ FRAMES="${DERNIERE}frames"
 echo
 echo "── Lecture des réglettes ──"
 : > "${DEPOT}/lectures.txt"
-for png in "${FRAMES}"/marque-*.png; do
+# Les images ENTIÈRES, pas les recadrages. La réglette fait 2176 px de large,
+# dessinée une fois, centrée en bas de l'écran ; les recadrages font 560 à 1120 px
+# et aucun ne peut la contenir. Lire `marque-*.png` refusait donc toujours —
+# « image trop petite » — et le refus ressemblait à un problème de cadrage.
+shopt -s nullglob
+PLEINS=("${FRAMES}"/plein-*.png)
+if [[ ${#PLEINS[@]} -eq 0 ]]; then
+    echo "✗ aucune image entière (plein-*.png) dans ${FRAMES}"
+    echo "  Elles ne sont écrites qu'avec --c11-bench : Regarde tournait-il en mode banc ?"
+    exit 3
+fi
+for png in "${PLEINS[@]}"; do
     [[ -e "${png}" ]] || continue
     printf "  %-16s " "$(basename "${png}")"
     if SORTIE_LECTURE="$("${BIN}" --lire-reglette "${png}" 2>&1)"; then

@@ -304,7 +304,8 @@ actor MarkCapture {
     /// Un échec n'est PAS une panne : la marque garde son image de filet, et sa
     /// provenance le dit. C'est la différence entre un rapport qui se trompe et un
     /// rapport qui se sait moins précis.
-    private func remplacerParLExtraction(segments: [CaptureSegment], keep: Set<UUID>) async {
+    private func remplacerParLExtraction(segments: [CaptureSegment], keep: Set<UUID>,
+                                         dossier: URL?) async {
         // Le retour silencieux est ce qui a rendu le défaut d'ordonnancement
         // invisible. Sans segment, cette fonction n'imprimait RIEN : pas de bloc
         // EXTRACTION, pas d'avertissement, et le dossier sortait avec des images de
@@ -365,6 +366,26 @@ actor MarkCapture {
                 // été prélevée dans une autre capture, et réutiliser son découpage
                 // reviendrait à découper au bon endroit dans la mauvaise image.
                 let taille = CGSize(width: r.image.width, height: r.image.height)
+
+                // EN MODE BANC, l'image ENTIÈRE est écrite à côté du recadrage.
+                //
+                // Sans elle, la chaîne C11 ne peut pas conclure. La réglette du
+                // témoin mesure 34 × 64 = 2176 px de large, dessinée une seule fois,
+                // centrée en bas de l'écran. Les recadrages, eux, font 560 à 1120 px
+                // : AUCUN ne peut la contenir, quelle que soit la marque tracée.
+                // `--lire-reglette` sur un `marque-NN.png` refusait donc toujours,
+                // et c'était le test qui décide du lot.
+                //
+                // Le recadrage reste le produit ; l'image entière est la PREUVE.
+                // Elle n'existe qu'avec `--c11-bench`, et pas une session ordinaire
+                // ne l'écrit — c'est de la vidéo de l'écran de l'utilisateur, et
+                // l'ADR-0020 lui interdit de survivre au besoin qui l'a créée.
+                if let dossier, await MainActor.run(body: { C11Bench.shared.actif }) {
+                    let plein = dossier.appendingPathComponent(
+                        String(format: "plein-%02d.png", ancien.number))
+                    try? ScreenCapture.writePNG(r.image, to: plein)
+                }
+
                 let recadre = Cropper.crop(r.image, around: ancien.shape.focusBox)
                 pending[i] = Pending(
                     id: ancien.id, number: ancien.number, displayID: ancien.displayID,
@@ -450,7 +471,8 @@ actor MarkCapture {
                   segments: [CaptureSegment] = []) async throws -> [Frame] {
         await waitForCaptures(of: keep)
         let byID = Dictionary(uniqueKeysWithValues: keep.map { ($0.id, $0) })
-        await remplacerParLExtraction(segments: segments, keep: Set(keep.map(\.id)))
+        await remplacerParLExtraction(segments: segments, keep: Set(keep.map(\.id)),
+                                      dossier: directory)
 
         var written: [Frame] = []
         for item in pending {

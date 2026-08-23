@@ -222,14 +222,24 @@ Pour ne pas le chercher :
       l'image se vérifie au 3.4 et au 3.5, par la réglette.**
 
 - [ ] **3.4** La réglette est lisible dans chaque image
+      FAIRE : ce test exige une session sur le **témoin en mode compteur**, avec
+      Regarde lancé en mode banc (`--c11-bench`). Une session ordinaire, sur le Finder
+      ou un navigateur, ne contient aucune réglette : il n'y a rien à lire.
+      Le plus simple est de laisser le **3.5** monter la session pour vous, puis de
+      revenir ici.
       FAIRE : pour chaque image, lancer
-      `./.build/debug/Regarde --lire-reglette ~/Regarde/sessions/DERNIÈRE/frames/marque-01.png`
+      `./.build/debug/Regarde --lire-reglette ~/Regarde/sessions/DERNIÈRE/frames/plein-01.png`
       (remplacez `DERNIÈRE` par le dossier le plus récent).
       REGARDER : la sortie de la commande.
       ATTENDU : un `V` (un nombre), un `module` proche de **64**, et `faibles 0`.
-      SI ÇA RATE : la sortie dit `refus` suivi du motif. `localisateur absent` veut
-      dire que la réglette n'est pas dans l'image — c'est un problème de cadrage, pas
-      de temps. `CRC` veut dire qu'elle est là mais abîmée.
+      SI ÇA RATE : `image trop petite` veut dire que vous lisez un `marque-NN.png` au
+      lieu d'un `plein-NN.png`. Les `marque-NN` sont des **recadrages** autour de votre
+      flèche, de 560 à 1120 px de large ; la réglette en fait 2176, dessinée une seule
+      fois, centrée en bas de l'écran. Aucun recadrage ne peut la contenir. Les
+      `plein-NN` sont l'image entière, écrite uniquement en mode banc.
+      SI ÇA RATE : `localisateur absent` veut dire que la réglette n'est pas dans
+      l'image — le témoin n'était pas en mode compteur, ou pas en plein écran. `CRC`
+      veut dire qu'elle est là mais abîmée.
 
 - [ ] **3.5** Le numéro lu correspond à l'instant désigné — **le test qui décide du lot**
       FAIRE : `./Tools/lot3-c11.sh` et suivre ses instructions.
