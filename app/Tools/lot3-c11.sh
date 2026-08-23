@@ -130,7 +130,8 @@ echo
 echo "── Pont d'horloge — ${PONTS} clics nus ──"
 echo "  Lance Regarde avec --c11-bench et ouvre une session (⌃⌥S) AVANT de continuer."
 echo "  Puis clique ${PONTS} fois au centre de l'écran, sans modificateur —"
-echo "  les clics doivent atterrir SUR LA PAGE, pas sur un terminal."
+echo "  les clics doivent atterrir SUR LA PAGE, pas sur un terminal, et à des"
+echo "  intervalles IRRÉGULIERS : c'est leur rythme qui permet de les apparier."
 echo "  Enfin trace ${MARQUES} marques en ⌥⌘-glisser, et ferme par ⌃⌥F."
 echo
 read -r -p "  Appuie sur Entrée quand la session est publiée… " _
@@ -299,19 +300,70 @@ for f in pages:
     except Exception: continue
     aligns += (o.get("c11") or {}).get("clockAligns", []) or []
 
+# L'appariement par RANG — ponts[i] avec aligns[i] — a été abandonné le 23 août
+# 2026, après une dispersion de 16 993 ms. La page voit des clics que Regarde ne
+# voit pas : ceux d'avant l'ouverture de la session, ceux qui l'amènent au
+# premier plan. Le premier clic de trop décale tous les autres, et la dispersion
+# mesurée est un artefact d'indexation, pas le pont.
+#
+# Les deux listes portent pourtant leur propre signature : les INTERVALLES entre
+# clics humains sont irréguliers, et identiques des deux côtés — mesuré ce
+# jour-là : 0,397/0,451/0,465/0,457 s chez Regarde, 0,404/0,459/0,462/0,462 s
+# dans la fenêtre correcte de la page. On fait donc glisser la liste courte le
+# long de la longue et on garde la fenêtre qui minimise la dispersion : sur les
+# données réelles, 17 ms contre 578 ms pour la deuxième meilleure — un rapport
+# de 33 qui rend le choix sans ambiguïté.
 decalages = []
+ambigu = None
+ignores = 0
 if ponts and aligns:
-    n = min(len(ponts), len(aligns))
-    # Appariés dans l'ordre : les clics sont séquentiels des deux côtés.
-    for i in range(n):
-        decalages.append(aligns[i]["pageNow"] / 1000.0 - ponts[i]["t"])
+    P = [q["t"] for q in ponts]
+    A = [a["pageNow"] / 1000.0 for a in aligns]
+    if min(len(P), len(A)) >= 2:
+        if len(P) <= len(A):
+            cand = [[A[s+j] - P[j] for j in range(len(P))]
+                    for s in range(len(A) - len(P) + 1)]
+        else:
+            cand = [[A[j] - P[s+j] for j in range(len(A))]
+                    for s in range(len(P) - len(A) + 1)]
+        spreads = sorted(range(len(cand)), key=lambda i: max(cand[i]) - min(cand[i]))
+        decalages = cand[spreads[0]]
+        ignores = abs(len(P) - len(A))
+        if len(spreads) > 1:
+            d0 = (max(cand[spreads[0]]) - min(cand[spreads[0]])) * 1000
+            d1 = (max(cand[spreads[1]]) - min(cand[spreads[1]])) * 1000
+            # Si une autre fenêtre est presque aussi bonne, des clics trop
+            # réguliers rendent l'appariement indécidable : on refuse plutôt que
+            # de choisir au hasard.
+            if d1 < max(4 * d0, 50):
+                ambigu = (d0, d1)
 if len(decalages) < 2:
     refus.append(f"pont d'horloge insuffisant : {len(ponts)} clic(s) vus par Regarde, "
                  f"{len(aligns)} par la page — il en faut au moins deux appariés")
+elif ambigu:
+    refus.append(f"appariement du pont ambigu : deux fenêtres à {ambigu[0]:.1f} et "
+                 f"{ambigu[1]:.1f} ms de dispersion — clique IRRÉGULIÈREMENT, c'est le "
+                 "motif des intervalles qui permet d'apparier")
 else:
-    dispersion = (max(decalages) - min(decalages)) * 1000
-    print(f"  pont       {len(decalages)} clics · décalage médian "
-          f"{statistics.median(decalages)*1000:8.2f} ms · dispersion {dispersion:.2f} ms")
+    tri = sorted(decalages)
+    complete = (tri[-1] - tri[0]) * 1000
+    # Le seuil s'applique à la statistique que le pont UTILISE : la médiane. Sur
+    # une page qui recompose à 75 img/s, la livraison d'un clic au gestionnaire
+    # subit l'ordonnancement du fil principal — un pas de rAF fait 13,3 ms, et un
+    # seul clic retardé pousse le max−min de 5 échantillons au-delà de 16 ms sans
+    # que le pont soit flou. Mesuré : résidus −12,0/−5,5/+2,3/0/+5,2 ms — l'écart
+    # complet dit 17,2, les trois médians disent 7,8, et la médiane bouge de ±4.
+    # À cinq clics ou plus, le min et le max sont donc écartés ; en dessous, tout
+    # compte.
+    if len(tri) >= 5:
+        dispersion = (tri[-2] - tri[1]) * 1000
+        etiquette = f"dispersion {dispersion:.2f} ms (écrêtée ; complète {complete:.2f})"
+    else:
+        dispersion = complete
+        etiquette = f"dispersion {dispersion:.2f} ms"
+    print(f"  pont       {len(decalages)} clics appariés sur {len(aligns)} vus par la page"
+          + (f" ({ignores} hors session, écartés)" if ignores else ""))
+    print(f"             décalage médian {statistics.median(decalages)*1000:.2f} ms · {etiquette}")
     if dispersion > c11["dispersionMaxMs"]:
         refus.append(f"dispersion du pont {dispersion:.1f} ms > {c11['dispersionMaxMs']} ms — "
                      "un pont plus flou que la grandeur mesurée ne mesure rien")

@@ -44,8 +44,9 @@ import os
 //                                l'instant demandé : celle que l'utilisateur avait
 //                                sous les yeux. Le décodage coûte alors le trajet
 //                                depuis l'image clé précédente — et c'est
-//                                précisément ce que le GOP d'une seconde borne.
-//                                Le GOP sert la PRÉCISION, pas la paresse.
+//                                précisément ce que le GOP borne (0,5 s depuis
+//                                le 23 août). Le GOP sert la PRÉCISION, pas la
+//                                paresse.
 // ─────────────────────────────────────────────────────────────────────────────
 
 enum AssetFrames {
@@ -199,7 +200,7 @@ enum AssetFrames {
         // remis par la porte de derrière.
         //
         // Ces temps-là sont donc rejoués avec `before = .positiveInfinity`. Le
-        // risque de cette tolérance est le saut à l'image clé, jusqu'à une seconde
+        // risque de cette tolérance est le saut à l'image clé, jusqu'à un GOP
         // en arrière — mais il ne se paie QUE là où le premier passage a échoué,
         // c'est-à-dire sur un écran qui ne produit pas de frames. Et sur un écran
         // qui ne change pas, l'image d'il y a une seconde est la bonne.
@@ -265,7 +266,14 @@ enum AssetFrames {
             Journal.event(.capture, "burst — \(collecteur.obtenues) frame(s) obtenues "
                           + "sur \(collecteur.demandees) demandée(s)")
         }
-        return (recues, refus + refusees)
+        // Un refus s'ÉTEINT quand la marque a son image. Trois temps sont demandés
+        // par marque ; l'un peut échouer — un instant tombé dans un trou de frames
+        // perdues — pendant qu'un autre sert la même marque. Garder le refus
+        // faisait compter « 10 depuis le fichier + 1 servie par le filet » pour
+        // dix marques, et journalisait un « Cannot Decode » sur une marque qui
+        // avait son image exacte. Mesuré le 23 août 2026, marque 9 sur dix.
+        let servis = Set(recues.map(\.markID))
+        return (recues, (refus + refusees).filter { !servis.contains($0.0) })
     }
 
     /// Supprime le fichier encodé.

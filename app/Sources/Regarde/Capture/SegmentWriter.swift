@@ -68,10 +68,17 @@ final class SegmentWriter: @unchecked Sendable {
             AVVideoWidthKey: Int(taille.width),
             AVVideoHeightKey: Int(taille.height),
             AVVideoCompressionPropertiesKey: [
-                // Une image clé PAR SECONDE. Le seek coûte alors 31 ms au lieu du
-                // temps de remonter à l'image clé précédente — qui, en GOP libre,
-                // peut se trouver dix secondes plus tôt.
-                AVVideoMaxKeyFrameIntervalDurationKey: 1.0,
+                // Une image clé toutes les DEMI-SECONDES — resserré depuis 1,0 s
+                // le 23 août 2026, par la mesure.
+                //
+                // Depuis que les tolérances d'extraction sont nulles, le décodeur
+                // remonte à l'image clé précédente pour CHAQUE image demandée :
+                // le GOP borne directement ce trajet. À 1 s, l'extraction de
+                // 30 images a coûté 3 659 ms, contre un budget de 3 s (§ 5.5).
+                // À 0,5 s le trajet moyen tombe de ~7 à ~4 frames. Le prix est
+                // deux fois plus d'images clés dans le fichier — le débit reste
+                // loin du budget disque du § 4.4, qui a dix fois la marge.
+                AVVideoMaxKeyFrameIntervalDurationKey: 0.5,
                 AVVideoAverageBitRateKey: 6_200_000,
             ],
         ]
