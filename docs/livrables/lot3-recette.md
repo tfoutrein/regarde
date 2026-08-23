@@ -209,17 +209,17 @@ Pour ne pas le chercher :
       l'instant que vous désigniez. Le journal nomme le motif marque par marque,
       juste au-dessus du bloc.
 
-- [ ] **3.3** L'image extraite est celle du bon instant
-      FAIRE : cette mesure n'a de sens que sur un écran qui BOUGE. Reprenez la session
-      du 3.1, témoin en mode compteur animé.
-      REGARDER : dans le bloc `EXTRACTION`, la ligne `pire écart demandé/obtenu`.
-      ATTENDU : une valeur **inférieure à 67 ms**.
-      ATTENDU : la ligne précise `sur N marque(s) à l'écran animé`, avec N égal au
-      nombre de marques tracées.
-      SI ÇA RATE : 67 ms est l'intervalle entre deux images encodées à 15 fps. Au-delà,
-      le générateur a rendu une autre image que celle demandée. Si la ligne dit
-      `sans objet — aucune marque sur un écran animé`, l'écran ne bougeait pas assez :
-      la mesure n'a pas eu lieu, ce n'est ni un succès ni un échec.
+- [ ] **3.3** L'encodeur suit le rythme quand l'écran bouge
+      FAIRE : reprendre la session du 3.1, témoin en mode compteur animé.
+      REGARDER : dans le bloc `EXTRACTION`, la ligne `âge de l'image · écran animé`.
+      ATTENDU : une valeur **inférieure à 200 ms**, et **aucune** mention
+      `← l'encodeur a décroché`.
+      SI ÇA RATE : ce nombre ne dit **pas** que l'image est fausse. Avec les tolérances
+      à zéro, le générateur rend toujours la frame qui était affichée à l'instant
+      demandé ; l'âge mesure depuis combien de temps l'écran n'avait pas changé. Sur un
+      écran censé bouger à 15 images par seconde, un âge élevé veut dire que l'encodeur
+      n'a pas suivi — c'est un problème de débit, pas d'appariement. **La justesse de
+      l'image se vérifie au 3.4 et au 3.5, par la réglette.**
 
 - [ ] **3.4** La réglette est lisible dans chaque image
       FAIRE : pour chaque image, lancer
@@ -247,9 +247,11 @@ Pour ne pas le chercher :
       ATTENDU : `depuis le fichier   3` — l'écran immobile n'empêche pas l'extraction.
       ATTENDU : dans le bloc `FLUX`, `autres statuts` **non nul** : c'est la preuve que
       l'écran était bien au repos.
-      ATTENDU : `1 frame(s) au plan` sur les trois marques — pas de burst sur un écran
-      qui ne bouge pas.
-      SI ÇA RATE : une ligne `âge de l'image, écran immobile` de plusieurs centaines de
+      ATTENDU : `1 frame(s) au plan` sur les **dernières** marques, une fois l'écran
+      stabilisé. Les premières peuvent en avoir trois : ouvrir la session, déplacer la
+      souris et tracer la première flèche font bouger l'écran pour de bon, et le
+      critère ne peut pas distinguer votre trait du contenu annoté.
+      SI ÇA RATE : une ligne `âge de l'image · écran immobile` de plusieurs centaines de
       millisecondes n'est **pas** un défaut : l'encodeur n'écrit que ce qui change, et
       l'image d'il y a 600 ms est exacte puisque rien n'avait bougé depuis. De même,
       `obtenues au second essai` est normal ici. Le vrai défaut serait

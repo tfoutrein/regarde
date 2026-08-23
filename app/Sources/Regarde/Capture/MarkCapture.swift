@@ -390,17 +390,30 @@ actor MarkCapture {
 
         let ms = Date().timeIntervalSince(debut) * 1000
 
-        // DEUX écarts, et les confondre rendait le nombre ininterprétable.
+        // CE NOMBRE N'EST PAS UNE ERREUR — et il a fallu deux journaux pour
+        // l'admettre.
         //
-        // Sur un écran ANIMÉ, l'écart entre l'instant demandé et l'instant obtenu
-        // est la mesure directe de ce que B1 aurait coûté : il doit rester sous un
-        // intervalle d'encodage, 66,7 ms à 15 fps. C'est le chiffre du critère C11.
+        // Avec les tolérances à ZÉRO des deux côtés, le générateur rend la frame
+        // dont l'intervalle de présentation CONTIENT l'instant demandé. C'est,
+        // par construction, celle qui était affichée à cet instant. L'écart entre
+        // le temps demandé et le PTS rendu n'est donc pas une erreur d'appariement :
+        // c'est l'ÂGE de cette image, c'est-à-dire depuis combien de temps l'écran
+        // n'avait pas changé.
         //
-        // Sur un écran IMMOBILE, le même nombre ne mesure rien de tel. L'encodeur
-        // n'écrit que ce qui change ; un écart de 650 ms y veut dire « la dernière
-        // image date de 650 ms », et son contenu est EXACT puisque rien n'avait
-        // changé depuis. Le présenter comme un défaut a failli me faire corriger
-        // une capture qui était juste.
+        // Sous l'ancienne tolérance infinie, le même nombre mesurait bien un
+        // défaut : le générateur sautait à l'image clé et rendait autre chose que
+        // ce qui était affiché. Les 812 ms du 23 août étaient réels. Les 499 ms du
+        // même jour, après correctif, ne le sont pas — ils disent que l'écran
+        // n'avait rien produit depuis 499 ms, sur un écran qui livrait 5,4 images
+        // par seconde.
+        //
+        // Ce que ce nombre NE PEUT PAS détecter : une timeline mal convertie. Si
+        // `assetTime()` se trompait, on demanderait le mauvais instant et on
+        // obtiendrait la frame qui le couvre — âge minuscule, image fausse. B1 se
+        // vérifie par la RÉGLETTE (§ 5.6), pas ici.
+        //
+        // Il reste utile, à condition de le nommer pour ce qu'il est : sur un écran
+        // animé, un âge élevé veut dire que l'encodeur a décroché.
         let pireAnime = ecarts.filter(\.bougeait).map { abs($0.ms) }.max() ?? 0
         let pireFige = ecarts.filter { !$0.bougeait }.map { abs($0.ms) }.max() ?? 0
         let combienAnimes = ecarts.filter(\.bougeait).count
@@ -410,16 +423,14 @@ actor MarkCapture {
                 ("servies par le filet", "\(refusees)"),
             ]
             if combienAnimes > 0 {
-                lignes.append(("pire écart demandé/obtenu",
-                               String(format: "%.1f ms  sur %d marque(s) à l'écran animé",
-                                      pireAnime, combienAnimes)))
-            } else {
-                lignes.append(("pire écart demandé/obtenu",
-                               "sans objet — aucune marque sur un écran animé"))
+                lignes.append(("âge de l'image · écran animé",
+                               String(format: "%.1f ms  sur %d marque(s)%@",
+                                      pireAnime, combienAnimes,
+                                      pireAnime > 200 ? "  ← l'encodeur a décroché" : "")))
             }
             if pireFige > 0 {
-                lignes.append(("âge de l'image, écran immobile",
-                               String(format: "%.1f ms  attendu : rien n'avait changé", pireFige)))
+                lignes.append(("âge de l'image · écran immobile",
+                               String(format: "%.1f ms  normal : rien n'avait changé", pireFige)))
             }
             if replis > 0 {
                 lignes.append(("obtenues au second essai", "\(replis)  tolérance relâchée"))
