@@ -366,15 +366,18 @@ Pour ne pas le chercher :
       ATTENDU : une ligne `⚠ écran N écarté — écran en recopie vidéo — il duplique un
       autre écran`.
 
-- [ ] **5.2** On ne peut pas tracer sur un écran écarté
-      FAIRE : tenter un `⌥⌘ + glisser` sur l'écran en recopie.
-      REGARDER : l'écran, et le journal.
-      ATTENDU : **aucun trait ne se dessine**.
-      ATTENDU : le HUD affiche « Écran non annotable » avec un conseil.
-      ATTENDU : le journal écrit `⚠ geste refusé sur l'écran N`.
-      SI ÇA RATE : si le trait se dessine, c'est pire qu'un refus — le numéro
-      s'incrémente, vous croyez la marque posée, et le dossier sort sans son image ou
-      avec celle d'un autre écran.
+- [ ] **5.2** En recopie, le geste annote l'écran source — et la copie l'affiche
+      FAIRE : pendant la recopie, un `⌥⌘ + glisser` n'importe où.
+      REGARDER : les deux écrans, et le journal.
+      ATTENDU : le trait se dessine **une seule fois** logiquement, et les deux écrans
+      l'affichent — ils montrent la même chose, c'est la définition de la recopie.
+      ATTENDU : le journal n'écrit **aucun** refus de geste.
+      SI ÇA RATE : un « geste refusé » ici serait un excès de zèle. En recopie il n'y
+      a qu'un seul espace de coordonnées, celui de la source : « tracer sur l'écran en
+      recopie » n'existe pas comme geste distinct — macOS retire l'écran copieur de
+      l'énumération, il n'a pas d'espace propre. Le refus de geste sur un écran
+      écarté, lui, se vérifie au **5.4** : l'écran pivoté garde son espace, un geste
+      peut réellement y tomber, et c'est là qu'il doit être refusé et nommé.
 
 - [ ] **5.3** Revenir en mode étendu suffit à réactiver l'écran
       FAIRE : Réglages → Moniteurs → repasser en affichage étendu.
@@ -383,8 +386,11 @@ Pour ne pas le chercher :
 
 - [ ] **5.4** Un écran pivoté est écarté — *seulement si votre moniteur pivote*
       FAIRE : Réglages → Moniteurs → rotation **90°**.
-      REGARDER : le journal.
+      REGARDER : le journal, puis tenter un `⌥⌘ + glisser` sur l'écran pivoté.
       ATTENDU : `écran N écarté — écran en rotation`.
+      ATTENDU : aucun trait sur l'écran pivoté, le HUD affiche « Écran non
+      annotable », et le journal écrit `⚠ geste refusé sur l'écran N` — c'est ici que
+      le refus de geste se prouve, pas en recopie.
       SI ÇA RATE : en rotation **180°** l'écran doit rester annotable — largeur et
       hauteur ne sont pas inversées, et la conversion y est juste. Le refuser serait
       refuser une fois de trop.

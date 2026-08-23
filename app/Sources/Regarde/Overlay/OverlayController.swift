@@ -336,6 +336,34 @@ final class OverlayController {
             Journal.warn(.system, "écran \(ecarte.displayID) écarté — \(ecarte.refus!)")
         }
 
+        // Et les écrans que NSScreen ne montre PLUS DU TOUT — S43 terdecies.
+        //
+        // En recopie vidéo, macOS retire l'écran copieur de `NSScreen.screens` :
+        // la boucle ci-dessus tourne sur une liste où il n'est déjà plus, et il
+        // disparaissait sans être nommé. Mesuré le 23 août : au passage en
+        // recopie, le bloc PANNEAUX tombait à un seul écran sans un mot sur le
+        // second — la ligne « écarté — recopie vidéo » que la recette attendait ne
+        // pouvait pas exister, la détection étant branchée sur une énumération qui
+        // cache précisément ce qu'elle devait détecter.
+        //
+        // Core Graphics, lui, voit encore ces écrans. On l'interroge SÉPARÉMENT,
+        // pour le journal seulement : injecter un fantôme dans la géométrie serait
+        // pire — `screen(containingEvent:)` pourrait le trouver sous un geste
+        // légitime, l'écran copieur partageant ses coordonnées avec la source.
+        var enLigne = [CGDirectDisplayID](repeating: 0, count: 16)
+        var nEnLigne: UInt32 = 0
+        if CGGetOnlineDisplayList(16, &enLigne, &nEnLigne) == .success {
+            let visibles = Set(NSScreen.screens.map { OverlayPanel.displayID(of: $0) })
+            for id in enLigne.prefix(Int(nEnLigne)) where !visibles.contains(id) {
+                if let refus = ScreenInfo.refus(
+                    rotation: Double(CGDisplayRotation(id)),
+                    dansJeuDeRecopie: CGDisplayIsInMirrorSet(id) != 0,
+                    recopieDe: CGDisplayMirrorsDisplay(id)) {
+                    Journal.warn(.system, "écran \(id) écarté — \(refus)")
+                }
+            }
+        }
+
         for screen in NSScreen.screens {
             let id = OverlayPanel.displayID(of: screen)
             // Un identifiant nul signale un écran que le système ne sait pas nommer :

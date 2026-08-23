@@ -84,8 +84,13 @@ final class MarkStore {
         //
         // Laisser tracer serait pire que refuser : le trait apparaîtrait, le numéro
         // s'incrémenterait, l'utilisateur croirait sa marque posée — et le dossier
-        // sortirait sans son image, ou pire, avec l'image d'un autre écran dans le
-        // cas de la recopie. Le § 3.3 demande un refus PROPRE, pas une absence.
+        // sortirait sans son image. Le § 3.3 demande un refus PROPRE, pas une
+        // absence.
+        //
+        // Le cas vivant ici est la ROTATION : l'écran pivoté garde son espace de
+        // coordonnées, un geste peut y tomber. La recopie vidéo, elle, ne passe
+        // jamais par ce chemin — macOS retire l'écran copieur de NSScreen, il n'a
+        // pas d'espace propre, et « tracer dessus » est tracer sur la source.
         if let refus = screen.refus {
             Journal.warn(.mark, "geste refusé sur l'écran \(screen.displayID) — \(refus)")
             HUDWindow.shared.announce("Écran non annotable",
