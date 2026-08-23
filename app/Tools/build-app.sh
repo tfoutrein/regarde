@@ -26,12 +26,24 @@ ENTITLEMENTS="${ROOT}/Resources/${APP_NAME}.entitlements"
 CONFIG="release"
 RUN=0
 HARDENED=1
+# Les drapeaux d'EXÉCUTION de Regarde sont acceptés ici et transmis au lancement.
+#
+# Sans ça, `build-app.sh --c11-bench` répond « Option inconnue » et ne construit
+# rien — alors que l'intention est claire. Le drapeau est lu par le binaire au
+# démarrage (`TestFlags`), pas par la construction ; le distinguo est réel mais
+# il n'a aucune raison de coûter un aller-retour à qui monte un banc.
+ARGS_APP=()
 for arg in "$@"; do
     case "${arg}" in
         --debug)        CONFIG="debug" ;;
         --run)          RUN=1 ;;
         --no-hardened)  HARDENED=0 ;;
-        *) echo "Option inconnue : ${arg}" >&2; exit 2 ;;
+        --c11-bench|--visible-capture)
+                        ARGS_APP+=("${arg}"); RUN=1 ;;
+        *) echo "Option inconnue : ${arg}" >&2
+           echo "  construction : --debug  --run  --no-hardened" >&2
+           echo "  exécution    : --c11-bench  --visible-capture  (transmis à l'application, qui est alors lancée)" >&2
+           exit 2 ;;
     esac
 done
 
@@ -145,6 +157,18 @@ cp -R "${STAGE}" "${INSTALLED}"
 echo "✓ Installé : ${INSTALLED}"
 
 if [[ "${RUN}" -eq 1 ]]; then
+    if [[ ${#ARGS_APP[@]} -gt 0 ]]; then
+        # Le binaire DANS le paquet, et non `.build/debug/Regarde` : les
+        # autorisations d'Enregistrement de l'écran et d'Accessibilité sont
+        # accordées à une signature, donc au paquet. Lancer l'autre binaire
+        # redemanderait tout, et l'utilisateur croirait à une régression.
+        #
+        # `open --args` conviendrait aussi, mais il rend la main aussitôt et le
+        # journal de démarrage se perd. Ici, le processus reste attaché.
+        echo "→ Lancé avec ${ARGS_APP[*]} — Ctrl-C pour arrêter"
+        echo "  Journal : ~/Regarde/journal.txt"
+        exec "${INSTALLED}/Contents/MacOS/Regarde" "${ARGS_APP[@]}"
+    fi
     open "${INSTALLED}"
     echo "→ Lancé. Journal : ~/Regarde/journal.txt"
 fi
