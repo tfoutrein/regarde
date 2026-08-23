@@ -31,9 +31,22 @@ SIGNATURE="$(curl -s --max-time 1 "http://127.0.0.1:${PORT}/sante" 2>/dev/null |
 if [[ "${SIGNATURE}" == *'"serveur":"regarde-temoin"'* || "${SIGNATURE}" == *'"serveur": "regarde-temoin"'* ]]; then
     echo "→ Serveur du temoin deja en place sur ${PORT}, reutilisation."
 elif [[ -n "${SIGNATURE}" ]]; then
+    # Le cas le plus courant, et de loin : un `python3 -m http.server` d'avant S29,
+    # ou d'un tout autre projet, resté en fond depuis des jours. Le dire suffisait
+    # mal — il faut aussi montrer QUI occupe le port et donner le geste exact.
     echo "✗ Un serveur repond sur ${PORT}, mais ce n'est pas celui du temoin."
-    echo "  Sa reponse : ${SIGNATURE:0:120}"
-    echo "  Choisis un autre port : $0 <port>"
+    echo "  Il ne sait pas recevoir les depots : la page se chargerait normalement"
+    echo "  et seul le depot echouerait, en fin de mesure."
+    echo
+    OCCUPANT="$(lsof -nP -iTCP:"${PORT}" -sTCP:LISTEN 2>/dev/null | tail -n +2)"
+    if [[ -n "${OCCUPANT}" ]]; then
+        echo "  Qui occupe le port :"
+        echo "${OCCUPANT}" | sed 's/^/    /'
+        PID="$(echo "${OCCUPANT}" | awk '{print $2}' | head -1)"
+        echo
+        echo "  Pour l'arreter :  kill ${PID}"
+    fi
+    echo "  Ou choisis un autre port : $0 <port>"
     exit 2
 else
     echo "→ Serveur sur ${PORT} (Ctrl-C pour arreter) — depot dans ${DEPOT}"

@@ -36,11 +36,25 @@ dire.
 cd ~/DEV/PERSO/AI-DEV/TOOLS/regarde/prototypes/lot0 && ./Tools/serve-temoin.sh
 ```
 
-Chrome s'ouvre. Tapez `3` pour le mode compteur, puis passez en plein écran **par le
-menu *Présentation → Activer le mode plein écran***. Pas par `⌃⌥⌘F` : le chemin de
-composition n'est pas le même, et c'est celui-là qu'on mesure. Vous devez voir une
-bande noire et blanche en bas de l'écran, qui grésille à chaque image, par-dessus un
-fond sombre animé.
+Si le script refuse en disant qu'un autre serveur occupe le port, il vous donne le
+`kill` exact : un `python3 -m http.server` d'avant peut traîner depuis des jours, et
+il ne sait pas recevoir les dépôts.
+
+Chrome s'ouvre. **Cliquez le bouton « 3 · Compteur »** plutôt que de taper `3` : le
+champ de test a le focus au chargement — c'est le critère C4, le caret doit
+continuer de clignoter pendant un tracé — et les frappes nues s'y écrivent au lieu
+d'être interprétées. Si vous préférez le clavier, cliquez d'abord dans la scène.
+
+Puis plein écran **par le menu *Présentation → Activer le mode plein écran***. Pas
+par `⌃⌥⌘F` : le chemin de composition n'est pas le même, et c'est celui-là qu'on
+mesure.
+
+**Ce que vous devez voir** : une bande noire et blanche en bas de l'écran, qui
+grésille à chaque image, par-dessus un fond sombre animé. **Pas de gros chiffres** —
+c'est la bande qui porte le numéro de frame, en code binaire lisible par machine.
+Les chiffres décoratifs existent derrière `⌃⌥N`, mais aucun relevé n'est accepté tant
+qu'ils sont allumés : leur mise en page coûte un temps variable selon le nombre de
+chiffres, ce qui fausserait une mesure à 0,1 %.
 
 **Deux écrans** sont nécessaires aux sections 5, 7 et 8.
 

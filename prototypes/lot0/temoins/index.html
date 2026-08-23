@@ -137,6 +137,9 @@
   <div id="hint">
     <kbd>H</kbd> masque ce panneau · <kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> mode ·
     <kbd>R</kbd> relevé · <kbd>A</kbd> aligner · <kbd>Z</kbd> reset fuites
+    <br>Les raccourcis nus ne marchent QUE si le champ de test n'a pas le focus —
+    clique dans la scène d'abord. Le numéro de frame est dans la réglette du bas,
+    pas en chiffres : <kbd>⌃⌥N</kbd> les rallume, mais aucun relevé ne sera alors accepté.
   </div>
 </div>
 
@@ -708,6 +711,21 @@ function finishRun(now) {
     calibrated: state.calibrated,
     at: new Date().toISOString(),
   };
+  // Un relevé qui s'écarte d'un FACTEUR de la référence n'est pas une mesure.
+  //
+  // Constaté : 17,48 fps en référence puis 70,07 fps au relevé suivant, à charge
+  // identique — soit « −300,9 % de dégradation », publié comme un résultat. La
+  // thermique ne rend rien quatre fois plus rapide : c'est la RÉFÉRENCE qui était
+  // l'anomalie, prise pendant la transition plein écran ou sur une fenêtre encore
+  // masquée. Un écart pareil doit se voir dans le relevé, pas se lire dans un
+  // pourcentage absurde qu'on prendra pour un verdict.
+  const ref0 = state.runs.find(r => baseLabel(r.label) === '1-reference');
+  if (ref0 && ref0.effectiveFps > 0) {
+    const facteur = run.effectiveFps / ref0.effectiveFps;
+    if (facteur > 1.5 || facteur < 0.5) {
+      run.suspect = `cadence ${facteur.toFixed(1)}× celle de la référence`;
+    }
+  }
   state.runs.push(run);
   renderResults();
   setStatus(`« ${run.label} » : ${run.effectiveFps} fps effectifs · ` +
@@ -747,6 +765,9 @@ function referenceFps() {
 
 function renderResults() {
   const tb = $('results').querySelector('tbody');
+  // Un relevé suspect est nommé AVANT toute comparaison : comparer à une référence
+  // aberrante donne un pourcentage qui a l'air d'un résultat.
+
   tb.innerHTML = '';
   const refFps = referenceFps();
   const ref = referenceRuns()[0];
@@ -1108,6 +1129,20 @@ const VERBES = {
   Digit2: () => setMode('load'),
   Digit3: () => setMode('counter'),
 };
+
+// Le champ de saisie AVALE les frappes nues, et il faut le dire.
+//
+// Il a le focus au chargement — c'est le critère C4, le caret doit continuer de
+// clignoter pendant un tracé — et le gestionnaire ci-dessous l'exempte
+// volontairement. Taper « 3 » pour changer de mode y écrit donc un « 3 », et
+// l'utilisateur croit que le raccourci ne marche pas. Constaté à l'usage : un
+// champ contenant « 3hhhh » avant le texte d'origine.
+$('probe').addEventListener('keydown', (e) => {
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  if (!/^[123rahzf]$/i.test(e.key)) return;
+  setStatus('Le champ de test a le focus : les raccourcis nus y sont tapés, pas '
+            + 'interprétés. Clique dans la scène, ou utilise les boutons.', true);
+});
 
 addEventListener('keydown', (e) => {
   // Les verbes passent AVANT les deux gardes ci-dessous : `e.target === probe`
