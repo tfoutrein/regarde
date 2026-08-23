@@ -197,7 +197,29 @@ final class SessionCoordinator {
         // L'anneau se désarme AVEC la session : le laisser armé ferait copier des
         // frames pour personne jusqu'au prochain lancement.
         SnapshotRing.shared.armer(false)
-        Task { await CaptureEngine.shared.arreter(raison: .finDeSession) }
+        // L'ARRÊT DES FLUX N'EST PAS LANCÉ ICI.
+        //
+        // Il l'était, dans un `Task` détaché, et la publication en lançait un autre
+        // pour lire les segments : deux tâches indépendantes, aucun ordre garanti
+        // entre elles. La publication gagnait la course, lisait une liste VIDE, et
+        // deux choses en découlaient — la seconde bien pire que la première.
+        //
+        //   les `.mov` survivaient      `AssetFrames.supprimer([])` ne supprime
+        //                               rien. De la vidéo de l'écran de
+        //                               l'utilisateur restait sur disque, ce que
+        //                               l'ADR-0020 interdit.
+        //
+        //   l'extraction n'avait rien   AUCUNE marque n'aurait eu son image du
+        //   à ouvrir                    fichier encodé : toutes seraient retombées
+        //                               sur le filet RAM, c'est-à-dire sur l'instant
+        //                               du relâchement. Tout le lot 3 aurait été
+        //                               inopérant, en silence, et le journal aurait
+        //                               dit « servies par le filet » sans qu'on
+        //                               sache pourquoi.
+        //
+        // Le journal de la session du 23 août le montrait à qui savait lire l'ordre :
+        // le bloc FIN DE SESSION s'imprimait AVANT les lignes « flux fermé ».
+        // L'arrêt est donc devenu la première chose que fait la publication.
 
         // La cible est dégelée, pas relâchée : le mode éclair reprend la main dès la
         // session close, et ⌥⌘ doit continuer d'armer sur la fenêtre regardée.
@@ -229,9 +251,10 @@ final class SessionCoordinator {
             var overviews = 0
             if let directory {
                 do {
-                    // Les segments sont réclamés au moteur, qui les a fermés à
-                    // l'arrêt du flux. Sans eux, l'extraction n'a rien à ouvrir et
-                    // toutes les marques retombent sur le filet.
+                    // L'arrêt D'ABORD, et attendu : c'est lui qui remplit la liste
+                    // des segments. Le lancer à côté laissait la publication lire
+                    // une liste vide une fois sur deux.
+                    await CaptureEngine.shared.arreter(raison: .finDeSession)
                     let segments = await CaptureEngine.shared.segments
                     let frames = try await MarkCapture.shared.finalize(
                         keeping: keep, into: SessionPaths.frames(of: directory),

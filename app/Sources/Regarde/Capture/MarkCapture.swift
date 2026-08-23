@@ -283,7 +283,26 @@ actor MarkCapture {
     /// provenance le dit. C'est la différence entre un rapport qui se trompe et un
     /// rapport qui se sait moins précis.
     private func remplacerParLExtraction(segments: [CaptureSegment], keep: Set<UUID>) async {
-        guard !segments.isEmpty, !pending.isEmpty else { return }
+        // Le retour silencieux est ce qui a rendu le défaut d'ordonnancement
+        // invisible. Sans segment, cette fonction n'imprimait RIEN : pas de bloc
+        // EXTRACTION, pas d'avertissement, et le dossier sortait avec des images de
+        // filet qui ont l'air normales. Toute la raison d'être du lot 3 pouvait ne
+        // pas s'exécuter sans laisser une ligne.
+        //
+        // Un segment absent est légitime — mode éclair, écran figé — mais il n'est
+        // jamais SANS INTÉRÊT : c'est la différence entre « l'image vient du
+        // fichier » et « l'image vient de la capture au relâchement ».
+        guard !pending.isEmpty else { return }
+        guard !segments.isEmpty else {
+            // Le compte est lu ICI, dans l'acteur, et passé par valeur : `pending`
+            // lui appartient et ne traverse pas vers l'acteur principal.
+            let combien = pending.count
+            await MainActor.run {
+                Journal.warn(.capture, "aucun segment de capture — les \(combien) "
+                             + "marque(s) gardent l'image du filet, prise au relâchement")
+            }
+            return
+        }
         let debut = Date()
 
         var remplacees = 0, refusees = 0
