@@ -149,17 +149,21 @@ read -r -p "  Appuie sur Entrée quand la session est publiée… " _
 # sont interdits, Regarde les capte en raccourcis globaux.
 echo
 echo "── Dépôt du relevé de la page ──"
-osascript <<'AS' >/dev/null 2>&1 || echo "  ⚠ dépôt automatique impossible — fais ⌃⌥D dans Chrome à la main"
-tell application "Google Chrome" to activate
-delay 1
-tell application "System Events" to key code 2 using {control down, option down}
-AS
-sleep 2
-
-# Et on VÉRIFIE, au lieu de le découvrir au verdict. Le dépôt peut manquer pour
+# Et on VÉRIFIE, au lieu de le découvrir au verdict. Les deux premiers essais
+# renvoient ⌃⌥D eux-mêmes — l'activation de Chrome prend parfois plus d'une
+# seconde en plein écran, et les deux premières campagnes ont chacune coûté un
+# aller-retour humain pour un simple raccourci à renvoyer. Le dépôt peut manquer pour
 # trois raisons — Chrome pas au premier plan, plan déjà clos, page rechargée — et
 # les trois se rattrapent en dix secondes si on les nomme tout de suite.
 for essai in 1 2 3; do
+    if [[ ${essai} -lt 3 ]]; then
+        osascript <<'AS' >/dev/null 2>&1 || true
+tell application "Google Chrome" to activate
+delay 2
+tell application "System Events" to key code 2 using {control down, option down}
+AS
+        sleep 2
+    fi
     ALIGNS="$(python3 - "${SORTIE}/${RUN}" <<'CHK'
 import glob, json, os, sys
 n = 0
@@ -172,8 +176,8 @@ CHK
 )"
     [[ "${ALIGNS}" -gt 0 ]] && break
     echo "  ⚠ aucun clic dans le dépôt (essai ${essai}/3)."
-    if [[ ${essai} -lt 3 ]]; then
-        echo "    Passe sur Chrome et fais ⌃⌥D, puis reviens ici."
+    if [[ ${essai} -eq 2 ]]; then
+        echo "    Passe sur Chrome et fais ⌃⌥D à la main, puis reviens ici."
         read -r -p "    Entrée pour revérifier… " _
     fi
 done
@@ -300,73 +304,79 @@ for f in pages:
     except Exception: continue
     aligns += (o.get("c11") or {}).get("clockAligns", []) or []
 
-# L'appariement par RANG — ponts[i] avec aligns[i] — a été abandonné le 23 août
-# 2026, après une dispersion de 16 993 ms. La page voit des clics que Regarde ne
-# voit pas : ceux d'avant l'ouverture de la session, ceux qui l'amènent au
-# premier plan. Le premier clic de trop décale tous les autres, et la dispersion
-# mesurée est un artefact d'indexation, pas le pont.
+# APPARIEMENT PAR AMAS DE DÉCALAGES — troisième forme, chacune tuée par la mesure.
 #
-# Les deux listes portent pourtant leur propre signature : les INTERVALLES entre
-# clics humains sont irréguliers, et identiques des deux côtés — mesuré ce
-# jour-là : 0,397/0,451/0,465/0,457 s chez Regarde, 0,404/0,459/0,462/0,462 s
-# dans la fenêtre correcte de la page. On fait donc glisser la liste courte le
-# long de la longue et on garde la fenêtre qui minimise la dispersion : sur les
-# données réelles, 17 ms contre 578 ms pour la deuxième meilleure — un rapport
-# de 33 qui rend le choix sans ambiguïté.
+#   Par RANG (jusqu'au 23 août au matin) : la page voit des clics que Regarde ne
+#   voit pas, le premier intrus décale tous les suivants. 16 993 ms de dispersion
+#   sur un pont sain.
+#
+#   Par FENÊTRE CONTIGUË (le même jour) : suppose que les clics communs forment un
+#   bloc d'un seul tenant. Cassée le soir même : un clic vu par Regarde seul en
+#   fin de session, un clic vu par la page seule, et la meilleure fenêtre mariait
+#   l'un à l'autre — 9,6 s de dispersion sur un pont sain, avec un message qui
+#   accusait la régularité des clics de l'utilisateur.
+#
+#   Par AMAS : le vrai appariement partage un MÊME décalage. On calcule tous les
+#   A_i − P_j et l'amas le plus peuplé dans une fenêtre de 100 ms EST
+#   l'appariement — aucune hypothèse de contiguïté, les intrus des deux côtés
+#   restent simplement sans vis-à-vis. Éprouvé sur les deux dépôts réels du
+#   23 août : 5 paires sur 13 clics de page, puis 9 sur 12.
+#
+# L'ESTIMATEUR est le PLANCHER de l'amas, pas sa médiane. Côté Regarde,
+# l'horodatage est matériel — il date le clic. Côté page, performance.now() est
+# lu dans le gestionnaire, APRÈS l'ordonnancement du fil principal : le retard
+# est strictement positif et variable — 48 ms d'étendue mesurée sur une session
+# de 19 s en pleine charge. Le décalage vrai s'approche donc par le bas, et la
+# qualité du pont se juge sur les clics proches du plancher : il en faut au
+# moins DEUX à moins de dispersionMaxMs l'un de l'autre.
 decalages = []
-ambigu = None
-ignores = 0
 if ponts and aligns:
     P = [q["t"] for q in ponts]
     A = [a["pageNow"] / 1000.0 for a in aligns]
-    if min(len(P), len(A)) >= 2:
-        if len(P) <= len(A):
-            cand = [[A[s+j] - P[j] for j in range(len(P))]
-                    for s in range(len(A) - len(P) + 1)]
+    paires = sorted((A[i] - P[j], i, j) for i in range(len(A)) for j in range(len(P)))
+    def amas(candidats):
+        meilleur = []
+        for k in range(len(candidats)):
+            vus_i, vus_j, retenu = set(), set(), []
+            for o, i, j in candidats[k:]:
+                if o - candidats[k][0] >= 0.100: break
+                if i in vus_i or j in vus_j: continue
+                vus_i.add(i); vus_j.add(j); retenu.append((o, i, j))
+            if len(retenu) > len(meilleur): meilleur = retenu
+        return meilleur
+    premier = amas(paires)
+    if len(premier) >= 2:
+        # Le rival se cherche AILLEURS SUR L'AXE DES DÉCALAGES, sans écarter les
+        # clics du premier amas : des clics au métronome forment des amas de même
+        # taille à chaque multiple de l'intervalle, avec les MÊMES clics. Retirer
+        # les paires du premier amas les faisait disparaître, et l'ambiguïté avec.
+        lo = premier[0][0] - 0.2
+        hi = premier[-1][0] + 0.2
+        second = amas([c for c in paires if c[0] < lo or c[0] > hi])
+        if len(second) >= len(premier):
+            refus.append(f"appariement du pont ambigu : deux amas de {len(premier)} paires "
+                         "à des décalages différents — clique IRRÉGULIÈREMENT, c'est le "
+                         "motif des intervalles qui départage")
         else:
-            cand = [[A[j] - P[s+j] for j in range(len(A))]
-                    for s in range(len(P) - len(A) + 1)]
-        spreads = sorted(range(len(cand)), key=lambda i: max(cand[i]) - min(cand[i]))
-        decalages = cand[spreads[0]]
-        ignores = abs(len(P) - len(A))
-        if len(spreads) > 1:
-            d0 = (max(cand[spreads[0]]) - min(cand[spreads[0]])) * 1000
-            d1 = (max(cand[spreads[1]]) - min(cand[spreads[1]])) * 1000
-            # Si une autre fenêtre est presque aussi bonne, des clics trop
-            # réguliers rendent l'appariement indécidable : on refuse plutôt que
-            # de choisir au hasard.
-            if d1 < max(4 * d0, 50):
-                ambigu = (d0, d1)
-if len(decalages) < 2:
+            offs = sorted(o for o, _, _ in premier)
+            plancher = offs[0]
+            retenus = [o for o in offs if (o - plancher) * 1000 <= c11["dispersionMaxMs"]]
+            sans_a = len(A) - len(premier)
+            sans_p = len(P) - len(premier)
+            print(f"  pont       {len(premier)} clics appariés — {len(A)} vus par la page, "
+                  f"{len(P)} par Regarde ({sans_a} et {sans_p} sans vis-à-vis)")
+            print(f"             décalage {plancher*1000:.2f} ms au plancher · "
+                  f"{len(retenus)} clic(s) à moins de {c11['dispersionMaxMs']} ms du plancher · "
+                  f"étendue de l'amas {(offs[-1]-plancher)*1000:.2f} ms")
+            if len(retenus) < 2:
+                refus.append(f"un seul clic au plancher du pont ({c11['dispersionMaxMs']} ms) : "
+                             "le décalage ne peut pas être confirmé — refais les clics du pont "
+                             "dans un moment calme, juste après l'ouverture de session")
+            else:
+                decalages = retenus
+if not decalages and not refus:
     refus.append(f"pont d'horloge insuffisant : {len(ponts)} clic(s) vus par Regarde, "
                  f"{len(aligns)} par la page — il en faut au moins deux appariés")
-elif ambigu:
-    refus.append(f"appariement du pont ambigu : deux fenêtres à {ambigu[0]:.1f} et "
-                 f"{ambigu[1]:.1f} ms de dispersion — clique IRRÉGULIÈREMENT, c'est le "
-                 "motif des intervalles qui permet d'apparier")
-else:
-    tri = sorted(decalages)
-    complete = (tri[-1] - tri[0]) * 1000
-    # Le seuil s'applique à la statistique que le pont UTILISE : la médiane. Sur
-    # une page qui recompose à 75 img/s, la livraison d'un clic au gestionnaire
-    # subit l'ordonnancement du fil principal — un pas de rAF fait 13,3 ms, et un
-    # seul clic retardé pousse le max−min de 5 échantillons au-delà de 16 ms sans
-    # que le pont soit flou. Mesuré : résidus −12,0/−5,5/+2,3/0/+5,2 ms — l'écart
-    # complet dit 17,2, les trois médians disent 7,8, et la médiane bouge de ±4.
-    # À cinq clics ou plus, le min et le max sont donc écartés ; en dessous, tout
-    # compte.
-    if len(tri) >= 5:
-        dispersion = (tri[-2] - tri[1]) * 1000
-        etiquette = f"dispersion {dispersion:.2f} ms (écrêtée ; complète {complete:.2f})"
-    else:
-        dispersion = complete
-        etiquette = f"dispersion {dispersion:.2f} ms"
-    print(f"  pont       {len(decalages)} clics appariés sur {len(aligns)} vus par la page"
-          + (f" ({ignores} hors session, écartés)" if ignores else ""))
-    print(f"             décalage médian {statistics.median(decalages)*1000:.2f} ms · {etiquette}")
-    if dispersion > c11["dispersionMaxMs"]:
-        refus.append(f"dispersion du pont {dispersion:.1f} ms > {c11['dispersionMaxMs']} ms — "
-                     "un pont plus flou que la grandeur mesurée ne mesure rien")
 
 # Refus 3 — une marque antérieure à la première entrée conservée du journal.
 premiere = None
@@ -377,7 +387,9 @@ for f in pages:
     if j.get("t"): premiere = min(premiere or 1e18, j["t"][0] / 1000.0)
 releves = c11.get("releves", [])
 if premiere is not None and decalages:
-    med = statistics.median(decalages)
+    # Le plancher : voir l'estimateur ci-dessus — la médiane inclurait le retard
+    # de livraison de la page, strictement positif.
+    med = min(decalages)
     trop_tot = [r for r in releves if r["t"] + med < premiere]
     if trop_tot:
         refus.append(f"{len(trop_tot)} marque(s) antérieures à la première entrée "
