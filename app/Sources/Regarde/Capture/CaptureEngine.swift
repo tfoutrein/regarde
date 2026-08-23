@@ -161,6 +161,18 @@ actor CaptureEngine {
         for (_, s) in flux { await s.rafraichirFiltre() }
     }
 
+    /// Le segment en cours d'écriture pour un écran, s'il y en a un.
+    ///
+    /// C'est ce qui manquait pour relier une marque à son segment. Le § 3.3 exige
+    /// que toute marque porte son `CaptureSegmentID` : sans lui, après une
+    /// réouverture de segment aux dimensions différentes, ses pixels ne sont plus
+    /// interprétables. Il était déclaré sur `Mark` et n'était jamais renseigné —
+    /// l'appariement de l'extraction ne trouvait donc AUCUNE marque, et le bloc
+    /// EXTRACTION annonçait « 0 depuis le fichier, 0 par le filet » sur huit marques.
+    func segmentID(pour displayID: CGDirectDisplayID) -> CaptureSegmentID? {
+        flux[displayID]?.segmentID
+    }
+
     /// Les statistiques par écran, pour le journal et le banc.
     func bilans() -> [(CGDirectDisplayID, StreamStats)] {
         flux.map { ($0.key, $0.value.stats) }.sorted { $0.0 < $1.0 }

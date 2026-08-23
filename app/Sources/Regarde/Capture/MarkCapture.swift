@@ -236,6 +236,15 @@ actor MarkCapture {
             image = reduced
         }
 
+        // En `if` explicite : le membre droit de `??` est une autoclosure, où
+        // `await` n'est pas permis — quel que soit l'endroit où on l'écrit.
+        let segment: CaptureSegmentID?
+        if let deja = mark.segmentID {
+            segment = deja
+        } else {
+            segment = await CaptureEngine.shared.segmentID(pour: mark.displayID)
+        }
+
         // Une capture peut atterrir ICI après que l'utilisateur a annulé sa marque : la
         // tâche part au relâchement, ScreenCaptureKit prend quelques dizaines de
         // millisecondes, et ⌥⌘Z est plus rapide que ça.
@@ -251,7 +260,10 @@ actor MarkCapture {
                                   sourceRect: cropped.sourceRect,
                                   scaleX: scaleX, scaleY: scaleY,
                                   pointScale: shot.pointScale),
-            t: mark.t, motion: motion, segmentID: mark.segmentID,
+            // Le segment vient du MOTEUR, pas de la marque : la marque naît au
+            // `mouseDown`, avant qu'on sache quel flux la portera, et personne
+            // n'était en position de le lui dire ensuite.
+            t: mark.t, motion: motion, segmentID: segment,
             // Le chemin de S24 est le FILET du § 5.1 : une image existe quoi qu'il
             // arrive ensuite. L'extraction depuis le fichier encodé la remplace
             // quand elle réussit — et quand elle échoue, ceci reste.
@@ -308,9 +320,28 @@ actor MarkCapture {
         var remplacees = 0, refusees = 0
         var ecarts: [Double] = []
 
+        // L'appariement se fait sur l'ÉCRAN, et non sur l'identité du segment.
+        //
+        // Un segment appartient à un écran et à une session : dans le chemin
+        // nominal, les deux clés désignent la même chose. Mais l'identité peut
+        // manquer — c'est arrivé, et l'appariement rendait alors zéro marque sans
+        // que rien ne l'explique. L'écran, lui, est connu depuis le `mouseDown` et
+        // ne peut pas manquer.
+        //
+        // Le `segmentID` reste porté par la marque, parce que le § 3.3 en a besoin
+        // pour interpréter ses pixels après une réouverture de segment ; il n'est
+        // simplement plus la clé dont dépend le fonctionnement.
+        let orphelines = pending.filter { keep.contains($0.id) && $0.segmentID == nil }
+        if !orphelines.isEmpty {
+            let nums = orphelines.map(\.number).sorted().map(String.init).joined(separator: ", ")
+            await MainActor.run {
+                Journal.warn(.capture, "marque(s) sans segment : \(nums) — appariées sur leur écran")
+            }
+        }
+
         for segment in segments {
             let demandes = pending
-                .filter { keep.contains($0.id) && $0.segmentID == segment.id }
+                .filter { keep.contains($0.id) && $0.displayID == segment.displayID }
                 .map { AssetFrames.Demande(markID: $0.id, numero: $0.number,
                                            t: $0.t, motion: $0.motion) }
             guard !demandes.isEmpty else { continue }
