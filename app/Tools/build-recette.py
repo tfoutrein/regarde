@@ -24,7 +24,11 @@ OUT = sys.argv[2] if len(sys.argv) > 2 else "docs/livrables/lot2-recette.html"
 # par bout de texte en chasse fixe.
 RE_COMMANDE = re.compile(
     r'(^|\s)(\./|~/|cd\s|grep\s|ls\s|find\s|curl\s|open\s|tail\s|pkill\s|kill\s'
-    r'|python3\s|swift\s|git\s|screencapture\s)')
+    r'|python3\s|swift\s|git\s|screencapture\s'
+    # Une boucle shell est une commande au même titre qu'un binaire — le spinner
+    # du 4.3 commence par `while :; do printf …` et n'avait pas de bouton, alors
+    # que c'est la commande de tout le cahier qu'on a le moins envie de retaper.
+    r'|while\s|printf\s|for\s)')
 
 def ressemble_a_une_commande(txt):
     return bool(RE_COMMANDE.search(txt)) or ".sh" in txt or ".py" in txt
