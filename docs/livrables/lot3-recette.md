@@ -303,13 +303,21 @@ Pour ne pas le chercher :
       le burst a eu raison de se déclencher — mesuré le 23 août sur Arc « immobile » :
       15 frames/s, 0.025 de surface, zéro frame idle sur toute la session.
 
-- [ ] **4.3** Un curseur qui clignote ne suffit pas à déclencher un burst
-      FAIRE : ouvrir **Terminal.app** — pas Warp, pas iTerm GPU — une fenêtre vide où
-      seul le curseur clignote. Aucun `tail -F` du journal sur cet écran : la session
-      écrit des lignes, le tail les affiche, et vous observeriez l'expérience depuis
-      l'intérieur. Une session, une marque dessus, fermer.
-      REGARDER : la même ligne, et `surface salie` dans le bloc `FLUX`.
+- [ ] **4.3** Un changement rapide mais minuscule ne déclenche pas de burst
+      FAIRE : ouvrir **Terminal.app** — pas Warp ni un autre terminal GPU — et y
+      lancer un spinner d'un caractère :
+      `while :; do printf '\r|'; sleep 0.05; printf '\r-'; sleep 0.05; done`
+      (Le curseur de Terminal.app ne clignote pas par défaut, et un clignotement à
+      1 Hz resterait de toute façon sous le seuil de fréquence : c'est le spinner qui
+      met le critère à l'épreuve — dix changements par seconde, un seul caractère.)
+      Aucun `tail -F` du journal sur cet écran : la session écrit des lignes, le tail
+      les affiche, et vous observeriez l'expérience depuis l'intérieur.
+      Une session, une marque sur la fenêtre du spinner, fermer.
+      REGARDER : la ligne `marque 1 · … frame(s)/s · … de surface`.
       ATTENDU : `1 frame(s) au plan`.
+      ATTENDU : dans la même ligne, **≥ 6 frames/s** ET une surface **proche de zéro**
+      — la preuve que le critère de fréquence était bien franchi et que c'est la
+      surface, seule, qui a retenu le burst. Sans ça le test ne prouve rien.
       SI ÇA RATE : lisez la surface AVANT d'accuser le critère. Un terminal GPU comme
       Warp re-soumet sa surface entière à chaque battement de curseur, et les
       `dirtyRects` rapportent ce que le compositeur considère changé, pas ce qui a
