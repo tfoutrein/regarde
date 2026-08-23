@@ -28,11 +28,13 @@ import os
 //   Le tap dépose donc sa demande à la PRESSION, `encodeQueue` la sert dans la
 //   foulée, et le relâchement ne fait que réclamer un instantané déjà pris.
 //
-// LA DOUBLE GARDE. Copier chaque frame dans l'anneau brûle 440 MiB/s de bande
-// passante mémoire en permanence, avec la pollution de cache qui va avec — ce
-// n'est PAS dans les 1,5 % de CPU, qui ne mesurent que l'encodage. On ne copie
-// donc que si l'anneau est ARMÉ — première tenue de ⌥⌘ de la session — et si
-// l'écran a BOUGÉ. Les deux, pas l'un ou l'autre.
+// LA DOUBLE GARDE. Elle protégeait à l'origine contre les 440 MiB/s de bande
+// passante mémoire que coûtait la copie de chaque frame — un coût qui n'est PAS
+// dans les 1,5 % de CPU, lesquels ne mesurent que l'encodage. L'anneau ne copie
+// plus rien (voir `FrameSnapshot`), mais la garde reste : elle évite d'accumuler
+// des descripteurs pour personne, et elle donne au plan de burst sa mesure de
+// mouvement. On ne retient donc que si l'anneau est ARMÉ — première tenue de ⌥⌘ —
+// et si l'écran a BOUGÉ. Les deux, pas l'un ou l'autre.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// L'anneau lock-free du tap vers `encodeQueue`.
@@ -99,9 +101,27 @@ final class SnapshotRing: @unchecked Sendable {
 }
 
 /// Une frame retenue, avec de quoi la situer.
-struct FrameSnapshot: @unchecked Sendable {
+///
+/// **Elle ne porte PAS les pixels**, et c'est la correction la plus importante de ce
+/// fichier.
+///
+/// L'anneau retenait jusqu'à quatre `CVPixelBuffer` de ScreenCaptureKit. Avec
+/// `queueDepth = 6`, il en immobilisait les deux tiers : la pool s'épuisait et le
+/// flux CESSAIT DE LIVRER. Le journal du 23 août le montre au chiffre près — 55
+/// frames complètes sur 265 théoriques, soit 3,67 s de contenu, et la dernière
+/// marque servie par le fichier datait de 3,679 s. Tout ce qui suivait tombait
+/// « hors des bornes du segment ».
+///
+/// Le symptôme était d'autant plus trompeur que l'anneau s'arme à la PREMIÈRE tenue
+/// de ⌥⌘ : les premières secondes marchaient, et la panne commençait au moment
+/// exact où l'utilisateur se mettait à annoter.
+///
+/// Et personne ne lisait ces pixels. La spécification demandait une COPIE (§ 5.3),
+/// précisément pour rendre l'original à la pool ; ici la copie n'a même pas lieu
+/// d'être — l'image vient du fichier encodé (S39), et le filet vient de
+/// `SCScreenshotManager`. L'anneau n'a besoin que du TEMPS et de la GÉOMÉTRIE.
+struct FrameSnapshot: Sendable {
     let sequence: UInt64
-    let pixels: CVPixelBuffer
     let ref: FrameRef
     let t: SessionTime
     let motion: MotionSample
@@ -118,13 +138,18 @@ final class FrameRing: @unchecked Sendable {
     /// demanderait 60 frames, soit 1,77 GiB à pleine résolution — la même
     /// arithmétique qui a écarté le ring buffer RAM (ADR-0003).
     private static let profondeur = 4
-    private var frames: [(pixels: CVPixelBuffer, pts: CMTime, ref: FrameRef, t: SessionTime)] = []
+    /// Des DESCRIPTEURS, pas des tampons. Retenir les tampons épuisait la pool de
+    /// ScreenCaptureKit et arrêtait la livraison — voir `FrameSnapshot`.
+    private var frames: [(pts: CMTime, ref: FrameRef, t: SessionTime)] = []
 
     /// Instantanés pris et pas encore réclamés, par numéro de demande.
     private var pris: [UInt64: FrameSnapshot] = [:]
     private let verrouPris = OSAllocatedUnfairLock(initialState: [UInt64: FrameSnapshot]())
 
     // Comptes de diagnostic — c'est ce qui remplace un test qu'on ne peut pas écrire.
+    /// Descripteurs retenus, et descripteurs évités par la double garde. Le nom
+    /// parlait de « copies » quand l'anneau retenait des tampons ; il n'en retient
+    /// plus, et le compte a changé de sens en même temps que la chose comptée.
     private(set) var copiesFaites = 0
     private(set) var copiesEvitees = 0
     private(set) var apparieesSansFrame = 0
@@ -165,9 +190,7 @@ final class FrameRing: @unchecked Sendable {
             servirDemandes(pts: pts, ref: ref, t: t, sample: nil)
             return
         }
-        guard let pixels = CMSampleBufferGetImageBuffer(sample) else { return }
-
-        frames.append((pixels, pts, ref, t))
+        frames.append((pts, ref, t))
         if frames.count > Self.profondeur { frames.removeFirst() }
         copiesFaites += 1
 
@@ -195,7 +218,7 @@ final class FrameRing: @unchecked Sendable {
                 apparieesSansFrame += 1
                 continue
             }
-            let snap = FrameSnapshot(sequence: sequence, pixels: candidate.pixels,
+            let snap = FrameSnapshot(sequence: sequence,
                                      ref: candidate.ref, t: candidate.t, motion: motion)
             verrouPris.withLock { $0[sequence] = snap }
         }
@@ -221,8 +244,8 @@ final class FrameRing: @unchecked Sendable {
 
     /// Ce que le journal imprime en fin de session.
     var bilan: [(String, String)] {
-        [("copies faites", "\(copiesFaites)"),
-         ("copies évitées", "\(copiesEvitees) — double garde"),
+        [("descripteurs retenus", "\(copiesFaites)"),
+         ("évités", "\(copiesEvitees) — double garde"),
          ("appariements sans frame", "\(apparieesSansFrame)")]
     }
 }
