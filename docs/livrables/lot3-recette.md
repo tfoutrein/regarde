@@ -290,9 +290,18 @@ Pour ne pas le chercher :
       ATTENDU : `3 frame(s) au plan`.
 
 - [ ] **4.2** Un écran immobile n'en déclenche qu'une
-      FAIRE : sur une fenêtre figée, une session, une marque, fermer.
-      REGARDER : la même ligne.
+      FAIRE : sur une fenêtre **vraiment** figée — le Finder, ou une image dans
+      Aperçu. **Pas un navigateur** : Arc comme Chrome recomposent en continu, même
+      sur une page « immobile », et leur bruit de fond suffit à franchir les seuils
+      du burst. Une session, une marque, fermer.
+      REGARDER : la même ligne, et le bloc `FLUX` de l'écran annoté.
       ATTENDU : `1 frame(s) au plan`.
+      ATTENDU : dans le bloc `FLUX`, `autres statuts` non nul — c'est la preuve que
+      l'écran était bien au repos ; sans elle, un `3` ne dit rien contre le critère.
+      SI ÇA RATE : vérifiez d'abord la ligne `marque 1 · … frame(s)/s · … de surface` :
+      si elle montre ≥ 6 frames/s ET ≥ 0.02 de surface, l'écran bougeait réellement et
+      le burst a eu raison de se déclencher — mesuré le 23 août sur Arc « immobile » :
+      15 frames/s, 0.025 de surface, zéro frame idle sur toute la session.
 
 - [ ] **4.3** Un curseur qui clignote ne suffit pas à déclencher un burst
       FAIRE : ouvrir un terminal vide où **seul le curseur clignote**, rien d'autre.
