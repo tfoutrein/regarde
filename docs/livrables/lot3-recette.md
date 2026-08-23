@@ -154,7 +154,8 @@ Pour ne pas le chercher :
 ## 2. Ne rien casser — bloquant
 
 - [ ] **2.1** Le mode éclair fonctionne toujours
-      FAIRE : `cd ~/DEV/PERSO/AI-DEV/TOOLS/regarde/app && ./Tools/lot2-eclair.sh`.
+      FAIRE : depuis `~/DEV/PERSO/AI-DEV/TOOLS/regarde/app`, lancer
+      `./Tools/lot2-eclair.sh`
       REGARDER : la sortie du script.
       ATTENDU : le dossier publié est complet, sans erreur.
       SI ÇA RATE : c'est le mode **majoritaire**, et le seul chemin qu'un
@@ -162,12 +163,12 @@ Pour ne pas le chercher :
       cachent — celui du lot 2 y est resté une journée entière.
 
 - [ ] **2.2** Le livrable du lot 2 passe encore
-      FAIRE : `./Tools/lot2-livrable.sh`.
+      FAIRE : `./Tools/lot2-livrable.sh`
       REGARDER : les trois lignes de verdict en fin de script.
       ATTENDU : `✓ 6 marques`, `✓ 2 vues d'ensemble`, `✓ aucun fichier inattendu`.
 
 - [ ] **2.3** La gravure est toujours au bon endroit
-      FAIRE : `./Tools/lot2-cible.sh`.
+      FAIRE : `./Tools/lot2-cible.sh`
       REGARDER : le verdict du script.
       ATTENDU : le contrôle d'encre passe.
 
@@ -400,7 +401,7 @@ Pour ne pas le chercher :
 ## 9. C3b — la dette du lot 0
 
 - [ ] **9.1** Lancer la campagne de mesure
-      FAIRE : `./Tools/lot3-temoin.sh --duree 60`, témoin en plein écran natif.
+      FAIRE : `./Tools/lot3-temoin.sh --duree 60` témoin en plein écran natif.
       REGARDER : la sortie du script.
       ATTENDU : il va jusqu'au bout et dépose ses fichiers.
 

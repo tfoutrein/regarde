@@ -19,6 +19,11 @@ OUT = sys.argv[2] if len(sys.argv) > 2 else "docs/livrables/lot2-recette.html"
 
 def inline(t):
     t = H.escape(t)
+    # Une commande suivie d'une ponctuation COLLÉE est un piège de copier-coller :
+    # sélectionnée d'un trait, elle emporte le point et le shell répond « no such
+    # file or directory » sur un fichier qui existe. On l'écarte à la source plutôt
+    # que de compter sur la relecture — c'est arrivé au premier test de la section 2.
+    t = re.sub(r'`([^`]*\.(?:sh|py)[^`]*)`([.,])', r'`\1`', t)
     t = re.sub(r'`([^`]+)`', r'<kbd>\1</kbd>', t)
     t = re.sub(r'\*\*([^*]+)\*\*', r'<strong>\1</strong>', t)
     t = re.sub(r'\*([^*]+)\*', r'<em>\1</em>', t)
