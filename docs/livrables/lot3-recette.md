@@ -338,13 +338,24 @@ Pour ne pas le chercher :
       les pixels — exclu par coût au § 5.1. Avec une vraie vignette et une surface
       sous 0.02, un 3 serait un véritable échec du double critère.
 
-- [ ] **4.4** Une marque juste avant la fin perd une image, et le dit
-      FAIRE : témoin animé, une session, tracer une marque puis fermer **dans la
-      seconde**.
-      REGARDER : la ligne `burst — N frame(s) obtenues sur M demandée(s)`.
-      ATTENDU : `N` est inférieur à `M`.
-      SI ÇA RATE : l'écart est le nombre d'images demandées hors des bornes du
-      segment. Qu'il y en ait est normal ici ; qu'on ne le sache pas ne l'est pas.
+- [ ] **4.4** Une marque au ras du début perd une image du plan, et le dit
+      FAIRE : témoin animé, ouvrir la session par ⌃⌥S et tracer la marque
+      **immédiatement, dans la foulée du raccourci** — la pression doit tomber dans
+      les 0,8 premières secondes. Il faut être vif ; deux essais sont parfois
+      nécessaires (la ligne `MARQUES` donne l'instant exact de votre pression).
+      REGARDER : la ligne `marque 1 · N frame(s) au plan`.
+      ATTENDU : `2 frame(s) au plan` — le candidat `t−0,8` tombe avant la première
+      frame encodée. Il est écarté **avant** toute demande au générateur, et le
+      compte du plan le dit.
+      SI ÇA RATE : `3 frame(s) au plan` veut dire que la pression est arrivée après
+      0,8 s de segment — recommencez plus vite. Deux choses que ce test ne mesure
+      **pas** : la borne de fin (`t+0,4`) est hors de portée d'un geste humain — il
+      faudrait fermer la session moins de 0,4 s après la *pression*, alors que le
+      tracé lui-même dure davantage — et elle est couverte par l'autotest
+      (`--capture-test`, « burst à 0,2 s de la fin »). Et la ligne
+      `burst — N obtenues sur M demandées` avec `N < M` mesure autre chose : des
+      échecs de décodage, pas des bornes — les candidats hors bornes ne sont jamais
+      demandés.
 
 ## 5. Les écrans qu'on écarte
 
