@@ -249,9 +249,10 @@ Pour ne pas le chercher :
       croissants`. C'est le contrôle qui compare la chaîne à elle-même : les marques
       sont tracées dans l'ordre du temps, donc le compteur du témoin ne peut pas
       reculer d'une marque à la suivante.
-      SI ÇA RATE : le script nomme lequel de ses quatre refus s'applique. Il ne rend
+      SI ÇA RATE : le script nomme lequel de ses refus s'applique. Il ne rend
       **pas** de verdict C11 sur cette chaîne — c'est voulu, et c'est écrit dans sa
-      sortie.
+      sortie. Une campagne dont seul le dépouillement a échoué se rejoue sans refaire
+      de session : `./Tools/lot3-c11.sh --depouiller <dossier-du-run>`.
 
 - [ ] **3.6** Sur un écran immobile, l'image reste juste et le journal le dit
       FAIRE : annoter une fenêtre vraiment figée — le Finder, ou une image ouverte dans

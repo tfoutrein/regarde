@@ -1214,6 +1214,29 @@ if (params.auto === 'armer') {
   setTimeout(startRun, 300);
 }
 
+// L'état se dépose DE LUI-MÊME quand la page passe en arrière-plan.
+//
+// Le dépôt reposait sur ⌃⌥D — un raccourci qui doit atterrir sur le bon onglet
+// au bon moment. Campagne du 23 août, troisième passage : les clics du pont
+// sont restés dans la mémoire d'un onglet fermé, le raccourci est parti vers un
+// onglet témoin résiduel sans paramètre de run, et le banc a conclu « 0 clic vu
+// par la page » sur des clics qu'elle avait bel et bien vus. Deux fois de suite
+// avant cela, le dépôt automatique du script avait déjà raté et coûté un
+// aller-retour humain.
+//
+// Or l'instant où l'utilisateur QUITTE la page — retour au terminal pour
+// appuyer sur Entrée — est exactement celui où le relevé doit partir. C'est
+// `visibilitychange`, et il ne demande rien à personne. ⌃⌥D reste pour forcer
+// un dépôt sans quitter la page.
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'hidden') return;
+  if (!params.run || params.depot === '0') return;
+  // `sendBeacon` et non `fetch` : la page passe en arrière-plan, le navigateur
+  // peut geler ses requêtes ordinaires — le beacon est fait pour cet instant-là.
+  const corps = new Blob([JSON.stringify(payload())], { type: 'application/json' });
+  navigator.sendBeacon(`/depot/${encodeURIComponent(params.run)}/02-etat`, corps);
+});
+
 // Un rechargement en pleine campagne laisse une PREUVE plutôt qu'un trou : le
 // `sessionId` change, et `interrompu.json` dit où la vie précédente s'est arrêtée.
 addEventListener('beforeunload', () => {

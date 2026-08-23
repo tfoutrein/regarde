@@ -43,6 +43,7 @@ while [[ $# -gt 0 ]]; do
         --marques)  MARQUES="$2"; shift 2 ;;
         --ponts)    PONTS="$2"; shift 2 ;;
         --sortie)   SORTIE="$2"; shift 2 ;;
+        --depouiller) DEPOUILLER="$2"; shift 2 ;;
         -h|--help)  sed -n '2,31p' "$0"; exit 0 ;;
         *) echo "✗ option inconnue : $1"; exit 2 ;;
     esac
@@ -51,13 +52,31 @@ done
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 LOT0="$(cd "${ROOT}/../prototypes/lot0" && pwd)"
 BIN="${ROOT}/.build/debug/Regarde"
-RUN="c11-$(date +%Y%m%d-%H%M%S)-$$"
-DEPOT="${SORTIE}/${RUN}"
-mkdir -p "${DEPOT}" && chmod 700 "${DEPOT}"
+# `--depouiller <dossier-de-run>` rejoue le dépouillement — monotonie et verdict —
+# sur les artefacts d'une campagne déjà faite, sans témoin, sans session, sans
+# clic. Né le 23 août : la session 19:19 avait tout produit et le banc s'était
+# abstenu sur un défaut d'appariement du script lui-même ; corriger le script
+# sans pouvoir rejouer ses données aurait exigé une campagne de plus par
+# correction.
+if [[ -n "${DEPOUILLER:-}" ]]; then
+    DEPOT="$(cd "${DEPOUILLER}" && pwd)"
+    RUN="$(basename "${DEPOT}")"
+    SORTIE="$(dirname "${DEPOT}")"
+    for f in lectures.txt c11.json; do
+        [[ -f "${DEPOT}/${f}" ]] || { echo "✗ ${DEPOT}/${f} absent — pas un dossier de run"; exit 2; }
+    done
+    echo "── Banc C11 · dépouillement seul · ${RUN} ──"
+else
+    RUN="c11-$(date +%Y%m%d-%H%M%S)-$$"
+    DEPOT="${SORTIE}/${RUN}"
+    mkdir -p "${DEPOT}" && chmod 700 "${DEPOT}"
 
-echo "── Banc C11 · ${RUN} ──"
-echo "  dépôt   ${DEPOT}"
-echo "  marques ${MARQUES} · ponts ${PONTS}"
+    echo "── Banc C11 · ${RUN} ──"
+    echo "  dépôt   ${DEPOT}"
+    echo "  marques ${MARQUES} · ponts ${PONTS}"
+fi
+
+if [[ -z "${DEPOUILLER:-}" ]]; then
 
 # ── 0. Le seuil, AVANT toute mesure ──────────────────────────────────────────
 # Il est imprimé et consigné ici, avant qu'une seule image existe. C'est la seule
@@ -109,6 +128,19 @@ if [[ "${SIG}" != *'regarde-temoin'* ]]; then
         sleep 0.1
     done
 fi
+# Les onglets témoin RÉSIDUELS sont fermés d'abord. Un onglet d'une campagne
+# précédente — ou un /index.html nu ouvert à la main — ressemble trait pour
+# trait au bon : le 23 août, un ⌃⌥D est parti vers l'un d'eux et le relevé du
+# vrai onglet n'est jamais arrivé.
+# Le port du banc est interpolé ; 8765 est celui de `serve-temoin.sh`, la voie
+# manuelle — c'est un de ses onglets résiduels qui a reçu le ⌃⌥D du 23 août.
+osascript >/dev/null 2>&1 \
+    -e 'tell application "Google Chrome"' \
+    -e '  repeat with w in windows' \
+    -e "    close (tabs of w whose URL contains \"127.0.0.1:${PORT}\")" \
+    -e '    close (tabs of w whose URL contains "127.0.0.1:8765")' \
+    -e '  end repeat' \
+    -e 'end tell' || true
 open -a "Google Chrome" \
      "http://127.0.0.1:${PORT}/index.html?run=${RUN}&plan=c11&mode=compteur&duree=900&hud=0&auto=armer&depot=run"
 sleep 3
@@ -156,6 +188,16 @@ echo "── Dépôt du relevé de la page ──"
 # trois raisons — Chrome pas au premier plan, plan déjà clos, page rechargée — et
 # les trois se rattrapent en dix secondes si on les nomme tout de suite.
 for essai in 1 2 3; do
+    # Le serveur d'abord : s'il est mort — durée de vie atteinte, machine en
+    # veille — la page peut bien déposer, rien n'arrive. Le relancer suffit, la
+    # page retient son état et le prochain dépôt passe.
+    if ! curl -s --max-time 1 "http://127.0.0.1:${PORT}/sante" >/dev/null 2>&1; then
+        echo "  ⚠ le serveur du témoin ne répond plus — relance"
+        nohup python3 "${LOT0}/Tools/temoin-serveur.py" --port "${PORT}" \
+              --racine "${LOT0}/temoins" --depot "${SORTIE}" --duree-max 3600 \
+              >> "${SORTIE}/serveur.log" 2>&1 &
+        sleep 1
+    fi
     if [[ ${essai} -lt 3 ]]; then
         osascript <<'AS' >/dev/null 2>&1 || true
 tell application "Google Chrome" to activate
@@ -223,6 +265,8 @@ for png in "${PLEINS[@]}"; do
     fi
 done
 
+fi  # fin du mode campagne complète
+
 # ── 5 bis. La monotonie des numéros lus ──────────────────────────────────────
 #
 # Le contrôle qui manquait, et qui a trouvé un défaut que le journal ne pouvait
@@ -236,7 +280,7 @@ done
 # EXTRACTION annonçait pourtant « 548 ms » d'âge, et rien d'autre ne clochait.
 echo
 echo "── Monotonie des numéros ──"
-python3 - "${DEPOT}/lectures.txt" <<'MONO'
+if python3 - "${DEPOT}/lectures.txt" <<'MONO'
 import sys
 lignes = [l.split() for l in open(sys.argv[1]) if l.strip()]
 lus = [(n, int(v)) for n, v in lignes if v.isdigit()]
@@ -254,9 +298,9 @@ ecarts = [vb - va for (_, va), (_, vb) in zip(lus, lus[1:])]
 print(f"  ✓ {len(lus)} numéros strictement croissants "
       f"(écarts de {min(ecarts)} à {max(ecarts)} images)")
 MONO
-MONOTONE=$?
+then MONOTONE=0; else MONOTONE=1; fi
 
-cp "${FRAMES}/c11.json" "${DEPOT}/" 2>/dev/null || true
+[[ -z "${DEPOUILLER:-}" ]] && cp "${FRAMES}/c11.json" "${DEPOT}/" 2>/dev/null || true
 
 # ── 6. Les quatre refus, et la ligne de base ─────────────────────────────────
 echo
