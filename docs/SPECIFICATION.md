@@ -450,6 +450,8 @@ func framePlan(for mark: Mark) -> [SessionTime] {
 
 Seuils : `completeFramesLastSecond ≥ 6` **et** `dirtyRatioLastSecond ≥ 0,02`. Le double critère élimine le curseur clignotant (fréquence élevée, surface dérisoire) et le redraw plein écran unique (surface énorme, fréquence 1).
 
+`dirtyRatioLastSecond` est la **moyenne** des surfaces salies sur la fenêtre d'une seconde, pas leur somme — précision ajoutée en S43 après qu'une somme s'y soit glissée. Une somme vaut `fréquence × surface moyenne` : elle fait entrer la fréquence dans l'axe surface et détruit l'indépendance dont ce critère dépend entièrement. Sous la somme, un spinner de 86×86 px à 15 fps cumulait 0,0225 et franchissait le seuil — le cas même que le critère existe pour écarter. Une moyenne reste bornée par 1 ; toute valeur au-dessus signale que la somme est revenue.
+
 ### 5.5 Finalisation, par segment
 
 ```

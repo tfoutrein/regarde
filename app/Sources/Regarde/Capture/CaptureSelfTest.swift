@@ -870,6 +870,33 @@ enum CaptureSelfTest {
         check(t, "redraw plein écran unique — une seule frame (fréquence 1)",
               seg.framePlan(pour: SessionTime(seconds: 30), motion: redraw, clock: clock).count == 1)
 
+        // 9 bis — Les valeurs ci-dessus sont-elles CELLES QUE L'ANNEAU PRODUIT ?
+        //
+        // Elles ne l'étaient pas. L'anneau sommait les surfaces de la fenêtre au
+        // lieu de les moyenner, et ces quatre cas étaient écrits en moyennes : le
+        // test validait le seuil sur une grandeur que le producteur ne fabriquait
+        // jamais. Rien ne les reliait, donc rien ne l'a vu.
+        //
+        // Ce test refait le calcul de l'anneau sur une fenêtre synthétique et le
+        // confronte au seuil. C'est le pont qui manquait.
+        func commeAnneau(_ surfaces: [Double]) -> MotionSample {
+            MotionSample(completeFramesLastSecond: surfaces.count,
+                         dirtyRatioLastSecond: surfaces.isEmpty ? 0
+                            : surfaces.reduce(0, +) / Double(surfaces.count))
+        }
+        let spinner = commeAnneau(Array(repeating: 0.0015, count: 15))
+        check(t, "spinner 86×86 px à 15 fps — une seule frame",
+              seg.framePlan(pour: SessionTime(seconds: 30), motion: spinner, clock: clock).count == 1,
+              String(format: "surface moyenne %.4f, seuil %.2f",
+                     spinner.dirtyRatioLastSecond, MotionSample.seuilDirty))
+        let anime = commeAnneau(Array(repeating: 0.94, count: 15))
+        check(t, "écran témoin animé à 94 % — burst de trois frames",
+              seg.framePlan(pour: SessionTime(seconds: 30), motion: anime, clock: clock).count == 3,
+              String(format: "surface moyenne %.3f", anime.dirtyRatioLastSecond))
+        check(t, "la surface reste un RATIO — jamais au-dessus de 1",
+              anime.dirtyRatioLastSecond <= 1.0,
+              String(format: "%.3f", anime.dirtyRatioLastSecond))
+
         // 10 — Le burst près de la fin perd sa borne haute, sans bruit.
         let pres = seg.framePlan(pour: SessionTime(seconds: 63.0), motion: bouge, clock: clock)
         check(t, "burst à 0,2 s de la fin — la borne violée disparaît du plan",

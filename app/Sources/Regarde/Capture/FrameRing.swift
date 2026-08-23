@@ -175,8 +175,17 @@ final class FrameRing: @unchecked Sendable {
         let maintenant = t.seconds
         fenetre.append((maintenant, dirtyRatio))
         fenetre.removeAll { maintenant - $0.t > 1.0 }
-        motion = MotionSample(completeFramesLastSecond: fenetre.count,
-                              dirtyRatioLastSecond: fenetre.map(\.dirty).reduce(0, +))
+        // La MOYENNE, et non la somme. Une somme vaut `fréquence × surface
+        // moyenne` : elle fait entrer la fréquence dans l'axe surface et détruit
+        // l'indépendance dont le double critère du § 5.4 dépend entièrement. Un
+        // spinner de 86×86 px à 15 fps y cumulait 0,0225 et franchissait le seuil
+        // de 0,02 — précisément le cas que ce critère existe pour écarter.
+        // Elle rendait aussi la ligne du journal illisible : « 14.083 de surface »
+        // pour un écran couvert à 94 %.
+        motion = MotionSample(
+            completeFramesLastSecond: fenetre.count,
+            dirtyRatioLastSecond: fenetre.isEmpty ? 0
+                : fenetre.map(\.dirty).reduce(0, +) / Double(fenetre.count))
 
         // LA DOUBLE GARDE. Armé ET l'écran a bougé — pas l'un ou l'autre.
         //

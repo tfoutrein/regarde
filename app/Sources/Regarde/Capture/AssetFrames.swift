@@ -140,7 +140,7 @@ enum AssetFrames {
 
             await MainActor.run {
                 Journal.event(.capture, String(
-                    format: "marque %d · %d frame(s) au plan · %d frame(s)/s · %.3f de surface",
+                    format: "marque %d · %d frame(s) au plan · %d frame(s)/s · %.3f de surface moyenne",
                     d.numero, plan.count,
                     d.motion.completeFramesLastSecond, d.motion.dirtyRatioLastSecond))
             }
