@@ -304,28 +304,32 @@ Pour ne pas le chercher :
       15 frames/s, 0.025 de surface, zéro frame idle sur toute la session.
 
 - [ ] **4.3** Un changement rapide mais minuscule ne déclenche pas de burst
-      FAIRE : ouvrir **Terminal.app** — pas Warp ni un autre terminal GPU — et y
-      lancer un spinner d'un caractère :
+      FAIRE : ouvrir un terminal — n'importe lequel — et **réduire sa fenêtre à une
+      vignette d'environ 200×150 points**, soit moins de 2 % de l'écran. C'est la
+      taille qui fait le test : sur macOS 26, tous les terminaux (Terminal.app
+      compris) re-soumettent leur fenêtre entière au compositeur à chaque
+      changement — la surface salie vaut donc la fraction d'écran de la fenêtre, et
+      c'est la vignette qui la rend dérisoire, pas le curseur.
+      FAIRE : y lancer un spinner d'un caractère :
       `while :; do printf '\r|'; sleep 0.05; printf '\r-'; sleep 0.05; done`
-      (Le curseur de Terminal.app ne clignote pas par défaut, et un clignotement à
-      1 Hz resterait de toute façon sous le seuil de fréquence : c'est le spinner qui
-      met le critère à l'épreuve — dix changements par seconde, un seul caractère.)
-      Aucun `tail -F` du journal sur cet écran : la session écrit des lignes, le tail
-      les affiche, et vous observeriez l'expérience depuis l'intérieur.
-      Une session, une marque sur la fenêtre du spinner, fermer.
+      (dix changements par seconde — le critère de fréquence sera franchi, c'est
+      voulu : seul celui de surface doit retenir le burst).
+      Aucun `tail -F` du journal sur cet écran, et rien d'autre qui bouge — fermez en
+      particulier tout témoin resté en plein écran d'une campagne précédente. Une
+      session, une marque sur la vignette, fermer.
       REGARDER : la ligne `marque 1 · … frame(s)/s · … de surface`.
       ATTENDU : `1 frame(s) au plan`.
-      ATTENDU : dans la même ligne, **≥ 6 frames/s** ET une surface **proche de zéro**
-      — la preuve que le critère de fréquence était bien franchi et que c'est la
+      ATTENDU : dans la même ligne, **≥ 6 frames/s** ET une surface **sous 0.02** —
+      la preuve que le critère de fréquence était bien franchi et que c'est la
       surface, seule, qui a retenu le burst. Sans ça le test ne prouve rien.
-      SI ÇA RATE : lisez la surface AVANT d'accuser le critère. Un terminal GPU comme
-      Warp re-soumet sa surface entière à chaque battement de curseur, et les
+      SI ÇA RATE : lisez la surface AVANT d'accuser le critère. Si elle dépasse 0.02,
+      la fenêtre était trop grande, ou autre chose bougeait sur cet écran — mesuré le
+      23 août : 0.954 de surface pour un spinner d'un caractère dans un Terminal.app
+      quasi plein écran, parce que macOS 26 re-soumet la fenêtre entière. Les
       `dirtyRects` rapportent ce que le compositeur considère changé, pas ce qui a
-      changé en pixels — mesuré le 23 août : 0.981 de surface moyenne sur un Warp
-      « immobile ». Le critère ne peut pas distinguer une surface re-soumise d'une
-      vraie animation sans comparer les pixels, ce que le § 5.1 exclut par coût.
-      Sur Terminal.app, à rendu CPU, seul le rectangle du curseur est sale et le
-      double critère doit tenir : un 3 y serait un vrai échec.
+      changé en pixels, et le critère ne peut pas faire la différence sans comparer
+      les pixels — exclu par coût au § 5.1. Avec une vraie vignette et une surface
+      sous 0.02, un 3 serait un véritable échec du double critère.
 
 - [ ] **4.4** Une marque juste avant la fin perd une image, et le dit
       FAIRE : témoin animé, une session, tracer une marque puis fermer **dans la
