@@ -87,7 +87,17 @@ enum ImageSource: String, Codable, Sendable {
 /// frame se fait ici, à la couture, du côté des pixels.
 struct FrameRef: Codable, Sendable, Equatable {
     let segmentID: CaptureSegmentID
-    /// Rectangle utile DANS le tampon, en pixels.
+    /// Rectangle utile DANS le tampon, **en PIXELS du tampon**.
+    ///
+    /// ScreenCaptureKit le publie en POINTS : sur un écran @2×, une frame qui
+    /// remplit un tampon de 3456×2234 annonce un `contentRect` de 1728×1117. Le
+    /// comparer tel quel au tampon fait déclarer boîtée toute frame parfaitement
+    /// normale, et écrase les marques dans le quart haut-gauche de l'image.
+    ///
+    /// La conversion se fait donc à la CONSTRUCTION, une fois, ici — et non à
+    /// chaque usage, où l'oubli d'une multiplication serait invisible. C'est très
+    /// exactement le défaut que le § 3.3 annonce comme « diagnostiqué à tort comme
+    /// un bug d'échelle Retina ».
     let contentRect: CGRect
     /// Dimensions du tampon, qui peuvent excéder `contentRect`.
     let bufferSize: CGSize
@@ -97,6 +107,25 @@ struct FrameRef: Codable, Sendable, Equatable {
     let contentScale: Double
     /// Vrai quand la frame vient d'un segment à résolution réduite (pré-roll).
     let resolutionReduite: Bool
+
+    /// Construit depuis les attachements d'une frame, en convertissant les unités.
+    ///
+    /// `scaleFactor` est l'échelle de l'ÉCRAN — 2 sur Retina — et c'est elle qui
+    /// convertit les points en pixels, et elle aussi qui donne l'épaisseur de trait
+    /// à la gravure. `contentScale` vaut 1 quand la capture n'est pas réduite : la
+    /// prendre pour l'échelle de l'écran fait graver des traits deux fois trop fins
+    /// sur un Retina, sans que rien ne le signale.
+    static func depuisFrame(segmentID: CaptureSegmentID, contentRectEnPoints: CGRect,
+                            bufferSize: CGSize, scaleFactor: Double, contentScale: Double,
+                            resolutionReduite: Bool, pts: CMTime) -> FrameRef {
+        let f = scaleFactor > 0 ? scaleFactor : 1
+        let enPixels = CGRect(x: contentRectEnPoints.minX * f, y: contentRectEnPoints.minY * f,
+                              width: contentRectEnPoints.width * f,
+                              height: contentRectEnPoints.height * f)
+        return FrameRef(segmentID: segmentID, contentRect: enPixels, bufferSize: bufferSize,
+                        scaleFactor: scaleFactor, contentScale: contentScale,
+                        resolutionReduite: resolutionReduite, pts: CMTimeCodable(pts))
+    }
     /// PTS de la frame, sur l'horloge du flux.
     let pts: CMTimeCodable
 

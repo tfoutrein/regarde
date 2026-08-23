@@ -334,10 +334,12 @@ final class DisplayStream: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
 
         // L'anneau est nourri ICI, sur `encodeQueue` — la seule file qui possède
         // les tampons. Le thread du tap, lui, s'est contenté de déposer un numéro.
-        let ref = FrameRef(segmentID: segmentID, contentRect: rect,
-                           bufferSize: taille ?? .zero, scaleFactor: scale,
-                           contentScale: contentScale, resolutionReduite: false,
-                           pts: CMTimeCodable(pts))
+        // `rect` vient des attachements, donc en POINTS : la conversion est dans
+        // `depuisFrame`, en un seul endroit.
+        let ref = FrameRef.depuisFrame(
+            segmentID: segmentID, contentRectEnPoints: rect,
+            bufferSize: taille ?? .zero, scaleFactor: scale,
+            contentScale: contentScale, resolutionReduite: false, pts: pts)
         anneau.accueillir(sample, ref: ref, dirtyRatio: dirty)
 
         onFrame?(sample, rect, scale)

@@ -99,7 +99,11 @@ enum Engraver {
         init(ref: FrameRef, sourceRect: CGRect, scaleX: CGFloat, scaleY: CGFloat) {
             self.init(captureSize: ref.bufferSize, sourceRect: sourceRect,
                       scaleX: scaleX, scaleY: scaleY,
-                      pointScale: CGFloat(ref.contentScale),
+                      // `scaleFactor` et non `contentScale` : le premier est
+                      // l'échelle de l'ÉCRAN (2 sur Retina), le second vaut 1
+                      // quand la capture n'est pas réduite. Prendre le second
+                      // grave des traits deux fois trop fins sur un Retina.
+                      pointScale: CGFloat(ref.scaleFactor),
                       contentRect: ref.contentRect)
         }
 

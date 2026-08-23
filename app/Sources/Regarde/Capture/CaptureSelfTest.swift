@@ -622,10 +622,67 @@ enum CaptureSelfTest {
         check(t, "sur une frame NON boîtée, la formule est inchangée",
               identiques == 4, "\(identiques)/4")
 
+        // ── Les unités, sur les valeurs RÉELLES du journal ──────────────────
+        //
+        // Relevées le 23 août sur la machine de l'auteur, écran interne @2× :
+        //   tampon réel   3456×2234   pixels
+        //   contentRect   1728×1117   POINTS
+        //   scaleFactor   2.00        contentScale 1.00
+        //
+        // ScreenCaptureKit publie le contentRect en POINTS. Le comparer tel quel au
+        // tampon fait déclarer boîtée une frame qui remplit tout, et écrase les
+        // marques dans le quart haut-gauche. Le cas est ici parce qu'il est passé
+        // une fois, et qu'aucun test fabriqué ne l'aurait montré — les deux valeurs
+        // étaient cohérentes dans mes cas inventés.
+        let reelle = FrameRef.depuisFrame(
+            segmentID: CaptureSegmentID(),
+            contentRectEnPoints: CGRect(x: 0, y: 0, width: 1728, height: 1117),
+            bufferSize: CGSize(width: 3456, height: 2234),
+            scaleFactor: 2, contentScale: 1, resolutionReduite: false, pts: .zero)
+        check(t, "un contentRect en points devient des pixels du tampon",
+              reelle.contentRect.width == 3456 && reelle.contentRect.height == 2234,
+              String(format: "%.0f×%.0f", reelle.contentRect.width, reelle.contentRect.height))
+        check(t, "et la frame n'est donc PAS déclarée boîtée",
+              !reelle.boitee)
+
+        // L'externe non-Retina : contentRect et tampon coïncident déjà.
+        let externe = FrameRef.depuisFrame(
+            segmentID: CaptureSegmentID(),
+            contentRectEnPoints: CGRect(x: 0, y: 0, width: 3440, height: 1440),
+            bufferSize: CGSize(width: 3440, height: 1440),
+            scaleFactor: 1, contentScale: 1, resolutionReduite: false, pts: .zero)
+        check(t, "sur un écran @1×, la conversion ne change rien",
+              externe.contentRect.width == 3440 && !externe.boitee)
+
+        // L'épaisseur de trait suit l'échelle de l'ÉCRAN, pas celle du contenu.
+        let grave = Engraver.Frame(ref: reelle,
+                                   sourceRect: CGRect(x: 0, y: 0, width: 3456, height: 2234),
+                                   scaleX: 1, scaleY: 1)
+        check(t, "l'épaisseur suit scaleFactor et non contentScale",
+              grave.pointScale == 2,
+              String(format: "%.1f — contentScale valait 1, la prendre graverait deux fois trop fin",
+                     grave.pointScale))
+
+        // Et une VRAIE frame boîtée reste détectée après conversion.
+        let vraimentBoitee = FrameRef.depuisFrame(
+            segmentID: CaptureSegmentID(),
+            contentRectEnPoints: CGRect(x: 4, y: 18, width: 1720, height: 1080),
+            bufferSize: CGSize(width: 3456, height: 2234),
+            scaleFactor: 2, contentScale: 1, resolutionReduite: false, pts: .zero)
+        check(t, "une frame réellement boîtée l'est toujours après conversion",
+              vraimentBoitee.boitee
+                && vraimentBoitee.contentRect.width == 3440
+                && vraimentBoitee.contentRect.minX == 8)
+
         // La construction depuis un FrameRef reprend le contentRect sans le
         // recalculer : une seule couture, pas deux occasions de se tromper.
+        // `scaleFactor: 2, contentScale: 1` — les valeurs d'un Retina, et non
+        // l'inverse. La donnée d'essai les avait échangées, ce qui rendait le test
+        // vert sur un code faux : il fallait le journal d'une vraie session pour
+        // voir lequel des deux vaut 2. Le `contentRect` est ici donné DÉJÀ en
+        // pixels, la conversion étant vérifiée juste au-dessus.
         let ref = FrameRef(segmentID: CaptureSegmentID(), contentRect: contenu,
-                           bufferSize: tampon, scaleFactor: 1, contentScale: 2,
+                           bufferSize: tampon, scaleFactor: 2, contentScale: 1,
                            resolutionReduite: false, pts: CMTimeCodable(.zero))
         let depuisRef = Engraver.Frame(ref: ref,
                                        sourceRect: CGRect(origin: .zero, size: tampon),

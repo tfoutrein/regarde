@@ -91,14 +91,28 @@ Pour ne pas le chercher :
       les images du lot sont en résolution perdue, et le texte y sera illisible. C'est
       le piège silencieux du § 5.2 — il ne produit aucune erreur.
 
-- [ ] **1.3** Le flux reçoit bien les images d'un écran qui bouge
+- [ ] **1.3** Le flux reçoit bien les images de l'écran qui bouge
       FAIRE : rouvrir une session, laisser le témoin animé tourner **20 secondes**
       sans rien faire, fermer.
-      REGARDER : dans le bloc `FLUX`, la ligne `frames complètes`.
-      ATTENDU : un nombre proche du théorique annoncé à côté (environ 15 par seconde).
-      SI ÇA RATE : un compte bas sur un écran **immobile** est normal —
-      ScreenCaptureKit ne livre une image que lorsque l'écran change. Sur un écran
-      animé, ce n'est pas normal.
+      REGARDER : **le bloc `FLUX` de l'écran qui porte le témoin** — il y en a un par
+      écran, et ils ne disent pas la même chose.
+      ATTENDU : sur cet écran-là, `frames complètes` proche du théorique annoncé à
+      côté (environ 15 par seconde).
+      ATTENDU : sur l'écran **immobile**, un compte bas et un `autres statuts` élevé —
+      c'est normal, et c'est même la preuve que la double garde fonctionne.
+      SI ÇA RATE : ScreenCaptureKit ne livre une image `complete` que lorsque l'écran
+      CHANGE ; le reste du temps il livre des statuts `idle`, comptés à part. Un
+      compte bas sur l'écran animé, en revanche, n'est pas normal.
+
+- [ ] **1.3 bis** Le `contentRect` est cohérent avec le tampon
+      FAIRE : rien de plus, la session vient d'être fermée.
+      REGARDER : dans le bloc `FLUX`, les lignes `tampon réel` et `contentRect`.
+      ATTENDU : sur un écran Retina, `contentRect` vaut la **moitié** du tampon —
+      3456×2234 de tampon pour 1728×1117 de contentRect, avec `scale 2.00`.
+      ATTENDU : `variations 0`.
+      SI ÇA RATE : ScreenCaptureKit publie le `contentRect` en POINTS et le tampon en
+      PIXELS ; le rapport entre les deux doit être exactement `scale`. Une variation
+      en cours de segment signale un changement de résolution ou une bascule d'espace.
 
 - [ ] **1.4** Chaque écran ferme son propre flux
       FAIRE : rien de plus, la session vient d'être fermée.
