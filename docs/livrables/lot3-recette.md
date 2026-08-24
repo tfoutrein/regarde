@@ -442,6 +442,11 @@ Pour ne pas le chercher :
       FAIRE : `./Tools/lot3-debranchement.sh` et suivre ses instructions — deux
       écrans, une marque sur chacun, puis **débrancher physiquement** l'externe sans
       fermer la session.
+      FAIRE : pour la marque sur l'écran qui ne porte pas la cible, le geste est
+      **⌥⌘⇧ + glisser** — avec Majuscule. La session fige son cadre sur une seule
+      fenêtre, et ⇧ est ce qui affranchit le geste du cadre ; sans lui, l'autre
+      écran refuse en silence, et c'est ce silence qui a fait croire à un bug le
+      24 août.
       REGARDER : la sortie du script.
       ATTENDU : ses trois contrôles passent.
 

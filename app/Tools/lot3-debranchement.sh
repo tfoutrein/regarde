@@ -25,7 +25,10 @@ echo "── S36 · débranchement à chaud ──"
 echo
 echo "  1. Deux écrans branchés, Regarde lancé"
 echo "  2. ⌃⌥S — ouvre une session"
-echo "  3. Trace UNE marque sur CHAQUE écran (⌥⌘ + glisser)"
+echo "  3. Trace UNE marque sur CHAQUE écran — ⌥⌘ + glisser sur l'écran de la
+     CIBLE, et ⌥⌘⇧ + glisser sur l'autre : la session fige le cadre sur une
+     seule fenêtre, et MAJUSCULE est ce qui affranchit le geste du cadre
+     (« isArmed », OptionGate). Sans ⇧, l'autre écran refuse en silence."
 echo "  4. DÉBRANCHE l'écran externe, sans fermer la session"
 echo "  5. Trace encore une marque sur l'écran restant"
 echo "  6. ⌃⌥F — ferme"
@@ -40,8 +43,13 @@ tail -80 "${JOURNAL}" | grep -E "débranché|FLUX|SEGMENT VIDE|flux fermé|MARQU
 
 echo
 echo "── Les manifestes de segment ──"
+# Dans le sous-répertoire de Regarde, et pas tout $TMPDIR : le répertoire T de
+# l'utilisateur contient des milliers d'entrées dont des protégées — find y sort
+# en erreur, pipefail la propage, et set -e tuait le script juste avant ses
+# propres contrôles, en silence. Trouvé le 24 août : la sortie s'arrêtait à
+# « Les manifestes de segment » et personne ne rendait de verdict.
 TMP="${TMPDIR:-/tmp}"
-find "${TMP}" -name "display-*.json" -mmin -30 2>/dev/null | while read -r m; do
+find "${TMP}regarde" "${TMP}/regarde" -name "display-*.json" -mmin -30 2>/dev/null | sort -u | while read -r m; do
     echo "  $(basename "$m")"
     python3 - "$m" <<'PY'
 import json, sys
