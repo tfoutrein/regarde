@@ -29,6 +29,11 @@ actor CaptureEngine {
     private(set) var segments: [CaptureSegment] = []
     /// Répertoire de travail sécurisé de la session — 0700, hors sauvegarde.
     private var dossier: URL?
+    /// L'identité de la session en cours — le MÊME UUID que le répertoire de
+    /// travail (S47). Nil hors session. C'est lui que la publication du lot 4
+    /// inscrira dans le manifeste : l'identité vit du premier octet capturé au
+    /// dernier octet publié, sans traduction.
+    private(set) var sessionUUID: UUID?
 
     var actif: Bool { !flux.isEmpty }
     var displaysActifs: [CGDirectDisplayID] { flux.keys.sorted() }
@@ -59,7 +64,14 @@ actor CaptureEngine {
                     Journal.event(.system, "\(purges) répertoire(s) de session purgé(s)")
                 }
             }
-            dossier = try SecureWorkspace.beginSession()
+            // UNE identité, pas deux — S47. L'UUID qui nomme le répertoire de
+            // travail EST l'UUID de la session : celui que le manifeste publiera
+            // (§ 9.5, `session.uuid`) et que l'index reliera au numéro attribué
+            // en `publishing`. Deux UUID pour une même session, c'est deux
+            // vérités à réconcilier le jour où un dossier orphelin traîne.
+            let identite = UUID()
+            sessionUUID = identite
+            dossier = try SecureWorkspace.beginSession(id: identite)
         } catch {
             return "répertoire de travail impossible — \(error.localizedDescription)"
         }

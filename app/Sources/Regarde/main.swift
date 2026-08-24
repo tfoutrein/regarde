@@ -35,6 +35,16 @@ if CommandLine.arguments.contains("--geometry-test") {
 // vérifie est du calcul, pas de l'affichage.
 // Le recadrage et la gravure : rectangles, paliers de facturation et conversions de
 // repère. Aucun écran, aucune permission — ce sont des calculs.
+// Le mode ENFANT du banc d'écriture — avant tout le reste : il doit sortir sans
+// toucher à AppKit ni aux permissions, c'est un pur écrivain de lignes.
+if let i = CommandLine.arguments.firstIndex(of: "--append-bench") {
+    exit(AppendSelfTest.bench(Array(CommandLine.arguments.dropFirst(i + 1))))
+}
+
+if CommandLine.arguments.contains("--append-test") {
+    exit(AppendSelfTest.run() ? 0 : 1)
+}
+
 if CommandLine.arguments.contains("--capture-test") {
     exit(CaptureSelfTest.run() ? 0 : 1)
 }
