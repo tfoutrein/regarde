@@ -45,6 +45,14 @@ if CommandLine.arguments.contains("--append-test") {
     exit(AppendSelfTest.run() ? 0 : 1)
 }
 
+if let i = CommandLine.arguments.firstIndex(of: "--publier-bench") {
+    exit(PublieurSelfTest.bench(Array(CommandLine.arguments.dropFirst(i + 1))))
+}
+
+if CommandLine.arguments.contains("--publier-test") {
+    exit(PublieurSelfTest.run() ? 0 : 1)
+}
+
 if CommandLine.arguments.contains("--render-test") {
     exit(RenderSelfTest.run() ? 0 : 1)
 }
