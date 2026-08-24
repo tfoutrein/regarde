@@ -1,0 +1,122 @@
+{
+  "schemaVersion": "1.1",
+  "session": {
+    "number": 42,
+    "uuid": "5F2C0000-0000-0000-0000-000000000000",
+    "id": "0042-20260819-1432-checkout",
+    "startedAt": "2026-08-19T14:32:46.031+02:00",
+    "durationSeconds": 134.85,
+    "wallDurationSeconds": 134.85,
+    "tool": { "name": "Regarde", "version": "0.4.0", "os": "macOS 26.1", "build": "25B78" },
+    "locale": "fr-FR",
+    "captureSegments": [{
+      "index": 0, "displayID": 1, "codec": "hevc", "fps": 15,
+      "firstSamplePTSSeconds": 0.412, "lastSamplePTSSeconds": 134.6,
+      "pixelSize": { "w": 3456, "h": 2234 }, "deleted": true
+    }],
+    "context": {
+      "project": "/Users/dev/shop-front",
+      "detection": "**certaine** — session Claude Code vivante sur ce répertoire (pid 20378, il y a 12 s) et cwd du shell Warp au premier plan concordant",
+      "git": "`feat/checkout-coupon` @ `a3f19c2`, 3 fichiers modifiés non commités",
+      "application": "Google Chrome — fenêtre « Panier — Boutique Démo », 1512×982 pt",
+      "screen": "Display 1, 1728×1117 pt @2×, capture native 3456×2234 px",
+      "interruptions": "aucune",
+      "status": "**nouveau**"
+    }
+  },
+  "marks": [
+    {
+      "number": 1, "kind": "rect", "sessionTime": 21.381, "captureSegment": 0,
+      "isRetroactive": false, "intents": ["alignement"],
+      "geometry": {
+        "points":     { "x": 988,  "y": 806,  "w": 372, "h": 72 },
+        "pixels":     { "x": 1976, "y": 1612, "w": 744, "h": 144 },
+        "normalized": { "x": 0.5718, "y": 0.7216, "w": 0.2153, "h": 0.0645 },
+        "frameContentRect": { "x": 0, "y": 0, "w": 3456, "h": 2234 },
+        "frameScaleFactor": 2.0
+      },
+      "frames": { "crop": "crop-01", "full": "full-01" },
+      "screenWasMoving": false,
+      "zoneNote": "coin inférieur droit de la carte de\nrécapitulatif de commande"
+    },
+    {
+      "number": 2, "kind": "rect", "sessionTime": 64.2, "captureSegment": 0,
+      "isRetroactive": false, "intents": ["a-revoir"],
+      "geometry": {
+        "points":     { "x": 521,  "y": 388,  "w": 434, "h": 280 },
+        "pixels":     { "x": 1042, "y": 776,  "w": 868, "h": 560 },
+        "normalized": { "x": 0.3015, "y": 0.3473, "w": 0.2512, "h": 0.2507 },
+        "frameContentRect": { "x": 0, "y": 0, "w": 3456, "h": 2234 },
+        "frameScaleFactor": 2.0
+      },
+      "frames": { "crop": "crop-02", "full": "full-02" },
+      "screenWasMoving": false,
+      "zoneNote": "champ code promo et son message d'erreur"
+    },
+    {
+      "number": 3, "kind": "rect", "sessionTime": 98.75, "captureSegment": 0,
+      "isRetroactive": false, "intents": ["ne-marche-pas"],
+      "geometry": {
+        "points":     { "x": 1204, "y": 918,  "w": 268, "h": 44 },
+        "pixels":     { "x": 2408, "y": 1836, "w": 536, "h": 88 },
+        "normalized": { "x": 0.6968, "y": 0.8218, "w": 0.1551, "h": 0.0394 },
+        "frameContentRect": { "x": 0, "y": 0, "w": 3456, "h": 2234 },
+        "frameScaleFactor": 2.0
+      },
+      "frames": { "crop": "crop-03" },
+      "screenWasMoving": true,
+      "contextFramesAvailable": 2,
+      "zoneNote": "ligne « Total TTC »"
+    }
+  ],
+  "frames": [
+    {
+      "id": "crop-01", "role": "crop",
+      "absolutePath": "/Users/dev/shop-front/.regarde/sessions/0042-20260819-1432-checkout/frames/crop-01.png",
+      "size": { "w": 756, "h": 532 }, "visualTokens": 513,
+      "visualTokensNote": "min(patches, plafond du palier)",
+      "bytes": 173044, "marks": [1], "engravedMarks": [1]
+    },
+    {
+      "id": "full-01", "role": "full",
+      "absolutePath": "/Users/dev/shop-front/.regarde/sessions/0042-20260819-1432-checkout/frames/full-01.png",
+      "size": { "w": 1316, "h": 868 }, "visualTokens": 1457,
+      "visualTokensNote": "min(patches, plafond du palier)",
+      "bytes": 412001, "marks": [1], "engravedMarks": [1]
+    },
+    {
+      "id": "crop-02", "role": "crop",
+      "absolutePath": "/Users/dev/shop-front/.regarde/sessions/0042-20260819-1432-checkout/frames/crop-02.png",
+      "size": { "w": 868, "h": 560 }, "visualTokens": 620,
+      "visualTokensNote": "min(patches, plafond du palier)",
+      "bytes": 201377, "marks": [2], "engravedMarks": [2]
+    },
+    {
+      "id": "full-02", "role": "full",
+      "absolutePath": "/Users/dev/shop-front/.regarde/sessions/0042-20260819-1432-checkout/frames/full-02.png",
+      "size": { "w": 1316, "h": 868 }, "visualTokens": 1457,
+      "visualTokensNote": "min(patches, plafond du palier)",
+      "bytes": 405116, "marks": [2], "engravedMarks": [2]
+    },
+    {
+      "id": "crop-03", "role": "crop",
+      "absolutePath": "/Users/dev/shop-front/.regarde/sessions/0042-20260819-1432-checkout/frames/crop-03.png",
+      "size": { "w": 700, "h": 448 }, "visualTokens": 400,
+      "visualTokensNote": "min(patches, plafond du palier)",
+      "bytes": 158209, "marks": [3], "engravedMarks": [3]
+    },
+    {
+      "id": "full-03", "role": "full",
+      "absolutePath": "/Users/dev/shop-front/.regarde/sessions/0042-20260819-1432-checkout/frames/full-03.png",
+      "size": { "w": 1316, "h": 868 }, "visualTokens": 1457,
+      "visualTokensNote": "min(patches, plafond du palier)",
+      "bytes": 398804, "marks": [3], "engravedMarks": [3]
+    }
+  ],
+  "budget": {
+    "reportTokensEstimate": 870,
+    "estimateMethod": "approximation 4 car./jeton, pas un tokeniseur",
+    "framesTokens": { "crop": 1533, "full": 4371, "full_hires": null },
+    "mcpHardLimit": 25000
+  }
+}

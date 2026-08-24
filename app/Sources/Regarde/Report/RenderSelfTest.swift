@@ -23,6 +23,7 @@ enum RenderSelfTest {
         print("── Autotest du rendu (S48+) ──\n")
         bareme(t)
         manifeste(t)
+        rendu(t)
         print("\n── \(t.passed) vérifications passées, \(t.failed) échouées ──")
         return t.failed == 0
     }
@@ -157,5 +158,83 @@ enum RenderSelfTest {
             check(t, "schemaVersion 2.0 — la majeure inconnue est refusée nommément",
                   "\(error)".contains("2.0"))
         }
+    }
+
+    // MARK: - Le rendu contre l'empreinte de S46 (S49)
+
+    private static func rendu(_ t: Tally) {
+        print("\n· Le rendu, jugé à l'octet contre la cible de S46")
+
+        // Les deux fichiers de référence vivent dans app/Tools/, localisés
+        // depuis la source : ce test s'exécute sur la machine de développement,
+        // là où le dépôt existe — c'est sa raison d'être.
+        let outils = URL(fileURLWithPath: #filePath)          // …/Regarde/Report/RenderSelfTest.swift
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Tools")
+        let manifesteURL = outils.appendingPathComponent("lot4-manifest-reference.json")
+        let cibleURL = outils.appendingPathComponent("lot4-rapport-reference.md")
+
+        guard let data = try? Data(contentsOf: manifesteURL),
+              let m = try? Manifeste.decoder(data) else {
+            check(t, "le manifeste de référence se charge", false, manifesteURL.path)
+            return
+        }
+        guard let cible = try? String(contentsOf: cibleURL, encoding: .utf8) else {
+            check(t, "le rapport de référence se charge", false)
+            return
+        }
+
+        let rapport = Rendu.rendre(m)
+        if rapport == cible {
+            check(t, "rendu = rapport de référence, octet pour octet", true,
+                  "\(rapport.utf8.count) octets")
+        } else {
+            check(t, "rendu = rapport de référence, octet pour octet", false)
+            // La PREMIÈRE ligne divergente, nommée — sans elle, l'écart à
+            // l'empreinte est indéboguable.
+            let a = rapport.split(separator: "\n", omittingEmptySubsequences: false)
+            let b = cible.split(separator: "\n", omittingEmptySubsequences: false)
+            for i in 0..<max(a.count, b.count) {
+                let la = i < a.count ? String(a[i]) : "«fin du rendu»"
+                let lb = i < b.count ? String(b[i]) : "«fin de la cible»"
+                if la != lb {
+                    print("    ligne \(i + 1) :")
+                    print("      rendu : \(la)")
+                    print("      cible : \(lb)")
+                    break
+                }
+            }
+        }
+
+        // Les trois options, exercées SANS appelant — leurs consommateurs
+        // n'existent qu'au lot 6, et une option jamais appelée est une
+        // frontière à moitié posée.
+        let avecBandeau = Rendu.rendre(m, options: .init(profil: .sidecar,
+                                                         bandeau: "> **DÉJÀ TRAITÉ** le 20 août par Claude — « corrigé, sauf la marque 2 »"))
+        check(t, "bandeau — préfixé avant l'en-tête",
+              avecBandeau.hasPrefix("> **DÉJÀ TRAITÉ**") && avecBandeau.contains("# Feedback #42")
+                && avecBandeau != rapport)
+
+        let filtre = Rendu.rendre(m, options: .init(profil: .sidecar, marques: [1]))
+        check(t, "filtre par marques — la 1 reste, la 3 disparaît, le compte suit",
+              filtre.contains("## Marque 1") && !filtre.contains("## Marque 3")
+                && filtre.contains("**1 marque**"))
+
+        let sansContexte = Rendu.rendre(m, options: .init(profil: .sidecar, includeContext: false))
+        check(t, "include_context: false — la section Contexte est omise",
+              !sansContexte.contains("## Contexte") && sansContexte.contains("## Marque 1"))
+
+        // includeHires est posée et INERTE : même sortie, c'est le contrat
+        // jusqu'à S58 — le lot 6 compile contre la signature définitive.
+        check(t, "include_hires — posée, inerte jusqu'à S58",
+              Rendu.rendre(m, options: .init(includeHires: true)) == rapport)
+
+        // La seconde sortie : paste-web, autonome — pas de chemin absolu, pas
+        // de resolve_feedback, mais les mêmes marques.
+        let web = Rendu.rendre(m, options: .init(profil: .chatWeb))
+        check(t, "paste-web — autonome : ni chemin absolu, ni resolve_feedback",
+              !web.contains("/Users/") && !web.contains("resolve_feedback")
+                && web.contains("## Marque 3") && web != rapport)
     }
 }
