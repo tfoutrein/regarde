@@ -91,6 +91,16 @@ final class SessionCoordinator {
         // « 6 marques », le dossier ne contiendrait rien.
         SessionClock.shared.rearm()
 
+        // Le PROJET se présente à l'arming — S51, ADR-0017. L'énumération coûte
+        // quelques millisecondes de libproc ; le sélecteur ne bloque rien : la
+        // session démarre pendant qu'il est ouvert, et l'ignorer (Échap ou rien)
+        // laisse l'état « ambigu » — que le rapport dira, plutôt que de deviner.
+        // La pondération et le verdict fin arrivent en S52 ; d'ici là, un seul
+        // candidat vaut « probable », plusieurs valent « ambigu ».
+        let candidats = ProjetCandidats.enumerer()
+        SelecteurProjet.presenter(candidats: candidats,
+                                  etat: candidats.count == 1 ? .probable : .ambigu)
+
         // Le banc C11 s'arme avec la session, pas avant : son pont d'horloge doit
         // partager l'origine des marques qu'il mesure.
         if TestFlags.c11Bench {
