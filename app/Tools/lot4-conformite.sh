@@ -66,7 +66,16 @@ for d in desordre:
 sys.exit(0 if ok else 1)
 PY
 
-# L'empreinte, contre le seuil écrit.
+# L'empreinte, contre le seuil écrit — mais SEULEMENT sur le rapport de
+# référence : un rapport réel a d'autres marques, d'autres chemins, d'autres
+# nombres, et exiger l'empreinte de la référence sur lui déclarerait « NON
+# conforme » tout rapport que le produit publie. Trouvé à l'audit de la
+# recette du lot 4, avant qu'un testeur ne le paie.
+if [[ "$(basename "${RAPPORT}")" != "lot4-rapport-reference.md" ]]; then
+    echo "  · empreinte non exigée — ce n'est pas le rapport de référence"
+    if [[ ${ECHEC} -eq 0 ]]; then echo "── conforme ──"; else echo "── NON conforme ──"; exit 1; fi
+    exit 0
+fi
 ATTENDUE=$(grep -oE "SHA-256 [0-9a-f]{64}" "${SEUILS}" 2>/dev/null | head -1 | cut -d' ' -f2)
 REELLE=$(shasum -a 256 "${RAPPORT}" | cut -d' ' -f1)
 if [[ -z "${ATTENDUE}" ]]; then
