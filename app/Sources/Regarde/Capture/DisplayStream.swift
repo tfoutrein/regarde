@@ -73,6 +73,9 @@ struct StreamStats: Sendable {
     /// déclarait l'écran ENTIER changé à chaque frame, et la moyenne ne pouvait
     /// pas dire si c'était chaque frame ou une frame sur deux.
     var salieHisto = [Int](repeating: 0, count: 5)
+    /// Frames déclarées sales par le compositeur mais identiques à l'épreuve
+    /// d'identité (§ 5.1 bis) — traitées comme du repos, ni écrites ni comptées.
+    var identiques = 0
     /// Les `dirtyRects` bruts de la dernière frame : combien, et lesquels.
     /// C'est la seule ligne qui montre ce que ScreenCaptureKit DÉCLARE, plutôt
     /// qu'un ratio qui l'agrège.
@@ -170,6 +173,8 @@ final class DisplayStream: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
     /// fichier dont chaque frame serait rejetée, sans erreur au moment où on
     /// pourrait encore corriger.
     private var writer: SegmentWriter?
+    /// L'épreuve d'identité du § 5.1 bis — vit sur `encodeQueue`, comme tout ici.
+    private let identite = EpreuveIdentite()
     private var dossier: URL?
     /// L'anneau de frames. Vit sur `encodeQueue`, et nulle part ailleurs.
     private(set) lazy var anneau = FrameRing(queue: encodeQueue, segmentID: segmentID)
@@ -400,6 +405,17 @@ final class DisplayStream: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
         let taille = CMSampleBufferGetImageBuffer(sample).map {
             CGSize(width: CVPixelBufferGetWidth($0), height: CVPixelBufferGetHeight($0))
         }
+
+        // L'ÉPREUVE D'IDENTITÉ — § 5.1 bis. Une frame déclarée sale dont les
+        // échantillons égalent tous la dernière frame acceptée est du repos
+        // déguisé : ni écrite, ni comptée au mouvement, ni offerte à l'anneau —
+        // le comportement exact d'un écran honnête, qui n'aurait rien envoyé.
+        // Voir l'en-tête d'EpreuveIdentite.swift pour la mesure qui l'a imposée.
+        if let tampon = CMSampleBufferGetImageBuffer(sample),
+           identite.estIdentique(tampon) {
+            verrou.withLock { $0.identiques += 1 }
+            return
+        }
         // Le résumé des rects bruts — borné à trois, ils se ressemblent tous quand
         // ça déborde, et c'est justement ce qu'on veut voir.
         let rectsBruts = ((info[.dirtyRects] as? [[String: Any]]) ?? [])
@@ -487,6 +503,10 @@ final class DisplayStream: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
                     h[0], h[1], h[2], h[3], h[4])))
                 if !s.derniersRects.isEmpty {
                     lignes.append(("dernière frame", s.derniersRects))
+                }
+                if s.identiques > 0 {
+                    lignes.append(("sales mais identiques",
+                                   "\(s.identiques) ignorée(s) — épreuve d'identité, § 5.1 bis"))
                 }
             }
         }

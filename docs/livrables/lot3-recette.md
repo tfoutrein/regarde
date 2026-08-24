@@ -330,10 +330,12 @@ Pour ne pas le chercher :
       la preuve que le critère de fréquence était bien franchi et que c'est la
       surface, seule, qui a retenu le burst. Sans ça le test ne prouve rien.
       SI VOTRE MACHINE NE PEUT PAS : deux classes d'écrans rendent ce test
-      inexécutable, mesuré le 24 août. Un écran **virtualisé** (dock DisplayLink,
-      recopie AirPlay) re-présente tout son framebuffer à chaque frame — `1 rect
-      (0,0) pleine taille`, en permanence. Un **papier peint vidéo** (iwallpaper et
-      semblables) anime le Bureau entier, même sous des fenêtres qui l'occultent.
+      inexécutable, mesuré le 24 août. Un écran aux **dégâts fantômes** — moniteur
+      externe en HDMI direct dont le compositeur re-présente la dalle entière à
+      chaque frame (`1 rect (0,0) pleine taille` en permanence, pixels immobiles à
+      0,03 % près) : phénomène connu des Mac Apple Silicon sur HDMI, configuration
+      banale. Un **papier peint vidéo** (iwallpaper et semblables) anime le Bureau
+      entier, même sous des fenêtres qui l'occultent.
       Dans les deux cas la ligne `dernière frame` du bloc `FLUX` vous le dira. Le
       test reste valable sur tout écran natif à fond statique ; à défaut, la
       décision du critère est jugée par l'autotest (« spinner 86×86 px ») sur des

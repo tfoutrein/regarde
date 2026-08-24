@@ -30,6 +30,7 @@ enum CaptureSelfTest {
         segments(t)
         demandesMultiEcrans(t)
         surfaceSalie(t)
+        epreuveIdentite(t)
         print("\n── \(t.passed) vérifications passées, \(t.failed) échouées ──")
         return t.failed == 0
     }
@@ -1133,5 +1134,61 @@ enum CaptureSelfTest {
         check(t, "aucun rectangle sale — ratio nul",
               SurfaceSalie.ratio(dirtyRects: [], contentRectEnPoints: large,
                                  scaleFactor: 1).brut == 0)
+    }
+
+    /// L'épreuve d'identité du § 5.1 bis, sur des tampons fabriqués — S45.
+    ///
+    /// Le tampon de test fait 32×32 : les changements de test couvrent une MOITIÉ
+    /// du tampon, parce que l'échantillonnage est probabiliste par construction —
+    /// un pixel isolé peut légitimement passer entre les mailles pendant quelques
+    /// frames, c'est le compromis assumé du § 5.1 bis. Un changement d'un demi-
+    /// tampon, lui, ne peut pas échapper à 2 048 mailles : le test est
+    /// déterministe sans nier la nature de l'épreuve.
+    private static func epreuveIdentite(_ t: Tally) {
+        print("\n· Épreuve d'identité (§ 5.1 bis)")
+
+        func tampon(_ w: Int, _ h: Int, motif: UInt8) -> CVPixelBuffer? {
+            var pb: CVPixelBuffer?
+            CVPixelBufferCreate(nil, w, h, kCVPixelFormatType_32BGRA, nil, &pb)
+            guard let pb else { return nil }
+            CVPixelBufferLockBaseAddress(pb, [])
+            let base = CVPixelBufferGetBaseAddress(pb)!.assumingMemoryBound(to: UInt8.self)
+            let pas = CVPixelBufferGetBytesPerRow(pb)
+            for y in 0..<h { for x in 0..<(w * 4) { base[y * pas + x] = motif &+ UInt8((x &+ y) % 64) } }
+            CVPixelBufferUnlockBaseAddress(pb, [])
+            return pb
+        }
+        func peindreMoitie(_ pb: CVPixelBuffer, motif: UInt8) {
+            CVPixelBufferLockBaseAddress(pb, [])
+            let base = CVPixelBufferGetBaseAddress(pb)!.assumingMemoryBound(to: UInt8.self)
+            let pas = CVPixelBufferGetBytesPerRow(pb)
+            let h = CVPixelBufferGetHeight(pb), w = CVPixelBufferGetWidth(pb)
+            for y in 0..<(h / 2) { for x in 0..<(w * 4) { base[y * pas + x] = motif } }
+            CVPixelBufferUnlockBaseAddress(pb, [])
+        }
+
+        guard let a = tampon(32, 32, motif: 10) else {
+            check(t, "tampon de test créé", false); return
+        }
+        let e = EpreuveIdentite()
+
+        check(t, "la première frame est toujours acceptée", !e.estIdentique(a))
+        check(t, "la même frame, inchangée, est identique", e.estIdentique(a))
+
+        var tous = true
+        for _ in 0..<20 { if !e.estIdentique(a) { tous = false; break } }
+        check(t, "vingt frames identiques — toutes ignorées, la rotation des mailles tient",
+              tous, "\(e.ignorees) ignorée(s)")
+
+        peindreMoitie(a, motif: 200)
+        check(t, "un demi-tampon repeint est détecté — frame acceptée", !e.estIdentique(a))
+        check(t, "et la frame suivante, inchangée, redevient identique — la référence a suivi",
+              e.estIdentique(a))
+
+        guard let b = tampon(64, 64, motif: 10) else {
+            check(t, "second tampon créé", false); return
+        }
+        check(t, "un changement de géométrie réamorce tout — frame acceptée", !e.estIdentique(b))
+        check(t, "puis l'identité reprend sur la nouvelle géométrie", e.estIdentique(b))
     }
 }
