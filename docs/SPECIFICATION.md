@@ -806,6 +806,8 @@ $TMPDIR/regarde/<uuid>/             # NSTemporaryDirectory : hors Time Machine, 
 
 `.regarde/.gitignore` : `sessions/*/frames/`, `sessions/*/context/`, `sessions/*/paste-web.md`, `state.jsonl`. `manifest.json`, `report.md`, `transcript.txt` et `index.jsonl` restent versionnables (moins de 25 Ko par session).
 
+> **Amendement S46 (24 août 2026) — quatre points que ce paragraphe laissait ouverts.** `context/` figurait au `.gitignore` sans exister dans l'arborescence : il n'est **pas créé** avant le lot 9, absence silencieuse (P5). `transcript.txt` n'existe pas au lot 4 — pas de voix — et le rendu ne mentionne jamais un fichier absent. Le **suffixe** du nom de dossier est le slug de la branche git si détectée, sinon celui de l'application cible, sinon rien — `[a-z0-9-]`, 24 caractères au plus. Les relevés du GO/NO-GO (`metrics.jsonl`) sont des données d'usage personnelles et non de projet : le fichier vit dans `~/Library/Application Support/Regarde/metrics.jsonl`, append-only, jamais versionné, jamais servi par MCP. Détail dans `docs/lot4-seuils.md`.
+
 **Le numéro de session est attribué en `publishing`, pas à `t0`.** Il est monotone par projet ; or le projet peut être ambigu à l'ouverture et changé en revue. L'identité pendant tout le cycle de vie est un UUID ; le numéro et le nom de dossier final sont calculés sous verrou de fichier sur `index.jsonl` au moment de l'écriture.
 
 ### 9.3 `report.md` est un rendu, pas un fichier source
