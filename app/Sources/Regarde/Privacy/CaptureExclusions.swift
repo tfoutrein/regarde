@@ -42,6 +42,12 @@ final class CaptureExclusions {
         "org.whispersystems.signal-desktop",
         "desktop.WhatsApp",
         "com.tinyspeck.slackmacgap",     // Slack — messages professionnels
+        // Même motif exact que Slack, découvert par accident le 24 août : une
+        // session de banc s'est ouverte sur le Teams de l'utilisateur en plein
+        // travail, et rien ne s'y opposait. Une visioconférence d'entreprise est
+        // au moins aussi sensible qu'un canal Slack.
+        "com.microsoft.teams2",          // Microsoft Teams (nouveau client)
+        "com.microsoft.teams",           // Microsoft Teams (classique)
     ]
 
     private init() {}
