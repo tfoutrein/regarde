@@ -642,7 +642,13 @@ function startRun() {
               'de cadence à 0,1 %.', true);
     return;
   }
-  if (!state.reglette) {
+  // Refuser une réglette CASSÉE (un motif technique existe), jamais une réglette
+  // volontairement éteinte par ⌃⌥G : l'état « éteinte » est précisément celui que
+  // la paire de coût du plan mesure en premier. Cette garde, écrite pour le
+  // premier cas, attrapait le second — et la paire « sans réglette » n'a jamais
+  // pu tourner : trouvé le 24 août, à la troisième campagne automatisée, après
+  // 90 secondes d'attente d'un dépôt que la page refusait en silence à l'écran.
+  if (!state.reglette && state.regletteRefus) {
     setStatus(`Relevé refusé — réglette inactive : ${state.regletteRefus}.`, true);
     return;
   }

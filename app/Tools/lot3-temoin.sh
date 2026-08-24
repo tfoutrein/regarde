@@ -72,9 +72,18 @@ echo "  plan   ${PLAN} · durée ${DUREE} s · port ${PORT}"
 # Le script connaît TOUS les chemins attendus avant d'ouvrir quoi que ce soit :
 # aucun scan de répertoire, aucun « le fichier le plus récent », donc aucune
 # confusion possible avec une campagne précédente.
+# Le serveur VERSIONNE les dépôts répétés : un second « 02-etat » devient
+# « 02-etat~1.json », puis ~2, et le fichier sans suffixe reste la PREMIÈRE
+# photo, à jamais. Trouvé le 24 août : la boucle de calibrage relisait 40 fois
+# le dépôt initial — calibrated y était False pour l'éternité — pendant que la
+# page avait convergé au cinquième dépôt. Lire un état, c'est lire la DERNIÈRE
+# version.
+dernier() { # nom -> chemin du dépôt le plus récent portant ce nom
+    ls -1 "${DEPOT}/$1.json" "${DEPOT}/$1~"*.json 2>/dev/null         | sort -t'~' -k2 -n | tail -1
+}
 attendre() { # nom, délai en secondes
-    local f="${DEPOT}/$1.json" n="$2" i=0
-    while [[ ! -f "${f}" ]]; do
+    local n="$2" i=0
+    while [[ -z "$(dernier "$1")" ]]; do
         i=$((i + 1)); [[ ${i} -gt $((n * 4)) ]] && return 1
         sleep 0.25
     done
@@ -86,7 +95,7 @@ d=json.load(open(sys.argv[1]))
 for c in sys.argv[2].split('.'):
     d = d[int(c)] if isinstance(d, list) else d.get(c)
     if d is None: print(''); sys.exit(0)
-print(d)" "${DEPOT}/$1.json" "$2" 2>/dev/null || echo ""; }
+print(d)" "$(dernier "$1")" "$2" 2>/dev/null || echo ""; }
 
 # ── 3. Serveur, avec contrôle de SIGNATURE ───────────────────────────────────
 echo
