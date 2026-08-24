@@ -246,6 +246,21 @@ final class SessionCoordinator {
         let keep = MarkStore.shared.marks.map {
             MarkCapture.Keep(id: $0.id, number: $0.number, intention: $0.intention?.label)
         }
+
+        // S53 — tout ce que la boucle de publication devra savoir est SAISI ICI,
+        // avant que la cible soit relâchée et le modèle vidé. Après ces lignes,
+        // il n'existe plus.
+        let identiteCible = sessionTarget ?? "?"
+        let debutBoucle = sessionStart ?? Date()
+        let marquesBoucle = MarkStore.shared.marks.map {
+            BouclePublication.Donnees.Marque(
+                numero: $0.number, genre: $0.tool.rawValue,
+                tempsSession: $0.t.seconds,
+                intention: $0.intention?.label, ecranEnMouvement: false)
+        }
+        let ecranBoucle = NSScreen.main.map {
+            "Display principal, \(Int($0.frame.width))×\(Int($0.frame.height)) pt @\(Int($0.backingScaleFactor))×"
+        } ?? "?" 
         let directory = sessionDirectory
         sessionDirectory = nil
         sessionTarget = nil
@@ -295,6 +310,33 @@ final class SessionCoordinator {
                     // « marque sans image » à contresens.
                     written = frames.filter { $0.role == .crop }.count
                     overviews = frames.filter { $0.role == .overview }.count
+
+                    // S53 — LA BOUCLE FERME. Le projet retenu à l'arming reçoit
+                    // son dossier, le presse-papiers sa phrase. Pas de projet
+                    // retenu : pas de publication projet, et le journal le dit —
+                    // ~/Regarde reste la sortie de secours du lot 2.
+                    let images = frames.filter { $0.role == .crop }.map {
+                        BouclePublication.Donnees.Image(
+                            numero: $0.number, url: $0.url,
+                            taillePixels: $0.pixelSize,
+                            boiteNormalisee: $0.normalizedInFrame)
+                    }
+                    let duree = Date().timeIntervalSince(debutBoucle)
+                    let donnees = BouclePublication.Donnees(
+                        uuid: await CaptureEngine.shared.sessionUUID ?? UUID(),
+                        debut: debutBoucle, dureeSecondes: duree,
+                        dureeMuraleSecondes: duree,
+                        cible: identiteCible, ecran: ecranBoucle,
+                        interruptions: "aucune",
+                        marques: marquesBoucle, images: images,
+                        outilVersion: Bundle.main.object(
+                            forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev",
+                        os: "macOS "
+                            + (ProcessInfo.processInfo.operatingSystemVersionString
+                                .components(separatedBy: " ").dropFirst().first ?? "?"),
+                        build: Bundle.main.object(
+                            forInfoDictionaryKey: "CFBundleVersion") as? String ?? "0")
+                    await MainActor.run { Self.fermerLaBoucle(donnees) }
                 } catch {
                     await MainActor.run { Journal.warn(.capture, "gravure — \(error)") }
                 }
@@ -619,5 +661,69 @@ final class SessionCoordinator {
                 MainActor.assumeIsolated { _ = SessionCoordinator.shared.transition(to: s) }
             }
         }
+    }
+
+    // MARK: - S53 — la fermeture de la boucle
+
+    /// Publie dans le projet retenu et met la phrase au presse-papiers.
+    /// Sur le MainActor : le presse-papiers et le journal y vivent.
+    @MainActor
+    private static func fermerLaBoucle(_ donnees: BouclePublication.Donnees) {
+        guard !donnees.marques.isEmpty else { return }
+        guard let choix = SelecteurProjet.choix,
+              SelecteurProjet.etat != .ambigu else {
+            Journal.warn(.system,
+                "projet ambigu — rapport non publié dans un projet, dossier ~/Regarde seul")
+            return
+        }
+        let racine = URL(fileURLWithPath: choix.chemin, isDirectory: true)
+        let detection = "**\(SelecteurProjet.etat.libelle)** — \(choix.motif)"
+        let brouillon = BouclePublication.assembler(
+            donnees, projet: choix.chemin, detection: detection,
+            git: infoGit(racine: racine))
+        do {
+            let resultat = try BouclePublication.publier(
+                donnees, brouillon: brouillon, racine: racine,
+                slug: brancheGit(racine: racine) ?? donnees.cible)
+            let pb = NSPasteboard.general
+            pb.clearContents()
+            pb.setString(resultat.phrase, forType: .string)
+            Journal.block("PUBLICATION PROJET", [
+                ("projet", choix.chemin),
+                ("feedback", "#\(resultat.attribution.numero) — \(resultat.attribution.id)"),
+                ("presse-papiers", "la phrase du § 9.10, une ligne"),
+            ])
+        } catch {
+            Journal.warn(.system, "publication projet — \(error)")
+        }
+    }
+
+    /// « feat/checkout @ a3f19c2, 3 fichiers modifiés non commités » — best-effort.
+    private static func infoGit(racine: URL) -> String? {
+        guard let branche = brancheGit(racine: racine) else { return nil }
+        let sha = git(racine, "rev-parse", "--short", "HEAD") ?? "?"
+        let modifies = git(racine, "status", "--porcelain")?
+            .split(separator: "\n").count ?? 0
+        let suffixe = modifies > 0 ? ", \(modifies) fichier\(modifies > 1 ? "s" : "") modifié\(modifies > 1 ? "s" : "") non commité\(modifies > 1 ? "s" : "")" : ""
+        return "`\(branche)` @ `\(sha)`\(suffixe)"
+    }
+
+    private static func brancheGit(racine: URL) -> String? {
+        git(racine, "rev-parse", "--abbrev-ref", "HEAD")
+    }
+
+    private static func git(_ racine: URL, _ arguments: String...) -> String? {
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+        p.arguments = ["-C", racine.path] + arguments
+        let sortie = Pipe()
+        p.standardOutput = sortie
+        p.standardError = Pipe()
+        guard (try? p.run()) != nil else { return nil }
+        p.waitUntilExit()
+        guard p.terminationStatus == 0 else { return nil }
+        let texte = String(decoding: sortie.fileHandleForReading.readDataToEndOfFile(),
+                           as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+        return texte.isEmpty ? nil : texte
     }
 }
