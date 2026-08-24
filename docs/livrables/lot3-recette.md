@@ -542,3 +542,13 @@ Pour ne pas le chercher :
       thermique — le calibrage converge sur une seconde, le relevé dure soixante fois
       plus. Si vous le revoyez, notez le rafraîchissement natif et le relevé apparié
       pris sans réglette : ce sont les deux chiffres qui manquent pour trancher.
+      SI C'EST L'INVERSE — cadence AU PLAFOND : mesuré le 24 août sur un M-series à
+      ProMotion, 120,00 fps sur les trois relevés soit 99,6 % du natif, charge
+      calibrée à 52. La machine avale la butée de charge du témoin sans plier : la
+      fenêtre de sensibilité n'est pas atteinte, et un coût de calque inférieur à la
+      marge disponible y est invisible. `chargeInsuffisante` aurait dû le dire et ne
+      l'a pas dit — le calibrage peut converger « par stabilité » à pleine cadence
+      sans jamais entrer dans la fenêtre, un trou de la garde du témoin (dette
+      lot 0, à reprendre au lot 4). Les écarts mesurés (0,00 % entre les trois
+      états) restent une borne vraie mais grossière : « coût sous la marge », pas
+      « coût sous 1 % ».

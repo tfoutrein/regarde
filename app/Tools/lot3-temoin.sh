@@ -197,7 +197,20 @@ end tell
 AS
 sleep 2
 
-verbe() { osascript -e "tell application \"System Events\" to key code $1 using {control down, option down}" >/dev/null; }
+# Chaque frappe GARANTIT d'abord Chrome au premier plan, elle ne l'espère pas.
+# Cinquième campagne du 24 août : le tout premier ⌃⌥D est tombé dans le vide
+# parce qu'une application relancée en arrière-plan avait volé le focus à cet
+# instant précis. Un script dont toute l'entrée-sortie est le clavier ne peut
+# pas dépendre de qui avait le focus une seconde plus tôt.
+verbe() {
+    local essai
+    for essai in 1 2 3; do
+        osascript -e 'tell application "Google Chrome" to activate' >/dev/null 2>&1
+        [[ "$(osascript -e 'tell application "System Events" to get name of first process whose frontmost is true' 2>/dev/null)" == "Google Chrome" ]] && break
+        sleep 0.5
+    done
+    osascript -e "tell application \"System Events\" to key code $1 using {control down, option down}" >/dev/null
+}
 VR=15; VD=2; VX=7; VG=5; V3=20      # R, D, X, G, 3 — codes PHYSIQUES
 
 verbe ${VD}                          # ⌃⌥D : déposer l'état
