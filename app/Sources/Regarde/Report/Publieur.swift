@@ -227,4 +227,27 @@ enum Metriques {
         try FileManager.default.createDirectory(at: dossier, withIntermediateDirectories: true)
         return dossier.appendingPathComponent("metrics.jsonl")
     }
+
+    /// Ajoute un événement, horodaté ici même — par LA porte de S47. Chaque
+    /// écriture ouvre et referme : les événements sont rares (quelques-uns par
+    /// session) et un descripteur ouvert en permanence survivrait mal aux
+    /// suspensions. Les échecs sont silencieux par principe (P5) mais comptés
+    /// au journal — des métriques qui se perdent sans bruit rendraient le
+    /// GO/NO-GO aveugle sans que personne le sache.
+    static func enregistrer(_ champs: [String: Any], base: URL? = nil) {
+        var enrichis = champs
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime]
+        enrichis["at"] = f.string(from: Date())
+        do {
+            let data = try JSONSerialization.data(withJSONObject: enrichis, options: [.sortedKeys])
+            let log = try AppendOnlyLog(url: try url(base: base))
+            try log.append(ligne: String(decoding: data, as: UTF8.self))
+            log.fermer()
+        } catch {
+            Task { @MainActor in
+                Journal.warn(.system, "métrique perdue — \(error)")
+            }
+        }
+    }
 }

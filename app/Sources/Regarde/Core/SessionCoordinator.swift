@@ -685,13 +685,27 @@ final class SessionCoordinator {
             let resultat = try BouclePublication.publier(
                 donnees, brouillon: brouillon, racine: racine,
                 slug: brancheGit(racine: racine) ?? donnees.cible)
-            let pb = NSPasteboard.general
-            pb.clearContents()
-            pb.setString(resultat.phrase, forType: .string)
+            // Le dernier mètre (S54) : sauvegarde item par item avant la
+            // phrase, historique, et la fenêtre de grâce du ⏎.
+            PressePapiers.deposerPhrase(resultat.phrase)
+            HistoriqueFeedbacks.shared.ajouter(
+                numero: resultat.attribution.numero,
+                projet: choix.chemin, phrase: resultat.phrase)
+            PorteurRetour.armer(phrase: resultat.phrase)
+            // Et la métrique de session (S55) : spontanée sauf banc, avec la
+            // durée du raccourci de fin au presse-papiers — le critère n°4.
+            Metriques.enregistrer([
+                "event": "session",
+                "number": resultat.attribution.numero,
+                "spontanee": !TestFlags.c11Bench,
+                "finSecondes": Date().timeIntervalSince(donnees.debut
+                    .addingTimeInterval(donnees.dureeSecondes)),
+            ])
             Journal.block("PUBLICATION PROJET", [
                 ("projet", choix.chemin),
                 ("feedback", "#\(resultat.attribution.numero) — \(resultat.attribution.id)"),
-                ("presse-papiers", "la phrase du § 9.10, une ligne"),
+                ("presse-papiers", "phrase déposée, sauvegarde armée à 60 s"),
+                ("porteur", "⏎ armé pour 8 s"),
             ])
         } catch {
             Journal.warn(.system, "publication projet — \(error)")

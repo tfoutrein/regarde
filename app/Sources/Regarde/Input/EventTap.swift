@@ -294,6 +294,17 @@ final class EventTap: @unchecked Sendable {
     private func handleKeyDown(event: CGEvent, flags: CGEventFlags) -> Unmanaged<CGEvent>? {
         let code = event.getIntegerValueField(.keyboardEventKeycode)
 
+        // S54 — le porteur du ⏎, DERRIÈRE sa fenêtre de grâce. Le coût hors
+        // grâce est une charge atomique et une comparaison : le budget du tap
+        // ne bouge pas. Et la règle du lot 2 (défaut n°11, le ⌘Z volé) tient :
+        // aucun ⏎ n'est avalé hors de la fenêtre, aucun ⏎ modifié ne l'est
+        // jamais — la décision est pure et l'autotest la tient cas par cas.
+        if PorteurRetour.decision(graceActive: PorteurRetour.graceActive,
+                                  keyCode: code, flags: flags) {
+            PorteurRetour.porter()
+            return nil
+        }
+
         // Échap n'a pas de caractere : son code physique est stable sur toutes les
         // dispositions et peut rester en dur.
         if code == KeyboardLayout.Physical.escape, OptionGate.shared.isStroking {

@@ -45,6 +45,10 @@ if CommandLine.arguments.contains("--append-test") {
     exit(AppendSelfTest.run() ? 0 : 1)
 }
 
+if CommandLine.arguments.contains("--papiers-test") {
+    exit(MainActor.assumeIsolated { PapiersSelfTest.run() } ? 0 : 1)
+}
+
 if CommandLine.arguments.contains("--boucle-test") {
     exit(BoucleSelfTest.run() ? 0 : 1)
 }

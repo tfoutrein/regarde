@@ -34,6 +34,20 @@ final class StatusItemController {
         menu.addItem(.separator())
 
         add(to: menu, "Diagnostic…", key: "d") { DoctorWindow.shared.show() }
+
+        // S54 — l'historique des trois derniers feedbacks : la perte du
+        // presse-papiers devient rattrapable d'un clic (§ 9.10, correction 2).
+        menu.addItem(HistoriqueFeedbacks.shared.menuItem)
+
+        // S55 — le repli DÉCLARÉ. Le GO/NO-GO n°2 mesure « replis / besoins » ;
+        // un repli non déclaré est un besoin invisible, et lot4-gonogo.sh
+        // refuse de conclure si aucun n'a jamais été noté — zéro mesurerait
+        // l'oubli de déclarer, pas la perfection de l'outil.
+        add(to: menu, "J'ai préféré une capture manuelle", key: "") {
+            Metriques.enregistrer(["event": "repli"])
+            Journal.event(.system, "repli déclaré — capture manuelle préférée à une session")
+            HUDWindow.shared.announce("Repli noté", detail: "compté pour le GO/NO-GO", duration: 2)
+        }
         add(to: menu, "Rafraîchir l'autorisation d'écran", key: "") {
             TCCContact.shared.refresh(trigger: .settings)
         }
