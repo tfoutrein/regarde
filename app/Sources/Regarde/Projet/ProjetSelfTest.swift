@@ -28,6 +28,8 @@ enum ProjetSelfTest {
         print("── Autotest du projet (S51+) ──\n")
         pastilles(t)
         enumeration(t)
+        decision(t)
+        collecteurs(t)
         print("\n── \(t.passed) vérifications passées, \(t.failed) échouées ──")
         return t.failed == 0
     }
@@ -138,5 +140,67 @@ enum ProjetSelfTest {
               candidats.map(\.chemin) == ProjetCandidats.enumerer().map(\.chemin))
         check(t, "ni « / » ni le dossier personnel nu parmi les candidats",
               !candidats.contains { $0.chemin == "/" || $0.chemin == NSHomeDirectory() })
+    }
+
+    // MARK: - La décision, cas par cas (S52)
+
+    private static func decision(_ t: Tally) {
+        print("\n· La décision — fonction pure, cas par cas")
+        func signaux(_ chemin: String, shells: Int = 0, vivant: Bool = false,
+                     frais: Bool = false, titre: Bool = false) -> SignauxProjet {
+            var s = SignauxProjet(chemin: chemin)
+            s.shells = shells; s.providerVivant = vivant
+            s.providerFrais = frais; s.providerPid = 4242; s.titreConcorde = titre
+            return s
+        }
+
+        // Deux signaux forts concordants → certain.
+        var v = DecisionProjet.decider([signaux("/p/a", shells: 1, vivant: true, frais: true)])
+        check(t, "shell + provider frais concordants → certain",
+              v.etat == .certain && v.retenu == "/p/a", v.motif)
+
+        // Un seul signal fort → probable, avec son motif.
+        v = DecisionProjet.decider([signaux("/p/a", shells: 2)])
+        check(t, "shells seuls → probable, motif nommé",
+              v.etat == .probable && v.motif.contains("2 shells"), v.motif)
+
+        // Plusieurs cwd crédibles → ambigu, JAMAIS tranché.
+        v = DecisionProjet.decider([signaux("/p/a", shells: 1),
+                                    signaux("/p/b", vivant: true, frais: true)])
+        check(t, "deux répertoires crédibles → ambigu, jamais tranché",
+              v.etat == .ambigu && v.motif.contains("jamais tranché"))
+
+        // Le titre seul ne décide JAMAIS.
+        v = DecisionProjet.decider([signaux("/p/a", titre: true)])
+        check(t, "titre seul → ambigu — il ne décide jamais seul",
+              v.etat == .ambigu && v.retenu == nil)
+
+        // LE CAS DU TITRE : provider vivant mais pas frais (0,8) + shell (1,0)
+        // = 1,8 → probable ; le titre (0,2) complète à 2,0 → certain. Retirer
+        // le titre change le verdict — c'est le critère du plan, prouvé ici.
+        let cas = [signaux("/p/a", shells: 1, vivant: true, frais: false, titre: true)]
+        let avec = DecisionProjet.decider(cas)
+        let sans = DecisionProjet.decider(cas, titreActif: false)
+        check(t, "provider pas frais + shell + titre → certain",
+              avec.etat == .certain, avec.motif)
+        check(t, "le MÊME cas sans le titre → probable — le retirer change le verdict",
+              sans.etat == .probable)
+    }
+
+    // MARK: - Les collecteurs, sur la machine réelle
+
+    private static func collecteurs(_ t: Tally) {
+        print("\n· Les collecteurs, sur la machine réelle")
+        // Ce test tourne sur une machine de développement où un agent PILOTE ce
+        // dépôt : au moins un provider doit se voir, vivant. C'est une
+        // assertion sur l'environnement de développement, assumée comme telle.
+        let providers = DecisionProjet.providers()
+        check(t, "au moins un provider d'agent vivant est vu",
+              providers.contains { kill($0.pid, 0) == 0 },
+              "\(providers.count) provider(s)")
+        let signaux = DecisionProjet.collecter()
+        check(t, "les signaux s'assemblent sans doublon de chemin",
+              Set(signaux.map(\.chemin)).count == signaux.count,
+              "\(signaux.count) candidat(s)")
     }
 }

@@ -91,15 +91,20 @@ final class SessionCoordinator {
         // « 6 marques », le dossier ne contiendrait rien.
         SessionClock.shared.rearm()
 
-        // Le PROJET se présente à l'arming — S51, ADR-0017. L'énumération coûte
-        // quelques millisecondes de libproc ; le sélecteur ne bloque rien : la
-        // session démarre pendant qu'il est ouvert, et l'ignorer (Échap ou rien)
-        // laisse l'état « ambigu » — que le rapport dira, plutôt que de deviner.
-        // La pondération et le verdict fin arrivent en S52 ; d'ici là, un seul
-        // candidat vaut « probable », plusieurs valent « ambigu ».
-        let candidats = ProjetCandidats.enumerer()
-        SelecteurProjet.presenter(candidats: candidats,
-                                  etat: candidats.count == 1 ? .probable : .ambigu)
+        // Le PROJET se présente à l'arming — S51 le visible, S52 la décision.
+        // Les collecteurs coûtent quelques millisecondes de libproc ; le
+        // sélecteur ne bloque rien : la session démarre pendant qu'il est
+        // ouvert, l'ignorer laisse le verdict tel quel — que le rapport dira.
+        // Le RETENU du verdict passe en tête : c'est lui que ⏎ confirme.
+        let signaux = DecisionProjet.collecter()
+        let verdict = DecisionProjet.decider(signaux)
+        Journal.event(.system, "projet — \(verdict.etat.libelle)"
+                      + (verdict.retenu.map { " : \($0)" } ?? "") + " — \(verdict.motif)")
+        let candidats = signaux
+            .sorted { ($0.chemin == verdict.retenu ? 0 : 1, -$0.score, $0.chemin)
+                    < ($1.chemin == verdict.retenu ? 0 : 1, -$1.score, $1.chemin) }
+            .map { CandidatProjet(chemin: $0.chemin, motif: $0.motif, pidShell: 0) }
+        SelecteurProjet.presenter(candidats: candidats, etat: verdict.etat)
 
         // Le banc C11 s'arme avec la session, pas avant : son pont d'horloge doit
         // partager l'origine des marques qu'il mesure.
