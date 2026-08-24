@@ -45,6 +45,10 @@ if CommandLine.arguments.contains("--append-test") {
     exit(AppendSelfTest.run() ? 0 : 1)
 }
 
+if CommandLine.arguments.contains("--render-test") {
+    exit(RenderSelfTest.run() ? 0 : 1)
+}
+
 if CommandLine.arguments.contains("--capture-test") {
     exit(CaptureSelfTest.run() ? 0 : 1)
 }
