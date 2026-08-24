@@ -646,7 +646,7 @@ function startRun() {
     setStatus(`Relevé refusé — réglette inactive : ${state.regletteRefus}.`, true);
     return;
   }
-  if (params.plan === 'c11' && !(innerHeight >= screen.height - 2)) {
+  if (params.plan === 'c11' && !(innerHeight >= screen.availHeight - 2)) {
     setStatus('Relevé refusé — plan c11 hors plein écran. Le mode fenêtre n\'emprunte pas le ' +
               'même chemin de composition, et C11 s\'y mesurerait sur autre chose.', true);
     return;
@@ -888,10 +888,17 @@ function payload(fenetre) {
     },
     // Le plein écran est constaté par la GÉOMÉTRIE et non par l'API : Chrome
     // expose ses barres comme des fenêtres d'accessibilité distinctes, et
+    // `screen.availHeight`, et non `screen.height` — amendement du 24 août.
+    // Sur un MacBook à ENCOCHE, le plein écran occupe l'espace SOUS l'encoche :
+    // innerHeight vaut screen.height moins la zone de la barre des menus
+    // (mesuré : 1084 sur une dalle de 1117, encoche x 771→956 au journal), et le
+    // seuil sur screen.height ne pouvait passer sur AUCUNE machine de cette
+    // famille. availHeight exclut cette zone sur les deux familles — à encoche
+    // ou non — et la géométrie exacte reste déposée dans `cssPx`.
     // `document.fullscreenElement` reste nul quand on passe par le menu
     // Présentation — qui est pourtant le seul chemin vers le plein écran NATIF,
     // celui dont on veut mesurer la composition. Constaté le 20 août.
-    pleinEcran: innerHeight >= screen.height - 2,
+    pleinEcran: innerHeight >= screen.availHeight - 2,
     probeFocalise: document.activeElement === $('probe'),
     chiffresVisibles: state.chiffres,
     reglette: {
@@ -1202,7 +1209,7 @@ if (params.run && params.depot !== '0') deposer('00-session');
 if (params.auto === 'armer') {
   let depuis = null;
   const guetter = () => {
-    const plein = innerHeight >= screen.height - 2;
+    const plein = innerHeight >= screen.availHeight - 2;
     if (!plein) { depuis = null; return requestAnimationFrame(guetter); }
     if (depuis === null) depuis = performance.now();
     if (performance.now() - depuis < 500) return requestAnimationFrame(guetter);
