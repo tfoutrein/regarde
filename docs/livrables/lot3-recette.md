@@ -329,6 +329,15 @@ Pour ne pas le chercher :
       ATTENDU : dans la même ligne, **≥ 6 frames/s** ET une surface **sous 0.02** —
       la preuve que le critère de fréquence était bien franchi et que c'est la
       surface, seule, qui a retenu le burst. Sans ça le test ne prouve rien.
+      SI VOTRE MACHINE NE PEUT PAS : deux classes d'écrans rendent ce test
+      inexécutable, mesuré le 24 août. Un écran **virtualisé** (dock DisplayLink,
+      recopie AirPlay) re-présente tout son framebuffer à chaque frame — `1 rect
+      (0,0) pleine taille`, en permanence. Un **papier peint vidéo** (iwallpaper et
+      semblables) anime le Bureau entier, même sous des fenêtres qui l'occultent.
+      Dans les deux cas la ligne `dernière frame` du bloc `FLUX` vous le dira. Le
+      test reste valable sur tout écran natif à fond statique ; à défaut, la
+      décision du critère est jugée par l'autotest (« spinner 86×86 px ») sur des
+      entrées mesurées, et les entrées réelles se lisent dans `salie par frame`.
       SI ÇA RATE : lisez la surface AVANT d'accuser le critère. Si elle dépasse 0.02,
       la fenêtre était trop grande, ou autre chose bougeait sur cet écran — mesuré le
       23 août : 0.954 de surface pour un spinner d'un caractère dans un Terminal.app
@@ -338,24 +347,21 @@ Pour ne pas le chercher :
       les pixels — exclu par coût au § 5.1. Avec une vraie vignette et une surface
       sous 0.02, un 3 serait un véritable échec du double critère.
 
-- [ ] **4.4** Une marque au ras du début perd une image du plan, et le dit
-      FAIRE : témoin animé, ouvrir la session par ⌃⌥S et tracer la marque
-      **immédiatement, dans la foulée du raccourci** — la pression doit tomber dans
-      les 0,8 premières secondes. Il faut être vif ; deux essais sont parfois
-      nécessaires (la ligne `MARQUES` donne l'instant exact de votre pression).
-      REGARDER : la ligne `marque 1 · N frame(s) au plan`.
-      ATTENDU : `2 frame(s) au plan` — le candidat `t−0,8` tombe avant la première
-      frame encodée. Il est écarté **avant** toute demande au générateur, et le
-      compte du plan le dit.
-      SI ÇA RATE : `3 frame(s) au plan` veut dire que la pression est arrivée après
-      0,8 s de segment — recommencez plus vite. Deux choses que ce test ne mesure
-      **pas** : la borne de fin (`t+0,4`) est hors de portée d'un geste humain — il
-      faudrait fermer la session moins de 0,4 s après la *pression*, alors que le
-      tracé lui-même dure davantage — et elle est couverte par l'autotest
-      (`--capture-test`, « burst à 0,2 s de la fin »). Et la ligne
-      `burst — N obtenues sur M demandées` avec `N < M` mesure autre chose : des
-      échecs de décodage, pas des bornes — les candidats hors bornes ne sont jamais
-      demandés.
+- [ ] **4.4** Les bornes du plan de burst sont jugées par l'autotest
+      FAIRE : `./.build/debug/Regarde --capture-test`
+      REGARDER : les lignes « burst à 0,5 s du début » et « burst à 0,2 s de la fin ».
+      ATTENDU : les deux passent — chaque borne violée retire son candidat du plan,
+      et les survivants sont `t` et l'autre candidat, aux positions exactes.
+      SI ÇA RATE : une borne clampée au lieu d'écartée rendrait une image d'un
+      instant que personne n'a demandé.
+      Pourquoi pas à la main : **aucune des deux bornes n'est à portée d'un geste
+      humain.** La borne de fin exigerait de fermer la session moins de 0,4 s après
+      la *pression* — le tracé seul dure davantage. La borne de début exige une
+      pression dans les ~1,2 premières secondes de la session — les flux s'ouvrent
+      en une demi-seconde, et le meilleur essai mesuré le 24 août, utilisateur
+      prévenu et préparé, est arrivé à 1,298 s : encore trop tard. Ce que la
+      recette vérifie en vrai, c'est le reste de la chaîne — les plans à 3 frames
+      du 4.1, obtenus sans chronomètre.
 
 ## 5. Les écrans qu'on écarte
 

@@ -923,6 +923,27 @@ enum CaptureSelfTest {
         check(t, "burst à 0,2 s de la fin — la borne violée disparaît du plan",
               pres.count == 2, "\(pres.count) frame(s) retenue(s) sur 3")
 
+        // 10 bis — Et la borne BASSE, au ras du début : le pendant exact du 10.
+        //
+        // Ajouté le 24 août, en soldant le test 4.4 de la recette. Sa version
+        // manuelle exigeait une pression dans les ~1,2 premières secondes de la
+        // session — les flux s'ouvrent en une demi-seconde et t−0,8 fait le
+        // reste. Meilleur essai humain mesuré : 1,298 s, encore trop tard. Les
+        // deux bornes sont donc jugées ici, où le temps se fabrique à la main,
+        // et la recette vérifie le reste de la chaîne sur les cas à trois
+        // frames, qu'un humain produit sans chronomètre.
+        let debut = seg.framePlan(pour: SessionTime(seconds: 3.7), motion: bouge, clock: clock)
+        check(t, "burst à 0,5 s du début — t−0,8 disparaît du plan",
+              debut.count == 2, "\(debut.count) frame(s) retenue(s) sur 3")
+        // Et les deux survivants sont bien t et t+0,4 — pas un clampage déguisé.
+        if debut.count == 2 {
+            let attendus = [3.7 - 3.2, 3.7 + 0.4 - 3.2]
+            let obtenus = debut.map(\.seconds)
+            check(t, "les survivants sont t et t+0,4, aux positions exactes",
+                  zip(obtenus, attendus).allSatisfy { abs($0 - $1) < 0.01 },
+                  "\(obtenus.map { String(format: "%.2f", $0) })")
+        }
+
         // 11 — Encodé puis décodé, les PTS reviennent au TICK près.
         //      Les encoder en secondes flottantes perdrait la précision sur
         //      laquelle se joue tout l'appariement.
