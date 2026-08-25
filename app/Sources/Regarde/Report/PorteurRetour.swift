@@ -147,7 +147,15 @@ enum PorteurRetour {
             poste(9, enfoncee: false, flags: .maskCommand)
             usleep(60_000)
             poste(55, enfoncee: false)                      // ⌘ relâchée
-            Journal.event(.system, "porteur — repli ⌘V synthétique, ⌘ tenue sur plusieurs frames")
+            // La limite assumée de ce repli : macOS active une APPLICATION,
+            // pas un onglet. Dans un terminal à onglets (Warp), le collage
+            // atterrit dans l'onglet ACTIF, qui peut ne pas être la session
+            // visée — constaté en recette du lot 4, phrase collée dans la
+            // session llm-wiki alors que la cible était recette-lot4. Aucune
+            // API ne pilote les onglets de Warp ; la phrase reste au
+            // presse-papiers, et le journal DIT la limite.
+            Journal.event(.system, "porteur — repli ⌘V synthétique, ⌘ tenue — "
+                          + "collé dans l'onglet actif du terminal, qui peut différer de la session visée")
         }
     }
 
