@@ -146,6 +146,13 @@ final class MarkStore {
                                              to: stroke.current, in: stroke.panelSize)
         else {
             // Geste trop court : rien n'est posé, et le numéro repart au pot.
+            //
+            // Mais le DIRE : trois gestes avalés sans un mot ont coûté un
+            // diagnostic entier en recette du lot 4 (§ 3.3 — « refusé
+            // proprement, non silencieusement »). Un geste hors écran arrive
+            // borné au même point : trop court, lui aussi.
+            Journal.warn(.mark, "geste trop court — aucune marque posée "
+                         + "(\(stroke.tool.label), écran \(stroke.displayID))")
             releaseNumberIfLast()
             live = nil
             return nil

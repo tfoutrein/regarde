@@ -2,8 +2,9 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # Passage du livrable du lot 2 — S28
 #
-# Le critère : « 6 marques, 4 outils, 2 écrans dont un externe non-Retina placé à gauche
-# (origine négative). 6 PNG au bon endroit, bon numéro, aucun pixel du calque ni du HUD,
+# Le critère : « 6 marques, 4 outils, 2 écrans dont un externe non-Retina à origine
+# négative — à gauche ou au-dessus, le script découvre la disposition courante.
+# 6 PNG au bon endroit, bon numéro, aucun pixel du calque ni du HUD,
 # aucun décalage ×2. »
 #
 # Les deux écrans comptent parce qu'ils ont des échelles DIFFÉRENTES — @2× et @1×. Un
@@ -29,6 +30,28 @@ end tell
 AS
 }
 
+# L'écran externe n'est PAS à une position fixe : à la maison un ultrawide à
+# gauche, au bureau un HDMI au-dessus. Le script découvre la disposition
+# COURANTE — les coordonnées codées en dur de la première version dessinaient
+# hors de tout écran au bureau (défaut trouvé en recette du lot 4 : triplet à
+# (-600, -1100) sur un externe qui s'arrête à -1080 → strokes bornés à x = 0,
+# cadre et surlignage avalés en silence, « 4 marques au lieu de 6 »).
+GEOM=$(swift - <<'EOF'
+import AppKit
+let ecrans = NSScreen.screens
+let flip = ecrans.first { $0.frame.origin == .zero }?.frame.height ?? 0
+guard let externe = ecrans.first(where: { $0.frame.origin != .zero }) else { exit(1) }
+let f = externe.frame
+// Espace « bounds » AppleScript : origine haut-gauche globale — x inchangé, y = flip − maxY.
+print(Int(f.minX), Int(flip - f.maxY), Int(f.width), Int(f.height))
+EOF
+) || { echo "✗ un seul écran — le livrable du lot 2 exige un externe branché"; exit 1; }
+read -r EXT_X EXT_Y EXT_W EXT_H <<< "$GEOM"
+# La fenêtre s'inscrit dans l'externe avec une marge, le triplet vise son centre.
+FEN_W=$(( EXT_W - 120 < 1080 ? EXT_W - 120 : 1080 ))
+FEN_H=$(( EXT_H - 120 < 700 ? EXT_H - 120 : 700 ))
+echo "→ Externe découvert : ${EXT_W}×${EXT_H} à (${EXT_X}, ${EXT_Y})"
+
 echo "→ Écran principal (@2×)"
 place 120 120 1200 820
 sleep 1
@@ -48,14 +71,14 @@ sleep 2
 
 echo
 echo "→ Écran externe (@1×, origine négative)"
-place -800 -1250 500 -450
+place "$((EXT_X + 60))" "$((EXT_Y + 60))" "$((EXT_X + 60 + FEN_W))" "$((EXT_Y + 60 + FEN_H))"
 sleep 2
 osascript -e 'tell application "TextEdit" to activate' >/dev/null
 sleep 2
 grep -E "cible" "$JOURNAL" | tail -1 || true
 
 echo "→ Marques 4 à 6 : surlignage, flèche, cadre"
-"$HARNESS" triplet --x -600 --y -1100 --tools surlignage,fleche,cadre --marks 5,3,6
+"$HARNESS" triplet --x "$((EXT_X + 60 + FEN_W / 2))" --y "$((EXT_Y + 60 + FEN_H / 2))" --tools surlignage,fleche,cadre --marks 5,3,6
 sleep 2
 
 echo "→ ⌃⌥F : fermeture"
@@ -64,7 +87,16 @@ sleep 5
 
 echo
 echo "── Marques ──"
-sed -n '/Marques de la session/,$p' "$JOURNAL" | head -9
+# Le DERNIER bloc « ── MARQUES ── » du journal, jusqu'à la prochaine ligne
+# horodatée. (L'ancien grep « Marques de la session » visait un en-tête disparu
+# au lot 3 — la section sortait vide à chaque exécution.)
+awk '/── MARQUES ──/ { debut = NR } { ligne[NR] = $0 } END {
+  if (!debut) exit
+  for (i = debut; i <= NR; i++) {
+    if (i > debut && ligne[i] ~ /^[0-9][0-9]:[0-9][0-9]/) break
+    print ligne[i]
+  }
+}' "$JOURNAL"
 echo
 echo "── Images ──"
 LAST=$(ls -1dt "$HOME/Regarde/sessions"/*/ | head -1)
