@@ -104,8 +104,12 @@ enum PorteurRetour {
         application.activate()
         Metriques.enregistrer(["event": "injection", "agent": provider.pid])
 
-        // Étage 1 : AX. L'élément focalisé de l'application, s'il accepte une
-        // valeur, reçoit la phrase — sans passer par le clavier.
+        // Étage 1 : AX, avec CONTRE-LECTURE. Le code retour ne suffit pas :
+        // Warp rend son interface au GPU et sa couche d'accessibilité est
+        // synthétique — setValue répond « succès » sans rien écrire dans le
+        // vrai champ. Le journal disait « phrase injectée par AX » et
+        // l'utilisateur regardait un champ vide (recette du lot 4, test 5.4).
+        // On ne croit que ce qu'on RELIT.
         let ax = AXUIElementCreateApplication(application.processIdentifier)
         var focalise: CFTypeRef?
         if AXUIElementCopyAttributeValue(ax, kAXFocusedUIElementAttribute as CFString,
@@ -114,21 +118,36 @@ enum PorteurRetour {
            AXUIElementSetAttributeValue(element as! AXUIElement,
                                         kAXValueAttribute as CFString,
                                         phrase as CFString) == .success {
-            Journal.event(.system, "porteur — phrase injectée par AX")
-            return
+            var relu: CFTypeRef?
+            AXUIElementCopyAttributeValue(element as! AXUIElement,
+                                          kAXValueAttribute as CFString, &relu)
+            if let texte = relu as? String, texte.contains(phrase) {
+                Journal.event(.system, "porteur — phrase injectée par AX, contre-lue")
+                return
+            }
+            Journal.event(.system, "porteur — AX a dit oui mais la valeur n'a pas pris — repli ⌘V")
         }
 
         // Étage 2 : ⌘V synthétique, la phrase étant déjà au presse-papiers.
-        // Repli, pas premier choix : il dépend du focus et d'un raccourci que
-        // l'application peut avoir remappé.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+        // La touche ⌘ est une touche RÉELLE (code 55), pressée et TENUE
+        // plusieurs frames autour du V : Warp interroge l'état du clavier
+        // image par image, et des flags atomiques portés par le seul V
+        // retombent avant la frame suivante — le collage ne part jamais.
+        DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 0.3) {
             let src = CGEventSource(stateID: .hidSystemState)
-            for (down, code) in [(true, CGKeyCode(9)), (false, CGKeyCode(9))] {
-                let e = CGEvent(keyboardEventSource: src, virtualKey: code, keyDown: down)
-                e?.flags = .maskCommand
+            func poste(_ code: CGKeyCode, enfoncee: Bool, flags: CGEventFlags = []) {
+                let e = CGEvent(keyboardEventSource: src, virtualKey: code, keyDown: enfoncee)
+                if !flags.isEmpty { e?.flags = flags }
                 e?.post(tap: .cghidEventTap)
             }
-            Journal.event(.system, "porteur — repli ⌘V synthétique")
+            poste(55, enfoncee: true)                       // ⌘ réelle, tenue
+            usleep(90_000)
+            poste(9, enfoncee: true, flags: .maskCommand)   // V
+            usleep(30_000)
+            poste(9, enfoncee: false, flags: .maskCommand)
+            usleep(60_000)
+            poste(55, enfoncee: false)                      // ⌘ relâchée
+            Journal.event(.system, "porteur — repli ⌘V synthétique, ⌘ tenue sur plusieurs frames")
         }
     }
 
