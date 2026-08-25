@@ -29,6 +29,7 @@ enum ProjetSelfTest {
         pastilles(t)
         enumeration(t)
         decision(t)
+        cibleDuPorteur(t)
         collecteurs(t)
         print("\n── \(t.passed) vérifications passées, \(t.failed) échouées ──")
         return t.failed == 0
@@ -188,6 +189,42 @@ enum ProjetSelfTest {
     }
 
     // MARK: - Les collecteurs, sur la machine réelle
+
+    // MARK: - La cible du porteur (recette lot 4, test 5.4)
+
+    private static func cibleDuPorteur(_ t: Tally) {
+        print("\n· La cible du porteur — jamais le premier venu")
+
+        // Le filtre des chemins : ce que la recette a réellement rencontré.
+        check(t, "« / » (codex de ChatGPT.app) n'est pas un projet",
+              !DecisionProjet.cheminExploitable("/", home: "/Users/x"))
+        check(t, "le home (daemon d'arrière-plan) non plus",
+              !DecisionProjet.cheminExploitable("/Users/x", home: "/Users/x"))
+        check(t, "un répertoire temporaire non plus",
+              !DecisionProjet.cheminExploitable("/private/tmp/cc-daemon-502/a/spare",
+                                                home: "/Users/x")
+                && !DecisionProjet.cheminExploitable("/var/folders/dl/xyz/T/w", home: "/Users/x"))
+        check(t, "un vrai répertoire de travail, oui",
+              DecisionProjet.cheminExploitable("/Users/x/DEV/projet", home: "/Users/x"))
+
+        // La sélection, à contre-épreuve : le projet bat la fraîcheur.
+        let frais = DecisionProjet.Provider(pid: 1, chemin: "/u/autre", fraicheurSecondes: 5)
+        let dessus = DecisionProjet.Provider(pid: 2, chemin: "/u/projet", fraicheurSecondes: 900)
+        let muet = DecisionProjet.Provider(pid: 3, chemin: "/u/tiers", fraicheurSecondes: nil)
+        check(t, "l'agent DU projet gagne, même moins frais",
+              DecisionProjet.agentCible(parmi: [frais, dessus, muet],
+                                        projet: "/u/projet")?.pid == 2)
+        check(t, "un sous-répertoire du projet compte aussi",
+              DecisionProjet.agentCible(parmi: [frais, dessus],
+                                        projet: "/u/projet/sous")?.pid == 2)
+        check(t, "sans agent sur le projet : le plus frais",
+              DecisionProjet.agentCible(parmi: [muet, dessus, frais],
+                                        projet: "/ailleurs")?.pid == 1)
+        check(t, "sans fraîcheur mesurable : le premier vivant",
+              DecisionProjet.agentCible(parmi: [muet], projet: nil)?.pid == 3)
+        check(t, "aucun vivant : personne — la phrase reste au presse-papiers",
+              DecisionProjet.agentCible(parmi: [], projet: "/u/projet") == nil)
+    }
 
     private static func collecteurs(_ t: Tally) {
         print("\n· Les collecteurs, sur la machine réelle")

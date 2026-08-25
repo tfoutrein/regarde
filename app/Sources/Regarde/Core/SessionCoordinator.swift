@@ -704,7 +704,7 @@ final class SessionCoordinator {
             HistoriqueFeedbacks.shared.ajouter(
                 numero: resultat.attribution.numero,
                 projet: choix.chemin, phrase: resultat.phrase)
-            PorteurRetour.armer(phrase: resultat.phrase)
+            PorteurRetour.armer(phrase: resultat.phrase, projet: choix.chemin)
             // Et la métrique de session (S55) : spontanée sauf banc, avec la
             // durée du raccourci de fin au presse-papiers — le critère n°4.
             Metriques.enregistrer([

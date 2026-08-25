@@ -144,14 +144,72 @@ enum DecisionProjet {
         let agents: Set<String> = ["claude", "cursor", "codex"]
         var sortie: [Provider] = []
         for pid in pids.prefix(Int(max(0, tailles))) where pid > 0 {
+            // L'identité ne peut PAS reposer sur le seul proc_name : le CLI de
+            // Claude Code écrase son titre de processus avec sa version
+            // (« 2.1.241 ») — aucune session réelle ne s'appelait « claude »,
+            // et la recette du lot 4 a porté le ⏎ vers le mauvais agent. Le
+            // chemin de l'exécutable, lui, ne ment pas :
+            // ~/.local/share/claude/versions/2.1.241 — le composant « claude »
+            // y est. On accepte l'un OU l'autre.
             var nomTampon = [CChar](repeating: 0, count: 64)
-            guard proc_name(pid, &nomTampon, UInt32(nomTampon.count)) > 0 else { continue }
-            guard agents.contains(String(cString: nomTampon)) else { continue }
-            guard let cwd = ProjetCandidats.repertoireDeTravail(pid) else { continue }
+            let nom = proc_name(pid, &nomTampon, UInt32(nomTampon.count)) > 0
+                ? String(cString: nomTampon) : ""
+            var cheminExe = [CChar](repeating: 0, count: 4096)
+            let composants = proc_pidpath(pid, &cheminExe, UInt32(cheminExe.count)) > 0
+                ? String(cString: cheminExe).split(separator: "/").map(String.init) : []
+            guard agents.contains(nom)
+                || composants.contains(where: { agents.contains($0) }) else { continue }
+            guard let cwd = ProjetCandidats.repertoireDeTravail(pid),
+                  cheminExploitable(cwd) else { continue }
             sortie.append(Provider(pid: pid, chemin: cwd,
                                    fraicheurSecondes: fraicheurClaude(cwd)))
         }
         return sortie
+    }
+
+    /// Un cwd d'agent qui ne désigne AUCUN projet.
+    ///
+    /// Trouvé en recette du lot 4 : le binaire `codex` que ChatGPT.app embarque
+    /// tourne en `/`, et le daemon d'arrière-plan de Claude Code en `~` ou dans
+    /// un répertoire temporaire. Tous portent un nom d'agent, aucun n'est la
+    /// session que l'utilisateur pilote — et le premier avait détourné le
+    /// porteur du ⏎ vers ChatGPT. Fonction PURE, jugée par l'autotest.
+    static func cheminExploitable(_ chemin: String,
+                                  home: String = FileManager.default
+                                      .homeDirectoryForCurrentUser.path) -> Bool {
+        if chemin == "/" || chemin == home { return false }
+        for prefixe in ["/tmp/", "/private/tmp/", "/private/var/folders/", "/var/folders/"]
+        where chemin.hasPrefix(prefixe) { return false }
+        return true
+    }
+
+    /// L'agent auquel porter la phrase. PURE — l'appelant fournit les vivants.
+    ///
+    /// Deux préférences, dans cet ordre, parce qu'elles répondent à deux
+    /// questions différentes :
+    ///   1. un agent travaille DANS le projet publié → c'est lui, sans débat ;
+    ///   2. sinon le plus FRAIS — celui dont l'index d'activité a bougé en
+    ///      dernier est celui que l'utilisateur est en train de piloter.
+    /// À défaut de fraîcheur mesurable, le premier vivant reste le repli.
+    static func agentCible(parmi vivants: [Provider], projet: String?) -> Provider? {
+        agentsClasses(parmi: vivants, projet: projet).first
+    }
+
+    /// Tous les agents, du plus au moins pertinent — le porteur essaie dans cet
+    /// ordre jusqu'à en trouver un qui résolve vers une fenêtre : l'élu peut
+    /// être un daemon sans interface, et abandonner sur lui alors qu'une vraie
+    /// session attend derrière serait le défaut du « premier venu », inversé.
+    static func agentsClasses(parmi vivants: [Provider], projet: String?) -> [Provider] {
+        func surProjet(_ p: Provider) -> Bool {
+            guard let projet else { return false }
+            return p.chemin == projet
+                || projet.hasPrefix(p.chemin + "/")
+                || p.chemin.hasPrefix(projet + "/")
+        }
+        return vivants.sorted { a, b in
+            if surProjet(a) != surProjet(b) { return surProjet(a) }
+            return (a.fraicheurSecondes ?? .infinity) < (b.fraicheurSecondes ?? .infinity)
+        }
     }
 
     /// L'âge de la dernière activité Claude Code sur un répertoire, si l'index

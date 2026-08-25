@@ -34,14 +34,17 @@ enum PorteurRetour {
     private static let echeance = OSAllocatedUnfairLock(initialState: 0.0)
     /// La phrase à porter, posée à l'armement.
     private static let phrasePortee = OSAllocatedUnfairLock(initialState: "")
+    /// Le projet publié — c'est LUI qui départage les agents au moment du port.
+    private static let projetPorte = OSAllocatedUnfairLock(initialState: String?.none)
 
     static var graceActive: Bool {
         Date().timeIntervalSince1970 < echeance.withLock { $0 }
     }
 
     @MainActor
-    static func armer(phrase: String, duree: TimeInterval = 8) {
+    static func armer(phrase: String, duree: TimeInterval = 8, projet: String? = nil) {
         phrasePortee.withLock { $0 = phrase }
+        projetPorte.withLock { $0 = projet }
         echeance.withLock { $0 = Date().timeIntervalSince1970 + duree }
         HUDWindow.shared.announce("⏎ Envoyer à l'agent",
                                   detail: "pendant \(Int(duree)) s — sinon la phrase reste au presse-papiers",
@@ -66,7 +69,8 @@ enum PorteurRetour {
     static func porter() {
         desarmer()
         let phrase = phrasePortee.withLock { $0 }
-        Task { @MainActor in injecter(phrase) }
+        let projet = projetPorte.withLock { $0 }
+        Task { @MainActor in injecter(phrase, projet: projet) }
     }
 
     // MARK: - L'injection, best-effort à trois étages
@@ -75,13 +79,28 @@ enum PorteurRetour {
     /// synthétique ensuite, et si tout échoue : rien, en silence. La phrase est
     /// DÉJÀ au presse-papiers ; l'injection est un confort, pas un contrat.
     @MainActor
-    private static func injecter(_ phrase: String) {
-        guard let provider = DecisionProjet.providers().first(where: { kill($0.pid, 0) == 0 }),
-              let application = NSRunningApplication(processIdentifier: provider.pid)
-                ?? porteurDeFenetre(de: provider.pid) else {
+    private static func injecter(_ phrase: String, projet: String?) {
+        // Le PREMIER vivant ne suffit pas : le binaire `codex` de ChatGPT.app
+        // porte un nom d'agent et gagnait la course — le ⏎ activait ChatGPT
+        // (recette du lot 4, test 5.4). Les agents s'essaient du plus au moins
+        // pertinent — projet publié d'abord, fraîcheur ensuite — jusqu'à celui
+        // qui résout vers une vraie fenêtre.
+        let vivants = DecisionProjet.providers().filter { kill($0.pid, 0) == 0 }
+        var retenu: (DecisionProjet.Provider, NSRunningApplication)?
+        for provider in DecisionProjet.agentsClasses(parmi: vivants, projet: projet) {
+            if let application = NSRunningApplication(processIdentifier: provider.pid)
+                ?? porteurDeFenetre(de: provider.pid),
+               application.activationPolicy == .regular {
+                retenu = (provider, application)
+                break
+            }
+        }
+        guard let (provider, application) = retenu else {
             Journal.event(.system, "porteur — aucun agent à activer, la phrase reste au presse-papiers")
             return
         }
+        Journal.event(.system, "porteur — cible \(provider.chemin) (pid \(provider.pid))"
+                      + " via \(application.localizedName ?? "?")")
         application.activate()
         Metriques.enregistrer(["event": "injection", "agent": provider.pid])
 
