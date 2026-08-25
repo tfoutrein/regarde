@@ -252,11 +252,25 @@ final class SessionCoordinator {
         // il n'existe plus.
         let identiteCible = sessionTarget ?? "?"
         let debutBoucle = sessionStart ?? Date()
-        let marquesBoucle = MarkStore.shared.marks.map {
-            BouclePublication.Donnees.Marque(
-                numero: $0.number, genre: $0.tool.rawValue,
-                tempsSession: $0.t.seconds,
-                intention: $0.intention?.label, ecranEnMouvement: false)
+        let ecransParID = Dictionary(uniqueKeysWithValues: NSScreen.screens.compactMap {
+            ecran -> (CGDirectDisplayID, NSScreen)? in
+            guard let id = ecran.deviceDescription[
+                NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID else { return nil }
+            return (id, ecran)
+        })
+        let marquesBoucle = MarkStore.shared.marks.map { m -> BouclePublication.Donnees.Marque in
+            // La bbox du modèle est normalisée origine BAS-gauche (Cocoa) ; le
+            // rapport parle en points origine HAUT-gauche. La conversion se fait
+            // ICI, au seul endroit qui voit encore l'écran porteur de la marque.
+            let b = m.shape.boundingBox
+            let ecran = ecransParID[m.displayID]
+            return BouclePublication.Donnees.Marque(
+                numero: m.number, genre: m.tool.rawValue,
+                tempsSession: m.t.seconds,
+                intention: m.intention?.label, ecranEnMouvement: false,
+                boite: NormRect(x: b.x, y: 1 - b.y - b.h, w: b.w, h: b.h),
+                ecranPoints: ecran?.frame.size ?? .zero,
+                facteurEcran: ecran.map { Double($0.backingScaleFactor) } ?? 1)
         }
         let ecranBoucle = NSScreen.main.map {
             "Display principal, \(Int($0.frame.width))×\(Int($0.frame.height)) pt @\(Int($0.backingScaleFactor))×"
@@ -318,8 +332,7 @@ final class SessionCoordinator {
                     let images = frames.filter { $0.role == .crop }.map {
                         BouclePublication.Donnees.Image(
                             numero: $0.number, url: $0.url,
-                            taillePixels: $0.pixelSize,
-                            boiteNormalisee: $0.normalizedInFrame)
+                            taillePixels: $0.pixelSize)
                     }
                     let duree = Date().timeIntervalSince(debutBoucle)
                     let donnees = BouclePublication.Donnees(

@@ -23,7 +23,9 @@ Comptez **35 à 45 minutes**. La section 1 est bloquante.
 
 **Un projet d'essai**, jetable et à vous :
 
-- `mkdir -p ~/recette-lot4 && git -C ~/recette-lot4 init -q && echo test > ~/recette-lot4/lisez-moi.txt`
+- `mkdir -p ~/recette-lot4 && git -C ~/recette-lot4 init -q && echo test > ~/recette-lot4/lisez-moi.txt && git -C ~/recette-lot4 add -A && git -C ~/recette-lot4 commit -qm "décor"`
+- le commit fait partie du décor : sans lui, pas de ligne Git au rapport (4.3) et
+  un chemin de plus dans `git status` (4.2).
 - puis **un shell qui y reste** : ouvrez un onglet de terminal et `cd ~/recette-lot4`
 
 Ce lot ne mesure aucune cadence : le papier peint vidéo et les écrans à dégâts
@@ -33,10 +35,11 @@ fantômes du lot 3 ne gênent pas ici.
 
 ## 1. Ne rien casser — bloquante
 
-- [ ] **1.1** Les neuf suites d'autotest sont vertes
-      FAIRE : `cd ~/DEV/PERSO/AI-DEV/TOOLS/regarde/app && for f in --capture-test --marks-test --reglette-test --icone-test --geometry-test --append-test --render-test --publier-test --projet-test --boucle-test --papiers-test; do ./.build/debug/Regarde $f | tail -1; done`
-      REGARDER : la dernière ligne de chaque suite.
-      ATTENDU : **0 échouée** partout.
+- [ ] **1.1** Les onze suites d'autotest sont vertes
+      FAIRE : `cd ~/DEV/PERSO/AI-DEV/TOOLS/regarde/app && for f in --capture-test --marks-test --reglette-test --icone-test --geometry-test --append-test --render-test --publier-test --projet-test --boucle-test --papiers-test; do ./.build/debug/Regarde $f | grep -E "échouées|passent" | tail -1; done`
+      REGARDER : la ligne de verdict de chaque suite.
+      ATTENDU : **0 échouée** partout — la suite géométrie, elle, conclut par
+      « vérifications passent ».
       SI ÇA RATE : la suite en échec nomme ses vérifications rouges — c'est un défaut
       avant même de commencer, rien d'autre ne se teste par-dessus.
 

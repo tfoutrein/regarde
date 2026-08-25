@@ -247,6 +247,10 @@ public enum Rendu {
     }
 
     private static func entier(_ v: Double) -> String {
-        v == v.rounded() ? String(Int(v)) : String(v)
+        // Arrondi au dixième AVANT le test d'intégrité : le bruit flottant d'un
+        // produit bbox × écran (« 300.00000000000006 pt », défaut D-03 de la
+        // recette du lot 4) n'est pas une fraction à montrer au lecteur.
+        let dixieme = (v * 10).rounded() / 10
+        return dixieme == dixieme.rounded() ? String(Int(dixieme)) : String(dixieme)
     }
 }

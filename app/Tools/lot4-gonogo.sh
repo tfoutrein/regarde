@@ -55,9 +55,12 @@ if not replis:
 
 # Les quatre nombres, TOUJOURS imprimés — même quand la conclusion se refuse :
 # voir où l'on en est fait partie de tenir dix jours sans impression.
-def ligne(nom, valeur, comparateur, seuil, unite=""):
+def ligne(nom, valeur, comparateur, seuil, unite="", seuil_texte=None):
+    # Le seuil s'affiche dans SON unité, pas dans celle du relevé : « 7 / 1
+    # verdicts » (défaut D-02 de la recette) laissait croire à un seuil mobile.
     ok = comparateur(valeur, seuil)
-    print(f"  {'✓' if ok else '✗'} {nom:26} {valeur:>8} {unite:12} seuil : {seuil} {unite}")
+    print(f"  {'✓' if ok else '✗'} {nom:26} {valeur:>8} {unite:12} "
+          f"seuil : {seuil_texte or f'{seuil} {unite}'}")
     return ok
 
 ok = True
@@ -68,7 +71,8 @@ dix = verdicts[-10:]
 pertinents = sum(1 for v in dix if v.get("verdict") == "pertinent")
 if len(dix) < 10:
     refus.append(f"{len(dix)} verdict(s) de diff persisté(s) — il en faut dix pour juger « 7 sur 10 »")
-ok &= ligne("diffs pertinents", pertinents, lambda v, s: v >= s, 7, f"/ {len(dix)} verdicts")
+ok &= ligne("diffs pertinents", pertinents, lambda v, s: v >= s, 7,
+            f"/ {len(dix)} verdicts", seuil_texte="7 / 10 verdicts")
 fins = sorted(e.get("finSecondes", 0) for e in lignes
               if e.get("event") == "session" and "finSecondes" in e)
 p95 = round(fins[int(len(fins) * 0.95) - 1] if fins else 0, 1)

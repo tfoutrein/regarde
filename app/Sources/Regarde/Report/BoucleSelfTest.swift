@@ -58,9 +58,13 @@ enum BoucleSelfTest {
             interruptions: "aucune",
             marques: [
                 .init(numero: 1, genre: "arrow", tempsSession: 12.5,
-                      intention: "alignement", ecranEnMouvement: false),
+                      intention: "alignement", ecranEnMouvement: false,
+                      boite: NormRect(x: 0.1, y: 0.2, w: 0.3, h: 0.4),
+                      ecranPoints: CGSize(width: 1728, height: 1117), facteurEcran: 2),
                 .init(numero: 2, genre: "rect", tempsSession: 47.0,
-                      intention: nil, ecranEnMouvement: false),
+                      intention: nil, ecranEnMouvement: false,
+                      boite: NormRect(x: 0.5, y: 0.5, w: 0.2, h: 0.2),
+                      ecranPoints: CGSize(width: 1728, height: 1117), facteurEcran: 2),
             ],
             images: images,
             outilVersion: "0.4.0-test", os: "macOS 26.1", build: "999")
@@ -70,8 +74,7 @@ enum BoucleSelfTest {
         print("\n· L'assembleur — la traduction vers le § 9.5")
         let images = [BouclePublication.Donnees.Image(
             numero: 1, url: URL(fileURLWithPath: "/x/marque-01.png"),
-            taillePixels: CGSize(width: 756, height: 532),
-            boiteNormalisee: NormRect(x: 0.1, y: 0.2, w: 0.3, h: 0.4))]
+            taillePixels: CGSize(width: 756, height: 532))]
         let m = BouclePublication.assembler(
             donneesFabriquees(images: images),
             projet: "/p/x", detection: "**probable** — 1 shell", git: nil)
@@ -84,6 +87,14 @@ enum BoucleSelfTest {
         check(t, "la géométrie normalisée traverse",
               m.marks[0].geometry.normalized.x == 0.1
                 && m.marks[0].geometry.normalized.h == 0.4)
+        // Contre-épreuve du défaut D-01 de la recette : les points sont la bbox
+        // × l'écran, les pixels × le facteur — plus jamais « 0×0 pt à (0, 0) ».
+        check(t, "les points et pixels sortent du repère écran, pas du recadrage",
+              abs(m.marks[0].geometry.points.x - 172.8) < 0.001
+                && abs(m.marks[0].geometry.points.h - 446.8) < 0.001
+                && abs(m.marks[0].geometry.pixels.w - 1036.8) < 0.001
+                && m.marks[0].geometry.frameScaleFactor == 2
+                && m.marks[1].geometry.points.w > 0)
         check(t, "le numéro est PROVISOIRE — l'attribution le remplacera",
               m.session.number == 0)
         check(t, "le contexte porte les sept lignes, chacune renseignée",
@@ -139,11 +150,9 @@ enum BoucleSelfTest {
         }
         let images = [
             BouclePublication.Donnees.Image(numero: 1, url: src1,
-                taillePixels: CGSize(width: 756, height: 532),
-                boiteNormalisee: NormRect(x: 0.1, y: 0.2, w: 0.3, h: 0.4)),
+                taillePixels: CGSize(width: 756, height: 532)),
             BouclePublication.Donnees.Image(numero: 2, url: src2,
-                taillePixels: CGSize(width: 448, height: 280),
-                boiteNormalisee: NormRect(x: 0.5, y: 0.5, w: 0.2, h: 0.2)),
+                taillePixels: CGSize(width: 448, height: 280)),
         ]
         let donnees = donneesFabriquees(images: images)
         let brouillon = BouclePublication.assembler(

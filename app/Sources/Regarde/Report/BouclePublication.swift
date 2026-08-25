@@ -40,12 +40,17 @@ enum BouclePublication {
             let tempsSession: Double
             let intention: String?
             let ecranEnMouvement: Bool
+            // S57, défaut D-01 — la géométrie vient de la MARQUE, pas du recadrage.
+            // La boîte du recadrage porte sa marge de contexte : publier son repère
+            // rendait « rectangle 0×0 pt à (0, 0) » dans chaque rapport réel.
+            let boite: NormRect          // bbox de la marque — écran normalisé, origine HAUT-gauche
+            let ecranPoints: CGSize      // taille de l'écran porteur, en points
+            let facteurEcran: Double     // backingScaleFactor de cet écran
         }
         struct Image {
             let numero: Int
             let url: URL                 // le PNG déjà écrit sous ~/Regarde
             let taillePixels: CGSize
-            let boiteNormalisee: NormRect
         }
         let uuid: UUID
         let debut: Date
@@ -85,18 +90,22 @@ enum BouclePublication {
                     visualTokensNote: "min(patches, plafond du palier)",
                     bytes: nil, marks: [m.numero], engravedMarks: [m.numero]))
             }
-            let boite = imagesParNumero[m.numero]?.first?.boiteNormalisee
+            let ecranL = Double(m.ecranPoints.width), ecranH = Double(m.ecranPoints.height)
             marks.append(Manifeste.Mark(
                 number: m.numero, kind: m.genre, sessionTime: m.tempsSession,
                 captureSegment: nil, isRetroactive: false,
                 intents: m.intention.map { [$0] } ?? [],
                 geometry: .init(
-                    points: .init(x: 0, y: 0, w: 0, h: 0),
-                    pixels: .init(x: 0, y: 0, w: 0, h: 0),
-                    normalized: .init(x: boite?.x ?? 0, y: boite?.y ?? 0,
-                                      w: boite?.w ?? 0, h: boite?.h ?? 0),
-                    frameContentRect: .init(x: 0, y: 0, w: 0, h: 0),
-                    frameScaleFactor: 1),
+                    points: .init(x: m.boite.x * ecranL, y: m.boite.y * ecranH,
+                                  w: m.boite.w * ecranL, h: m.boite.h * ecranH),
+                    pixels: .init(x: m.boite.x * ecranL * m.facteurEcran,
+                                  y: m.boite.y * ecranH * m.facteurEcran,
+                                  w: m.boite.w * ecranL * m.facteurEcran,
+                                  h: m.boite.h * ecranH * m.facteurEcran),
+                    normalized: .init(x: m.boite.x, y: m.boite.y,
+                                      w: m.boite.w, h: m.boite.h),
+                    frameContentRect: .init(x: 0, y: 0, w: ecranL, h: ecranH),
+                    frameScaleFactor: m.facteurEcran),
                 frames: refCrop.map { Manifeste.MarkFrames(crop: $0, full: nil) },
                 screenWasMoving: m.ecranEnMouvement,
                 contextFramesAvailable: nil, zoneNote: nil))
