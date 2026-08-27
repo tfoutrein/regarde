@@ -993,6 +993,126 @@ spécification, mesurabilité du GO/NO-GO. Les quatre qui changeaient le découp
 
 ---
 
+### 7.6 Lot 5 — 17 sessions
+
+Découpé le 27 août 2026, contre le code des lots 0 à 4 (v0.4.1). Le lot commence
+par la seule mesure du plan capable de le re-cadrer entièrement : la dictée réelle
+du § 10.1 n'a jamais été faite, et sa table de décision peut déplacer une journée
+ou renverser la conception. Elle ouvre donc le lot au lieu de le précéder.
+
+| # | Durée | Objectif | Fini quand |
+|---|---|---|---|
+| S59 | 2 h | **La mesure qui décide du lot** — le CLI de 50 lignes du § 10.1, la dictée réelle de 3 min (spontanée, jargon délibéré, micro interne), le comptage à trois nombres. Les arbitrages en attente sont tranchés par écrit : A2 (texte clavier dans le lot), frontière revue/purge (A5 — la purge reste au lot 7) | Les trois nombres — termes prononcés, corrects, erreurs **plausibles** — sont datés dans `lot5-seuils.md` avec la décision de la table § 10.1, **réconciliée ce jour avec le § 7.3 : un terme sur cinq décide, pas 2/3**. Le CLI expose les **segments** : le même fichier sans `SpeechDetector` en rend UN seul — le fait de sonde n°1 est reproduit chez nous, pas cru sur parole |
+| S60 | 2 h | **Les seuils et contrats écrits avant la première ligne d'audio.** Budget d'ancrage du « premier mot », format ligne de `transcript.txt` (§ 9.2, versionnable), extension § 9.5 `marks[].voice[]` et schéma de `MarkShape.text`, et les trous réellement ouverts : **les modalités de la voix en éclair** — le principe est tranché par la spec, l'éclair parle ; restent le sort de l'éclair silencieux face au `flashGrace` de 0,8 s, l'armement de l'analyseur hors session, l'horodatage sans horloge de session —, la règle d'affichage de `locale` et latence dans l'en-tête, le sort des paroles d'une marque annulée par `undoLast()` | Chaque seuil a son unité et sa source dans `lot5-seuils.md` ; le décodeur du lot 4 **accepte** un manifeste étendu fabriqué, et l'empreinte du rapport de référence du lot 4 tient inchangée |
+| S61 | 3 h | Le micro par fenêtre, **sans transcription**. Sélection du périphérique — jamais l'entrée par défaut, exclusion des pilotes de boucle par fonction PURE sur les marqueurs réels (`MSLoopbackDriver` est sur cette machine), préférence micro interne. `AVAudioEngine` par fenêtre, converter créé une fois hors du tap, latence § 3.6 sommée et journalisée, `ConfigurationChange` → reconstruire et remesurer. Fermeture d'office : `IsSecureEventInputEnabled()` et `suspended` | L'autotest de sélection exclut « Microsoft Teams Audio » et préfère l'interne sur la liste réelle de la machine ; la latence est au journal avec ses trois termes ; verrouiller l'écran pendant une fenêtre la ferme d'office avec sa trace. `when.isHostTimeValid` faux → repli compteur d'échantillons, tracé |
+| S62 | 3 h | La chaîne `SpeechAnalyzer` **au fil de l'eau** : transcriber + `SpeechDetector(reportResults: false)` obligatoire, `AnalyzerInput(bufferStartTime:)` portant le temps de session compensé, `AssetInventory` sans condition, deux tampons — le final AJOUTE, le volatil REMPLACE | Le fichier de S59 rejoué **au temps réel** par le harnais rend ses segments ; le même fichier poussé plus vite **effondre la segmentation et le test le montre** — le fait de sonde n°2 est un test rouge/vert, pas une note. Retirer le detector des modules fait rougir. Concaténer les volatils fait rougir |
+| S63 | 3 h | **La fenêtre de parole, machine à états PURE** sur événements horodatés : ouverture à la prise ⌥⌘, fermeture 8 s après relâchement prolongée par les volatils, plafond dur 20 s, geste global > 400 ms sans tracé, verrou ⌃⌥M. Les quatre règles de rattachement tracées : `.fenetreDeParole`, `.debordement`, `.gesteGlobal`, `.aucuneFenetre` — le premier mot décide, jamais une inférence | La table de cas est exhaustive en autotest, chaque règle avec sa contre-épreuve : un segment dont le premier mot tombe 1 ms **après** la fermeture est global, pas rattaché ; deux fenêtres successives donnent une timeline discontinue mais **monotone** ; les volatils ne prolongent jamais au-delà de 20 s |
+| S64 | 2 h | Le branchement au geste réel : `OptionGate` ouvre la fenêtre, le badge **pulse** tant qu'elle vit, le calque n'est retiré qu'à sa **fermeture** — changement assumé face aux lots 2-4 —, HUD « commentaire général », ⌃⌥M réel avec bandeau permanent et `.muted` déjà au contrat | Une session courte parlée rattache le segment à la marque, au journal ; ⌃⌥M pendant une phrase la bascule en global et le bandeau reste jusqu'au déverrouillage ; **l'éclair parle — la spec l'a tranché** — selon les modalités arrêtées en S60 : le mode majoritaire n'est pas oublié, c'est la leçon des réfutations des lots 3 **et** 4 |
+| S65 | 3 h | La table ADR-0021 devient entièrement réelle : rétroactive T−N (fenêtre sans marque), `⇧ + chiffre` réaffecte le segment en cours, `⌥⌘ + 0` le bascule en global, `attachment.manual` écrase tout et n'est **jamais recalculé**. Le badge de la marque cible s'illumine **sur le calque**, à sa position | L'autotest couvre les trois lignes de la table × leurs cas ; en réel, ⌥⌘ puis `3` puis `2` enchaîne rétroactive et intention « erreur » ; `7`..`9` en mode intention font flasher l'invalidité et n'appliquent **rien**. Les codes physiques restent la seule identité des chiffres |
+| S66 | 3 h | **Le drain dans le chemin ordonné de la publication** — même place, même leçon que l'arrêt des flux du 23 août, jamais un Task détaché. `finalizeAndFinishThroughEndOfInput()` **et** l'attente, composés dans le budget de 20 s de fin. `transcript.txt` écrit par la porte d'append unique, `rawText` conservé | Fermer ⌃⌥F **au milieu d'une phrase** met la fin de la phrase dans le rapport — « aucune perte des 3 dernières secondes » est LE critère du lot, et couper le drain (drapeau d'essai) fait rougir en la perdant. `git status` propose maintenant **cinq** chemins : `transcript.txt` est versionnable, et les tests du lot 4 qui exigeaient quatre sont **mis à jour dans la même session** |
+| S67 | 3 h | Manifeste étendu et rendu de la voix, dans `RegardeRender` pur : `marks[].voice[]`, citations en blockquote sous chaque marque, « Commentaires généraux » réels — `- **01:52** — « … »` remplace le `- aucun.` en dur —, `zoneNote` remplie depuis la voix, `session.locale` et `audioInputLatencyMs` | `--render-test` rend un manifeste fabriqué avec voix depuis le **seul** JSON ; un segment global et un segment rattaché rendent deux formes distinctes ; zéro commentaire rend encore « - aucun. » ; **l'en-tête ne rend la locale et la latence que si le manifeste porte de la voix** — une session au micro refusé n'a rien à en dire — ; l'empreinte du rapport de référence du lot 4 est **inchangée** |
+| S68 | 2 h | Le lexique déterministe : ~200 termes front figés + identifiants extraits du projet cible — S52 sait déjà lequel —, distance phonétique appliquée aux **seuls** mots de confiance < 0,6, les deux versions au rapport : `pratique` *[padding ?]* | Un mot à confiance 0,9 n'est **jamais** corrigé — la contre-épreuve du seuil ; un mot < 0,6 phonétiquement proche reçoit sa double version ; l'extraction sur un dépôt fabriqué sort les identifiants attendus et eux seuls |
+| S69 | 3 h | **Le clavier, le fait de sonde d'abord** (A2) : le tap consomme, `NSEvent(cgEvent:)` nourrit un `NSTextView` **hors écran** via `interpretKeyEvents` — **aucune fenêtre clé**, l'application testée garde son focus, c'est la régression que le produit promet d'éviter. Touches mortes françaises | « é, à, ï, ç » traversent fidèlement pendant une session **sans** que l'application testée perde l'état clé — un champ web garde son curseur pendant la frappe ; les IME asiatiques sont hors périmètre, écrit. Le § 6.3 chiffrait ce périmètre à deux journées : le scinder en deux sessions est la réponse, pas le nier |
+| S70 | 3 h | **La marque texte de bout en bout** : `MarkShape.text` au modèle (schéma posé en S60), le calque l'affiche, l'`Engraver` la grave, `RegardeRender` la rend ; Échap abandonne sans rien poser | Une marque texte traverse du geste au rapport publié — gravée dans le PNG **et** rendue dans le markdown ; Échap ne laisse aucune trace ; les autotests marques, rendu et boucle couvrent le nouveau genre |
+| S71 | 3 h | **Le bandeau de confirmation et la revue à la demande** — le périmètre § 11.3 que la première version de ce chapitre laissait à une provision conditionnelle. Les quatre actions du § 2.2 — [⏎ Envoyer] [R Revoir] [⌫ Annuler] [V Voir les images] — complètent la fenêtre de grâce de S54, avec les compteurs du § 6.6 ; R ouvre la revue : édition inline du texte (`rawText` conservé), suppression d'une marque ou d'un segment, bande de vignettes § 10.3 | R pressé dans les 8 s ouvre la revue, qui ne s'ouvre **jamais** seule ; une édition conserve `rawText` au manifeste ; supprimer une marque retire son image du rapport publié ; le budget dur de 20 s du § 6.6 tient, chrono au manifeste |
+| S72 | 2 h | La permission micro au **premier usage réel**, jamais au lancement ; refusée → la palette d'intentions et le clavier restent, comme le doctor le promet depuis le lot 1. Le doctor gagne la ligne de latence d'entrée | Sur un état TCC réinitialisé (`tccutil`), la première fenêtre de parole déclenche l'invite — pas le démarrage ; refuser laisse la session entièrement utilisable, la fenêtre se ferme avec sa trace, et rien ne redemande à chaque geste |
+| S73 | 2 h | **Passage du livrable** : session de 3 min, micro interne, bureau bruyant réel — 6 observations, 6 rattachées à la bonne marque, texte brut conservé, bandeau et revue rejoués. `lot5-passage.md` sans case vide, « non mesuré » valeur légitime | Les 6/6 sont constatés sur le rapport publié, pas au journal ; la dernière observation chevauche ⌃⌥F et sa fin est là. `v0.5.0` est posé sur ce commit |
+| S74 | 2 h | Recette manuelle, auditée contre le code avant remise, quatre temps, section « Ne rien casser » bloquante — les livrables des lots 2, 3 **et 4** s'y rejouent ; l'éclair, le clavier et le couple bandeau-revue ont leurs sections propres | Les libellés donnés à VOIR existent au caractère dans les sources — l'audit est un script ; les défauts trouvés sont corrigés puis étiquetés `v0.5.1` |
+| S75 | 3 h | **Marge** — AirPods et périphérique agrégé : la latence de 150-300 ms compensée dans `bufferStartTime`, le repli compteur d'échantillons éprouvé sur un agrégé réel, `ConfigurationChange` en pleine fenêtre | Une session AirPods rattache ses observations aux bonnes marques malgré la latence ; débrancher le périphérique **pendant une phrase** reconstruit le moteur sans perdre la fenêtre ni recréer l'analyseur |
+
+**41 heures pour S59 à S74**, soit 5,92 journées au taux du lot 3 (6,92 h/j) — le
+budget de 6 j, marge d'arrondi comprise, comme au lot 4. La « provision » de la
+première version de ce chapitre a disparu : la journée qu'elle gardait en réserve
+finançait en réalité un périmètre normatif — le bandeau et la revue du § 11.3 —
+qui est désormais dans le tableau, dans **toutes** les branches du § 10.1. La
+branche médiane de la dictée ajoute son +1 j au lot, comme sa table l'écrit ; la
+soupape R15 reste les tâches de réserve du § 6.2. Les 3 h de S75 sont comptées à
+part.
+
+#### Ce que l'ordre impose
+
+**La mesure avant les seuils, les seuils avant l'audio.** S59 peut re-cadrer le lot
+entier — la faire en premier coûte 2 h, la découvrir en S66 coûterait six jours. Et
+S60 écrit les contrats avant la première ligne d'`AVAudioEngine` : un format de
+`transcript.txt` décidé pendant qu'on l'écrit est un format ajusté au code — la
+leçon de S31 et de S46, une troisième fois.
+
+**Le modèle pur avant le branchement.** S63 épuise les règles de rattachement sur
+une machine à états sans micro ni moteur — comme `decision()` du porteur ou
+l'assembleur de S53. Le premier mot, le débordement, le plafond : tout se juge sur
+des événements fabriqués, reproductibles, avant qu'un seul buffer réel n'existe.
+L'ordre inverse déboguerait la sémantique à travers deux couches d'asynchronisme.
+
+**Les faits de sonde deviennent des tests rouge/vert avant les sessions réelles.**
+La segmentation qui s'effondre quand on pousse plus vite que le temps réel (S62)
+est invisible en session courte et ruineuse en session longue. Le harnais de S59
+sert de banc : le fait n'est pas une note de bas de page, c'est un test qui rougit.
+
+**La voix arrive au rapport à la huitième session sur dix-sept.** S66 et S67
+ferment la boucle voix → transcript → manifeste → rendu avant le lexique, le
+clavier, le bandeau et la permission — la règle du lot 4 : une boucle imparfaite
+qu'on utilise vaut mieux qu'une moitié de boucle parfaite.
+
+#### Quatre hypothèses que le code a confirmées ou invalidées
+
+Vérifiées contre v0.4.1 avant d'écrire le tableau.
+
+| Hypothèse | Ce que le code dit | Conséquence |
+|---|---|---|
+| Le verrou micro ⌃⌥M est à construire entièrement | `main.swift:204` : une ligne de journal — mais `IntentionOutcome.muted(Int64)` existe déjà, et `HotKeyCenter` ré-enregistre `m` par disposition | Le contrat est prêt, seul le comportement manque — S64 branche, ne conçoit pas |
+| Le manifeste devra être étendu pour la voix | `Manifeste.Mark.zoneNote` est réservé avec son commentaire « le lot 5 la remplira », mais **aucun** champ `voice` n'existe et « Commentaires généraux » est un littéral en dur dans `Rendu.swift` | S60 versionne en 1.2 mineure ; S67 remplace le littéral — et le décodeur du lot 4 doit accepter, c'est un critère |
+| Le drain peut vivre dans un `Task` à la fermeture | `closeSession()` porte la leçon du 23 août : deux tâches sans ordre garanti = liste vide lue. L'arrêt des flux est DANS le chemin ordonné de la publication | Le drain s'insère au même endroit, séquencé — S66 le dit dans son critère |
+| `git status` à quatre chemins survivra au lot 5 | `transcript.txt` est **versionnable** (§ 9.2) : cinquième chemin. `BoucleSelfTest` juge par égalité d'ensembles et rougira, la recette du lot 4 dit « exactement quatre » | S66 met à jour le test, le `.gitignore` et les cahiers **dans la même session** — un vert cassé qu'on répare plus tard est un vert qu'on ne croit plus |
+
+La quatrième est la plus sournoise : elle ferait échouer un test du lot **précédent**
+au milieu du lot 5, précisément le genre de rouge qu'on apprend à ignorer.
+
+#### Ce que le lot ne fera pas, et c'est ainsi qu'il tient en 6 jours
+
+- **la purge du plafond de 15 min (A5)** part au lot 7 avec la robustesse — la
+  revue à la demande, elle, est livrée en S71 : la première version de ce chapitre
+  la croyait conditionnelle, la réfutation a montré que le § 11.3 la met au
+  périmètre sans condition ;
+- **les IME asiatiques** sont hors périmètre de la saisie clavier, écrit en S69 —
+  les touches mortes françaises sont gratuites, la composition CJK ne l'est pas ;
+- **le service du transcript par MCP** n'existera jamais (§ 9.2 : « jamais servi
+  par MCP ») — le lot 6 n'aura rien à en dire ;
+- **le mode économe micro** part au lot 12 avec le reste de l'économie d'énergie.
+
+Les tâches de réserve du § 6.2 restent hors tableau, pour la même raison qu'au
+lot 4 : soudées au chemin critique, elles cesseraient d'être une soupape.
+
+#### Ce que la réfutation a corrigé
+
+Quatre lentilles — norme, code réel, mesurabilité, arithmétique —, dix défauts
+vérifiés sur pièces, six confirmés. Les quatre qui changeaient le découpage :
+
+- **le bandeau et la revue à la demande n'étaient construits par aucune session**,
+  alors que le § 11.3 les met au périmètre du lot sans condition — et la
+  « provision » ne les finançait que dans une branche du § 10.1. S71 les livre,
+  dans toutes les branches, et la provision a disparu ;
+- **la table § 10.1 contredisait le seuil normatif** : elle concluait « tel que
+  spécifié » dès 2/3 de termes corrects, là où le § 7.3 et le signal de révision
+  d'ADR-0012 exigent 4/5 — entre les deux, le plan aurait déroulé dix-sept heures
+  de voix que les textes interdisent. La table est réconciliée, S59 applique la
+  version alignée ;
+- **« l'éclair parle-t-il ? » n'était pas un trou** : la spécification le tranche,
+  l'éclair parle. Les vraies questions ouvertes sont les modalités — l'éclair
+  silencieux face au `flashGrace` de 0,8 s, l'armement de l'analyseur hors
+  session, l'horodatage sans horloge de session. S60 les pose, S64 applique la
+  réponse de la spec, pas « une décision, quelle qu'elle soit » ;
+- **la saisie clavier tenait en 3 h** là où le § 6.3 la chiffre à deux journées :
+  S69 et S70 la scindent — le fait de sonde d'abord, la marque texte de bout en
+  bout ensuite — et le schéma de `MarkShape.text` part en S60 avec les autres
+  contrats.
+
+Deux retouches de précision complètent : l'en-tête ne rend la locale et la latence
+d'entrée que si le manifeste porte de la voix — une session au micro refusé n'a
+rien à en dire — ; et l'arithmétique de la provision confondait 6,52 h et 6,92 h,
+erreur morte avec la provision elle-même.
+
+---
+
 ## 8. Vérifications permanentes
 
 Ce qui est vérifié une fois est vérifié pour une version de macOS et une signature. Les deux
@@ -1073,9 +1193,15 @@ peut changer le dimensionnement du lot 5 de deux journées.
 
 | Termes techniques corrects | Décision |
 |---|---|
-| **Plus de 2/3** | Lot 5 tel que spécifié. Le lexique déterministe de 200 termes plus les identifiants du projet couvrent le reste. |
-| **Entre 1/3 et 2/3** | L'extraction automatique des identifiants du projet passe de confort à exigence, et l'édition inline devient le chemin principal de la revue, pas un repli. Prévoir +1 j sur le lot 5. |
+| **Plus de 4/5** | Lot 5 tel que spécifié. Le lexique déterministe de 200 termes plus les identifiants du projet couvrent le reste. |
+| **Entre 1/3 et 4/5** | La saisie clavier passe devant — S69 et S70 remontent avant la chaîne voix —, l'extraction automatique des identifiants passe de confort à exigence, et l'édition inline devient le chemin principal de la revue, pas un repli. Prévoir +1 j sur le lot 5. |
 | **Moins de 1/3** | La voix n'est plus le canal principal. La saisie clavier (arbitrage A2) devient le mode par défaut, la voix un complément, et le lot 5 se re-cadre autour de la saisie. **C'est un changement de conception qu'il vaut mieux faire avant d'écrire une ligne, pas après six jours.** |
+
+*Table réconciliée le 27 août 2026 par la réfutation du découpage (§ 7.6) : la
+première ligne disait « plus de 2/3 », en contradiction avec le § 7.3 de la
+spécification et le signal de révision d'ADR-0012 — « au-delà d'un terme sur cinq
+à corriger, le lot 5 tel que spécifié n'est pas livrable et la saisie clavier
+passe devant ». Le seuil normatif l'emporte.*
 
 Le taux d'erreurs *plausibles* est le second chiffre à surveiller : au-delà d'une par minute, la
 convention `[terme ?]` du rapport ne suffit pas, parce qu'elle ne se déclenche que sur les erreurs

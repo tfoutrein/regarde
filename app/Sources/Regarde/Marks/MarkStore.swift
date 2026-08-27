@@ -203,7 +203,7 @@ final class MarkStore {
     /// Applique une intention à la marque qualifiable.
     ///
     /// La cible est la DERNIÈRE marque posée. L'ADR-0021 la définit comme « la marque
-    /// attachée à la fenêtre de parole courante » ; la fenêtre de parole arrive au lot 4,
+    /// attachée à la fenêtre de parole courante » ; la fenêtre de parole arrive au lot 5,
     /// et jusque-là la dernière marque en est l'approximation exacte — il n'existe pas
     /// encore de fenêtre pouvant contenir autre chose.
     @discardableResult
