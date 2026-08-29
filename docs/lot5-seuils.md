@@ -326,6 +326,30 @@ moteur a commises sur cette machine pendant S62 à S65, relevées au journal.
   tâche de fond dès qu'un candidat est retenu à l'arming, hors du chemin
   critique des 20 s. Un identifiant composé vaut aussi par ses parties :
   `CheckoutForm` donne `Checkout` et `Form`, qu'on prononce séparément.
+- **Le lexique suit le projet CONFIRMÉ, pas le candidat deviné.** Défaut trouvé
+  en vivant : les identifiants se chargeaient à l'arming, depuis le candidat
+  auto-détecté — « 300 identifiants de PERSO » pour une session que le
+  sélecteur avait confirmée dans `recette-lot4`. Le sélecteur recharge
+  désormais à la confirmation ; l'extraction est idempotente et hors du chemin
+  critique, la refaire ne coûte que du temps de fond.
 - **Le lexique PROPOSE, il ne remplace jamais** : `*entendu* **[proposé ?]**`
   au rapport (§ 9.4), les deux versions, et `rawText` — donc `transcript.txt` —
   intact au caractère.
+
+## 15. Deux observations de terrain, S68 — à retenir pour le passage
+
+- **La fenêtre capte tout ce qui est audible**, y compris ce que l'utilisateur
+  n'a pas dit. Relevé le 30 août à 1 h 33, micro interne, une vidéo ouverte
+  dans le navigateur : « Mais fais pas chier. […] Oh mais sérieux, casse-toi. »
+  s'est retrouvé transcrit et rattaché. ADR-0011 l'assumait déjà — « le
+  détecteur distingue la parole du silence, pas la parole de l'utilisateur de
+  celle d'un collègue » — et la parade est structurelle : la fenêtre est courte
+  et liée au geste, jamais un micro continu. À vérifier au passage (S73, bureau
+  bruyant réel) : combien de segments étrangers sur une session de trois
+  minutes, et si la revue (S71) suffit à les retirer.
+- **Le pilotage synthétique atteint sa limite pour la voix.** Figer la cible,
+  confirmer un projet au sélecteur et armer ⌥⌘ dans la bonne fenêtre demandent
+  un état d'écran que des événements forgés ne reproduisent pas fidèlement —
+  la cible s'est figée sur l'écran externe entier, la confirmation n'a pas
+  pris. Les briques restent vérifiées par leurs autotests purs et par les
+  observations partielles ; le reste appartient à la recette (S74), à la main.

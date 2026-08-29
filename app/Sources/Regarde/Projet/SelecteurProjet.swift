@@ -97,6 +97,13 @@ final class SelecteurProjet: NSPanel {
             Self.choix = candidats[selection]
             Self.etat = .certain
             Journal.event(.system, "projet confirmé — \(candidats[selection].chemin)")
+            // Le lexique suit le projet CONFIRMÉ, pas le candidat deviné :
+            // charger celui de l'arming laissait les identifiants d'un autre
+            // dépôt proposer des corrections que rien ne justifie (constaté
+            // en S68 — « 300 identifiants de PERSO » pour une session dans
+            // recette-lot4). L'extraction est idempotente et hors chemin
+            // critique : la refaire ne coûte que du temps de fond.
+            VoixCoordinator.shared.chargerLeLexique(projet: candidats[selection].chemin)
             close()
         case 53:                                                             // ⎋
             Self.etat = .ambigu
