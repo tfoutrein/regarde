@@ -80,7 +80,15 @@ enum RenderSelfTest {
             "startedAt": "2026-08-19T14:32:46.031+02:00",
             "durationSeconds": 134.85, "wallDurationSeconds": 134.85,
             "tool": { "name": "Regarde", "version": "0.4.0", "os": "macOS 26.1", "build": "25B78" },
-            "locale": "fr-FR",
+            "locale": "fr-FR", "audioInputLatencyMs": 18,
+            "voice": [{
+              "id": "v-001",
+              "attachment": { "rule": "gesteGlobal", "auto": true, "editedByUser": false },
+              "onset": 52.10, "end": 55.80,
+              "text": "Globalement la page est lente.",
+              "rawText": "Globalement la page est lente.",
+              "lexiconSuggestions": []
+            }],
             "captureSegments": [{
               "index": 0, "displayID": 1, "codec": "hevc", "fps": 15,
               "firstSamplePTSSeconds": 0.412, "lastSamplePTSSeconds": 134.60,
@@ -107,7 +115,15 @@ enum RenderSelfTest {
               "frameScaleFactor": 2.0
             },
             "frames": { "crop": "crop-01", "full": "full-01" },
-            "screenWasMoving": false
+            "screenWasMoving": false,
+            "voice": [{
+              "id": "v-002", "attachedTo": 1,
+              "attachment": { "rule": "fenetreDeParole", "auto": true, "editedByUser": false },
+              "onset": 27.02, "end": 31.55,
+              "text": "Il manque du pratique [padding ?] à droite.",
+              "rawText": "Il manque du pratique à droite.",
+              "lexiconSuggestions": [{ "heard": "pratique", "suggested": "padding", "confidence": 0.41, "at": 27.72 }]
+            }]
           }],
           "frames": [{
             "id": "crop-01", "role": "crop",
@@ -129,6 +145,12 @@ enum RenderSelfTest {
             let m = try Manifeste.decoder(Data(json.utf8))
             check(t, "un manifeste § 9.5 se décode, clé inconnue ignorée",
                   m.session.number == 42 && m.marks.count == 1)
+            // S60, critère du lot 5 : les membres optionnels voix du § 9.5
+            // (voice[], locale, audioInputLatencyMs — schéma 1.1 INCHANGÉ)
+            // traversent le décodeur du lot 4 sans le casser, et le rendu les
+            // ignore : la voix n'apparaît dans un rapport qu'à partir de S67.
+            check(t, "les membres voix de 1.1 ne cassent ni décodeur ni rendu",
+                  !Rendu.rendre(m).contains("pratique"))
             check(t, "la clé réservée full_hires est nil, pas zéro",
                   m.budget.framesTokens.full_hires == nil)
             check(t, "le barème confirme les jetons inscrits du crop",
