@@ -125,3 +125,27 @@ redevient défendable, malgré son coût d'embarquement.
 - [ADR-0011](0011-micro-par-fenetre-de-parole.md) — micro par fenêtre de parole.
 - [ADR-0007](0007-horloge-maitresse-unique.md) — horloge maîtresse unique.
 - [ADR-0002](0002-hors-sandbox-developer-id.md) — distribution hors sandbox, Developer ID.
+
+## Révision du 29 août 2026 — macOS 26.1, sessions S59 et S64
+
+Le risque résiduel nommé ci-dessus s'est réalisé, dans les deux sens. Mesuré
+avec le harnais de S59 puis en vivant en S64 :
+
+- **sans `SpeechDetector`, la segmentation est identique** (trois modes, sept
+  segments) — le fait de sonde n°1 ne se manifeste plus ;
+- **alimenter plus vite que le temps réel ne dégrade rien** — le fait de sonde
+  n°2 non plus ;
+- **avec `SpeechDetector`, la parole se perd** : face au bruit réel d'un micro
+  (jamais un silence), toute énonciation après la première finale est avalée,
+  sans même un volatile — un monologue de deux phrases n'en rendait qu'une ;
+  sans lui, les deux ;
+- **les résultats ne sont pas progressifs en temps réel** : rien pendant les
+  douze premières secondes d'une fenêtre, puis une rafale. La prolongation de
+  la fenêtre et la rétention de l'éclair reposent sur l'énergie des tranches
+  audio, pas sur les volatils.
+
+Décision révisée : `SpeechAnalyzer(modules: [transcriber])`, le détecteur
+retiré ; `--avec-detecteur` au lancement le remet, pour re-mesurer à chaque
+version de macOS (lot5-seuils § 2 et § 10). Le reste de l'ADR — poussée au fil
+de l'eau, `AnalyzerInput(bufferStartTime:)`, aucune permission de
+reconnaissance vocale, jargon par lexique — tient.

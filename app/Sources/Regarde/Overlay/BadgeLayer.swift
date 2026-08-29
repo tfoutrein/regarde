@@ -15,6 +15,24 @@ import QuartzCore
 // ─────────────────────────────────────────────────────────────────────────────
 
 final class BadgeLayer: CALayer {
+    /// Le numéro que ce calque affiche — pour retrouver le badge qui pulse.
+    var numeroAffiche = 0
+
+    /// Pulse tant que la fenêtre de parole de cette marque est ouverte (§ 2.2) :
+    /// l'utilisateur voit que le micro l'écoute, sans HUD déporté.
+    func pulser(_ actif: Bool) {
+        if actif {
+            guard animation(forKey: "pulsation") == nil else { return }
+            let a = CABasicAnimation(keyPath: "opacity")
+            a.fromValue = 1.0; a.toValue = 0.45
+            a.duration = 0.6; a.autoreverses = true; a.repeatCount = .infinity
+            a.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            add(a, forKey: "pulsation")
+        } else {
+            removeAnimation(forKey: "pulsation")
+        }
+    }
+
 
     private let label = CATextLayer()
 

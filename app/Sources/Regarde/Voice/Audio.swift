@@ -28,6 +28,25 @@ struct TrancheAudio: @unchecked Sendable {
     /// Nil quand `AVAudioTime.isHostTimeValid` est faux — périphérique
     /// agrégé — : le consommateur se replie sur le compteur d'échantillons.
     var hostTimeValide: Bool
+    /// L'énergie de la tranche — RMS sur l'échelle Int16 —, le seul signal de
+    /// parole qui existe EN TEMPS RÉEL : mesuré le 29 août, le moteur ne rend
+    /// aucun résultat pendant les douze premières secondes d'une fenêtre. Sans
+    /// ce signal, ni la prolongation de la fenêtre ni la rétention de l'éclair
+    /// n'auraient de quoi décider.
+    var energie: Double = 0
+
+    /// RMS d'un buffer mono Int16 ou Float32, sur l'échelle Int16.
+    static func energie(de buffer: AVAudioPCMBuffer) -> Double {
+        let n = Int(buffer.frameLength)
+        guard n > 0 else { return 0 }
+        var somme = 0.0
+        if let canal = buffer.int16ChannelData {
+            for i in 0..<n { let v = Double(canal[0][i]); somme += v * v }
+        } else if let canal = buffer.floatChannelData {
+            for i in 0..<n { let v = Double(canal[0][i]) * 32_767; somme += v * v }
+        } else { return 0 }
+        return (somme / Double(n)).squareRoot()
+    }
 }
 
 /// Qui reçoit les tranches — le moteur de S62, ou un banc.

@@ -67,6 +67,15 @@ enum ParoleSelfTest {
         check(t, "premier mot AVANT la prise → .aucuneFenetre — aucun tampon ne précède l'ouverture",
               m.rattacher(premierMot: s(9.9), fin: s(11))
                 == .global(regle: .aucuneFenetre))
+        // L'arrondi du moteur (16 kHz contre 90 kHz) place une plage un cheveu
+        // avant l'ouverture : constaté en vivant, un segment entier parti en
+        // « aucune fenêtre ». La marge le couvre — et pas davantage.
+        check(t, "premier mot 1 ms AVANT l'ouverture → rattaché quand même (marge d'arrondi)",
+              m.rattacher(premierMot: s(9.999), fin: s(12))
+                == .marque(1, regle: .fenetreDeParole))
+        check(t, "premier mot 10 ms avant → toujours .aucuneFenetre : la marge est de 5 ms",
+              m.rattacher(premierMot: s(9.99), fin: s(12))
+                == .global(regle: .aucuneFenetre))
     }
 
     private static func gesteGlobal(_ t: Tally) {

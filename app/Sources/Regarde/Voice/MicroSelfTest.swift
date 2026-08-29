@@ -28,6 +28,7 @@ enum MicroSelfTest {
         selection(t)
         latence(t)
         constat()
+        energie(t)
         vivant(t)
         print("\n── \(t.passed) vérifications passées, \(t.failed) échouées ──")
         return t.failed == 0
@@ -118,6 +119,29 @@ enum MicroSelfTest {
         func recevoir(_ tranche: TrancheAudio) {
             verrou.withLock { $0.append((tranche.premierEchantillon, Int64(tranche.buffer.frameLength))) }
         }
+    }
+
+    // MARK: - L'énergie, le signal de parole en temps réel (S64)
+
+    private static func energie(_ t: Tally) {
+        print("\n· L'énergie d'une tranche — RMS sur l'échelle Int16")
+        guard let format = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 16_000,
+                                         channels: 1, interleaved: false),
+              let silence = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 1600),
+              let sinus = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 1600) else {
+            check(t, "buffers d'essai", false); return
+        }
+        silence.frameLength = 1600; sinus.frameLength = 1600
+        for i in 0..<1600 {
+            silence.int16ChannelData![0][i] = 0
+            sinus.int16ChannelData![0][i] = Int16(20_000 * sin(Double(i) / 1600 * 2 * .pi * 16))
+        }
+        check(t, "le silence numérique vaut 0", TrancheAudio.energie(de: silence) == 0)
+        let rms = TrancheAudio.energie(de: sinus)
+        check(t, "un sinus de 20 000 crête vaut 20 000/√2 ≈ 14 142, à 1 % près",
+              abs(rms - 14_142) < 141, String(format: "%.0f", rms))
+        check(t, "le seuil de parole (400) sépare le bruit mesuré (208) de la voix (1 382)",
+              208 < VoixCoordinator.seuilEnergie && VoixCoordinator.seuilEnergie < 1_382)
     }
 
     private static func vivant(_ t: Tally) {

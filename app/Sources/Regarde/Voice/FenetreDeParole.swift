@@ -87,8 +87,15 @@ enum FenetreDeParole {
 
         var estOuverte: Bool { fermeture == nil }
 
+        /// La marge d'ouverture : le moteur date ses résultats sur une timeline
+        /// discrétisée à la cadence audio (16 kHz), l'horloge de session compte
+        /// à 90 kHz — l'arrondi place la plage d'un segment un cheveu AVANT
+        /// l'ouverture qui l'a produite. Cinq millisecondes couvrent cent fois
+        /// ce cheveu, et restent cent fois sous la première syllabe possible.
+        static let margeOuverture = 0.005
+
         func contient(_ t: SessionTime) -> Bool {
-            guard t >= ouverture else { return false }
+            guard t.seconds >= ouverture.seconds - Self.margeOuverture else { return false }
             guard let fermeture else { return true }
             return t <= fermeture
         }

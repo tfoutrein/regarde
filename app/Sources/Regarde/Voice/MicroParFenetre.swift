@@ -151,7 +151,8 @@ final class RappelDeCapture: NSObject, AVCaptureAudioDataOutputSampleBufferDeleg
         let valide = pts.isValid && !pts.isIndefinite
         let hostTime = valide ? CMClockConvertHostTimeToSystemUnits(pts) : 0
         contexte.puits.recevoir(TrancheAudio(buffer: converti, premierEchantillon: premier,
-                                             hostTime: hostTime, hostTimeValide: valide))
+                                             hostTime: hostTime, hostTimeValide: valide,
+                                             energie: TrancheAudio.energie(de: converti)))
     }
 }
 

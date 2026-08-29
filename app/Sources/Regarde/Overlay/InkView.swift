@@ -203,6 +203,14 @@ final class InkView: NSView {
         transaction { committed.setPaths(paths) }
     }
 
+    /// Le numéro dont le badge pulse — celui de la fenêtre de parole ouverte.
+    private var pulsingNumber: Int?
+
+    func setPulse(_ number: Int?) {
+        pulsingNumber = number
+        for badge in badgePool where !badge.isHidden { badge.pulser(badge.numeroAffiche == number) }
+    }
+
     /// Publie les numéros. Le tracé en cours porte le sien, comme les marques posées.
     func setBadges(_ specs: [BadgeSpec]) {
         guard !isFrozen else { return }
@@ -218,6 +226,8 @@ final class InkView: NSView {
                 let spec = specs[i]
                 badge.isHidden = false
                 badge.configure(number: spec.number, intention: spec.intention, scale: scale)
+                badge.numeroAffiche = spec.number
+                badge.pulser(spec.number == pulsingNumber)
                 badge.anchorPoint = CGPoint(x: spec.anchorX, y: 0.5)
                 // Ramené dans le cadre : une marque posée au bord de l'écran aurait son
                 // numéro à moitié dehors, donc illisible — et le numéro est ce par quoi

@@ -97,13 +97,17 @@ struct Dictee {
 
         // La collecte des résultats, en parallèle de la poussée.
         let volatils = arguments.contains("--volatils")
+        let depart = Date()
         let collecte = Task { () -> [(plage: CMTimeRange, texte: AttributedString)] in
             var finals: [(CMTimeRange, AttributedString)] = []
             for try await resultat in transcriber.results {
                 if volatils {
+                    // L'horloge murale à côté du temps audio : un résultat
+                    // « progressif » qui arrive à la fin n'est pas progressif.
                     let genre = resultat.isFinal ? "FINAL   " : "volatil "
-                    print("  \(genre) [\(String(format: "%6.2f", resultat.range.start.seconds))] "
-                          + String(resultat.text.characters))
+                    let mur = Date().timeIntervalSince(depart)
+                    print("  \(genre) mur \(String(format: "%5.1f", mur)) s · audio [\(String(format: "%6.2f", resultat.range.start.seconds)) → \(String(format: "%6.2f", resultat.range.end.seconds))] "
+                          + String(resultat.text.characters.prefix(40)))
                 }
                 if resultat.isFinal { finals.append((resultat.range, resultat.text)) }
             }

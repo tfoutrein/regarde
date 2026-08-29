@@ -190,6 +190,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             EventTap.shared.startWatchdog()
             OptionGate.shared.currentMode = .active
             Journal.event(.system, "tap démarré — ⌥⌘ + glisser trace, ⌃⌥S ouvre une session")
+            // La voix se prépare en arrière-plan — sans permission micro, elle
+            // reste indisponible et le dit une fois (S72 demandera).
+            Task { await VoixCoordinator.shared.preparer() }
         } else {
             // Sans tap, rien à arbitrer : la porte reste fermée pour que le reste de
             // l'application ne se croie pas en état de tracer.
@@ -225,7 +228,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case .endSession:
             SessionCoordinator.shared.closeSession()
         case .toggleMicrophoneLock:
-            Journal.event(.key, "⌃⌥M — verrou du micro, lot 5")
+            VoixCoordinator.shared.basculerVerrou()
         case .toggleAnnotationLock:
             Journal.event(.key, "⌃⌥L — mode annotation verrouillé, à venir")
         }

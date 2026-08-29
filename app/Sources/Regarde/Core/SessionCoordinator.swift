@@ -90,6 +90,8 @@ final class SessionCoordinator {
         // seule image ne soit extraite. Le bug serait muet : le journal dirait
         // « 6 marques », le dossier ne contiendrait rien.
         SessionClock.shared.rearm()
+        VoixCoordinator.shared.nouvelleSession()
+        Task { await VoixCoordinator.shared.preparer() }
 
         // Le PROJET se présente à l'arming — S51 le visible, S52 la décision.
         // Les collecteurs coûtent quelques millisecondes de libproc ; le
@@ -434,6 +436,10 @@ final class SessionCoordinator {
         // n'a pas manifesté l'intention d'annoter, il n'y a rien à retenir.
         if armed { SnapshotRing.shared.armer(true) }
 
+        // La fenêtre de parole suit le geste (S64) : prise et relâchement, en
+        // session comme en éclair — la voix ne dépend pas de l'état.
+        if armed { VoixCoordinator.shared.prise() } else { VoixCoordinator.shared.relachement() }
+
         // Une session explicite publie à ⌃⌥F, jamais au relâchement : c'est toute la
         // différence entre les deux modes.
         guard state == .idle else { return }
@@ -456,6 +462,20 @@ final class SessionCoordinator {
         flashWorkItem = nil
         let marks = MarkStore.shared.marks
         guard !marks.isEmpty else { return }
+
+        // L'éclair parle (lot5-seuils § 5) : si une fenêtre de parole est
+        // ouverte et qu'on y a entendu quelque chose, la publication attend sa
+        // fermeture et son drain — sinon le dossier sortirait sans les mots.
+        let voix = VoixCoordinator.shared
+        if voix.retientLeFlash {
+            Journal.event(.system, "éclair — la parole continue, publication à la fermeture de la fenêtre")
+            VoixCoordinator.shared.apresDrain = { [weak self] in
+                MainActor.assumeIsolated { self?.publishFlash() }
+            }
+            return
+        }
+        Journal.event(.system, "éclair — publication : fenêtre de parole "
+                      + (voix.machine.estOuverte ? "ouverte, sans parole entendue" : "fermée"))
 
         let keep = marks.map {
             MarkCapture.Keep(id: $0.id, number: $0.number, intention: $0.intention?.label)

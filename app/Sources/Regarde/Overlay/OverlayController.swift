@@ -149,12 +149,33 @@ final class OverlayController {
     private static let hideGrace: TimeInterval = 0.35
     private var hideWorkItem: DispatchWorkItem?
 
+    /// La fenêtre de parole retient le calque (§ 6.1) : il n'est retiré qu'à
+    /// SA fermeture, pas au relâchement de ⌥⌘ — changement assumé face aux
+    /// lots 2-4. Sans voix disponible, aucune fenêtre ne retient rien et le
+    /// comportement d'avant est intact.
+    private var calqueRetenu = false
+
+    func retenirLeCalque(_ retenir: Bool) {
+        calqueRetenu = retenir
+        if retenir {
+            hideWorkItem?.cancel()
+            hideWorkItem = nil
+        } else if !OptionGate.shared.isArmed, !OptionGate.shared.isStroking {
+            scheduleHide()
+        }
+    }
+
+    /// Le badge de la marque courante pulse tant que sa fenêtre vit (§ 2.2).
+    func pulser(marque: Int?) {
+        forEachPanel { $0.inkView.setPulse(marque) }
+    }
+
     private func gateStateChanged(armed: Bool, stroking: Bool) {
         if armed || stroking {
             hideWorkItem?.cancel()
             hideWorkItem = nil
             showPanels()
-        } else {
+        } else if !calqueRetenu {
             scheduleHide()
         }
         // Le mode éclair publie au relâchement du modificateur, et lui seul le sait.
@@ -259,11 +280,16 @@ final class OverlayController {
             // de bouton enfoncé, c'est de la visée.
             guard store.hasLiveStroke else { return }
             store.extendStroke(to: event.point, geometry: geometry)
+            VoixCoordinator.shared.mouvement()
         case .up:
             guard store.hasLiveStroke else { return }
             store.extendStroke(to: event.point, geometry: geometry)
             if let mark = store.endStroke() {
                 Journal.event(.mark, "\(mark.number) · \(mark.tool.label) · display \(mark.displayID)")
+                // La fenêtre de parole apprend sa marque — le premier mot
+                // prononcé avant ce tracé lui appartient déjà (§ 3.5).
+                VoixCoordinator.shared.trace(marque: mark.number, t: mark.t)
+                pulser(marque: VoixCoordinator.shared.machine.marqueCourante)
                 // La capture part MAINTENANT, sans attendre la fin de session : une
                 // infobulle se referme, une animation se termine, un menu disparaît.
                 // Capturer plus tard donnerait six images d'un même écran au repos, où

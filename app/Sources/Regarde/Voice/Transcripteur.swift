@@ -61,6 +61,10 @@ actor Transcripteur: PuitsAudio {
     private var analyse: Task<Void, Error>?
     private var collecte: Task<[SegmentDeParole], Error>?
     private var tampons = TamponsDeTexte()
+    /// Le diagnostic du drain : combien de volatils, et le dernier — c'est ce
+    /// qui distingue « le moteur n'a rien entendu » de « il n'a pas fini ».
+    private var volatilsVus = 0
+    private var dernierVolatil: (texte: String, instant: SessionTime)?
 
     /// Le côté « non isolé » de la fenêtre : `recevoir` est appelé du tap
     /// audio, sans attente possible — il lit la continuation et l'origine sous
@@ -123,11 +127,23 @@ actor Transcripteur: PuitsAudio {
         guard let locale else { throw Erreur.localeAbsente }
 
         let transcriber = Self.transcripteur(locale: locale)
-        let detector = SpeechDetector(detectionOptions: .init(sensitivityLevel: .medium),
-                                      reportResults: false)
-        let analyzer = SpeechAnalyzer(modules: [transcriber, detector])
+        // SANS SpeechDetector, par décision mesurée (lot5-seuils § 10) : sur
+        // macOS 26.1 il ne segmente rien de plus (S59, trois modes identiques)
+        // et, face au bruit réel d'un micro, il AVALE toute énonciation après
+        // la première finale — un monologue verrouillé perdait sa seconde
+        // phrase, retrouvée intacte sans lui. ADR-0012 le disait obligatoire
+        // sur un macOS antérieur ; `--avec-detecteur` au lancement le remet,
+        // pour re-vérifier à chaque mise à jour système.
+        var modules: [any SpeechModule] = [transcriber]
+        if CommandLine.arguments.contains("--avec-detecteur") {
+            modules.append(SpeechDetector(detectionOptions: .init(sensitivityLevel: .medium),
+                                          reportResults: false))
+        }
+        let analyzer = SpeechAnalyzer(modules: modules)
         self.analyzer = analyzer
         tampons = TamponsDeTexte()
+        volatilsVus = 0
+        dernierVolatil = nil
 
         let (flux, continuation) = AsyncStream.makeStream(of: AnalyzerInput.self)
         entree.withLock {
@@ -169,8 +185,21 @@ actor Transcripteur: PuitsAudio {
     private func noter(final: Bool, texte: String,
                        segment: SegmentDeParole? = nil, instant: SessionTime? = nil) {
         tampons.recevoir(final: final, texte: texte)
-        if final, let segment { surFinal?(segment) }
-        if !final, let instant { surVolatil?(instant) }
+        if final, let segment {
+            let premier = segment.mots.first.map { "premier mot « \($0.texte) » à \($0.debut)" } ?? "AUCUN mot horodaté"
+            Journal.event(.system, "transcription — final [\(segment.plageDebut) → \(segment.plageFin)] \(segment.mots.count) mot(s), \(premier) « \(texte) »")
+            surFinal?(segment)
+        }
+        if !final, let instant {
+            volatilsVus += 1
+            if volatilsVus == 1 {
+                // La latence du PREMIER volatile décide si « aucun volatile
+                // depuis l'ouverture » est un critère tenable à 0,8 s.
+                Journal.event(.system, "transcription — premier volatil à \(SessionClock.shared.now()) (audio \(instant)) « \(texte) »")
+            }
+            dernierVolatil = (texte, instant)
+            surVolatil?(instant)
+        }
     }
 
     /// Du tap, sans attente : la tranche part au moteur avec son temps de
@@ -179,9 +208,9 @@ actor Transcripteur: PuitsAudio {
     nonisolated func recevoir(_ tranche: TrancheAudio) {
         let (continuation, temps) = entree.withLock { e -> (AsyncStream<AnalyzerInput>.Continuation?, CMTime) in
             (e.continuation,
-             TamponsDeTexte.bufferStartTime(origine: e.origine,
-                                            echantillonsSortis: tranche.premierEchantillon,
-                                            cadence: e.cadence))
+                    TamponsDeTexte.bufferStartTime(origine: e.origine,
+                                                   echantillonsSortis: tranche.premierEchantillon,
+                                                   cadence: e.cadence))
         }
         continuation?.yield(AnalyzerInput(buffer: tranche.buffer, bufferStartTime: temps))
     }
@@ -191,6 +220,7 @@ actor Transcripteur: PuitsAudio {
     func drainer() async throws -> [SegmentDeParole] {
         guard let analyzer, let analyse, let collecte else { throw Erreur.aucuneFenetre }
         let depart = SessionClock.hostTicksNow()
+        Journal.event(.system, "transcription — drain demandé à \(SessionClock.shared.now())")
         entree.withLock { $0.continuation?.finish(); $0.continuation = nil }
         try await analyzer.finalizeAndFinishThroughEndOfInput()
         try await analyse.value
@@ -199,8 +229,11 @@ actor Transcripteur: PuitsAudio {
         self.analyse = nil
         self.collecte = nil
         let duree = SessionClock.millis(from: depart, to: SessionClock.hostTicksNow())
-        Journal.event(.system, String(format: "transcription — %d segment(s), drain %.0f ms",
-                                      segments.count, duree))
+        Journal.event(.system, String(format: "transcription — %d segment(s), drain %.0f ms · %d volatil(s)",
+                                      segments.count, duree, volatilsVus)
+                      + (dernierVolatil.map { " · dernier « \($0.texte.suffix(50)) » à \($0.instant)" } ?? ""))
+        volatilsVus = 0
+        dernierVolatil = nil
         return segments
     }
 

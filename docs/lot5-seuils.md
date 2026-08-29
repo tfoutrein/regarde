@@ -41,10 +41,11 @@ macOS **26.1**, dictée de synthèse (voix Thomas) de 75 s, 29 août 2026 :
 | `--sans-detector` | 7 | **identique** — le fait de sonde n°1 d'ADR-0012 ne se manifeste plus |
 | `--vite` (plus vite que le réel) | 7 | **identique** — le fait de sonde n°2 ne se manifeste plus |
 
-Le produit garde `SpeechDetector` dans les modules et la poussée au fil de l'eau
-— défense en profondeur contre une régression système. Aucun critère n'exige de
-reproduire les effondrements ; le harnais les mesure et cette table se remet à
-jour à chaque version de macOS.
+Le produit garde la poussée au fil de l'eau — elle ne coûte rien. Le
+`SpeechDetector`, lui, est **retiré** depuis S64 : il ne segmentait rien de plus,
+et face au bruit réel d'un micro il avalait toute énonciation après la première
+finale (§ 10). `--avec-detecteur` au lancement le remet, pour re-vérifier à
+chaque version de macOS ; cette table se remet à jour avec.
 
 Leçons d'implémentation, payées par le harnais et NORMATIVES pour S62 :
 `bufferStartTime` se compte en **échantillons entiers** (jamais en secondes
@@ -97,7 +98,9 @@ L'exemple normatif du § 9.5 montre `voice[]`, `session.locale` et
 - la fenêtre de parole s'ouvre à la prise ⌥⌘, en éclair comme en session —
   même chemin, même machine à états (S63) ;
 - l'éclair **silencieux** publie comme aujourd'hui : `flashGrace` 0,8 s après
-  le relâchement, si **aucun volatile** n'est arrivé depuis l'ouverture ;
+  le relâchement, si **aucune parole n'a été entendue** depuis l'ouverture —
+  au sens de l'énergie des tranches (§ 10), pas des volatils du moteur, qui
+  n'existent pas avant douze secondes ;
 - l'éclair **parlé** attend la fermeture de la fenêtre (8 s + volatils,
   plafond 20 s) puis le drain, et publie avec son transcript — le coût
   d'armement du moteur par fenêtre est le prix assumé d'ADR-0011 ;
@@ -157,3 +160,57 @@ inchangée, avec la mention de réaffectation au journal. Le rapport écrit
   sécurisée) et la reconfiguration (périphérique débranché, erreur de session)
   sont câblées ; leur épreuve vivante appartient à S64, quand une fenêtre
   existe dans l'application.
+
+## 10. Découvertes de S64 — le branchement, mesuré en vivant le 29 août 2026
+
+- **Le moteur ne rend rien pendant les douze premières secondes** d'une
+  fenêtre : sur la dictée de référence poussée au temps réel, TOUS les
+  volatils « progressifs » arrivent en rafale à 12,1 s d'horloge murale, quel
+  que soit leur temps audio ; en vivant, le premier volatile d'une phrase dite
+  à 2 s arrive à 11,8 s. La « transcription progressive » l'est en temps audio,
+  pas en temps réel. Conséquence : ni la prolongation de la fenêtre par les
+  volatils (ADR-0011) ni « aucun volatile à 0,8 s » (§ 5) n'ont de quoi
+  décider. Le signal de parole en temps réel est l'**énergie** des tranches —
+  RMS sur l'échelle Int16, calculée dans le rappel audio — : elle nourrit la
+  machine (« la parole continue ») et retient l'éclair. Seuil calibré sur cette
+  machine : bruit ambiant 208, parole de synthèse aux haut-parleurs 1 382 —
+  **400**, au plus quatre signaux par seconde. Les volatils du moteur restent
+  branchés : quand ils arrivent, ils prolongent aussi.
+- **La continuité audio** : une nouvelle prise qui ferme la fenêtre précédente,
+  ou un second tracé qui la scinde, ne ferme ni le micro ni le moteur —
+  fermer et rouvrir coûtait une à deux secondes de parole et « une fenêtre de
+  transcription est déjà ouverte ». La machine change de fenêtre, l'audio
+  continue, et l'historique rattache chaque segment à la sienne au drain.
+- **Sous le verrou ⌃⌥M**, le geste ne ferme ni ne scinde la fenêtre tenue : un
+  monologue ne se coupe pas parce qu'on trace pendant qu'on parle.
+- **La permission micro au premier usage réel**, tirée de S72 par nécessité :
+  l'autorisation accordée à un binaire lancé depuis le terminal appartient au
+  processus responsable (Warp), pas à l'application lancée normalement.
+  L'invite part à la première fenêtre de parole, jamais au lancement ; S72
+  garde le doctor, l'épreuve `tccutil` et le refus.
+- Les libellés du journal, pour la recette : `voix — prête`, `parole —
+  fenêtre ouverte à MM:SS.d`, `parole — fenêtre enchaînée à …, l'audio
+  continue`, `parole — segment → marque N (règle) : « … »`, `parole — segment
+  → global (règle) : « … »`, `parole — fenêtre fermée à … · N segment(s) ·
+  énergie max E`, `parole — commentaire général`, `verrou micro — activé,
+  commentaire global jusqu'au déverrouillage`, `verrou micro — désactivé`,
+  `éclair — la parole continue, publication à la fermeture de la fenêtre`,
+  `éclair — publication : fenêtre de parole ouverte, sans parole entendue`.
+- **Le `SpeechDetector` avale la parole en conditions réelles** : un monologue
+  verrouillé de deux phrases — « parlé 2,5-3,9, 7,3-8,5 », l'audio des deux est
+  arrivé au moteur, 1 773 tranches contiguës — n'en rendait qu'une, sans même
+  un volatile pour la seconde ; sans le détecteur, les deux (2 segments, drain
+  102 ms). Le banc ne le reproduit pas avec du bruit de synthèse : c'est le
+  bruit d'un vrai micro qui le déclenche. Décision : retiré des modules par
+  défaut, `--avec-detecteur` pour re-vérifier ; ADR-0012 porte la révision.
+- **Le moteur date le premier mot au début de sa plage**, silence de tête
+  compris — jusqu'à l'origine de l'audio pour la première énonciation : « Le »
+  à 0,000 s pour une phrase dite à 3,0 s. Trop tôt de plusieurs secondes pour
+  la règle du premier mot (ADR-0011) et hors du budget d'ancrage (seuil n°3).
+  La première tranche PARLÉE de la plage, lue sur la carte d'énergie, corrige
+  l'onset à ± 11 ms : « premier mot à 00:03.0 » quand l'énergie dit 3,0-4,6.
+  Et la marge d'ouverture de 5 ms couvre l'arrondi 16 kHz / 90 kHz qui plaçait
+  un segment entier en « aucune fenêtre ».
+- Une leçon de méthode, payée une heure : un journal qui tronque à soixante
+  caractères a fait chercher une finalisation perdue qui n'existait pas. Les
+  textes s'écrivent entiers, ou avec leur longueur.
