@@ -67,6 +67,8 @@ enum BouclePublication {
         /// Les segments de parole rattachés (S66) — le transcript les écrit,
         /// S67 les rend.
         var voix: [SegmentDeParole] = []
+        /// La latence d'entrée compensée (§ 3.6) — diagnostic au manifeste.
+        var latenceEntreeMs: Int?
     }
 
     // MARK: - L'assembleur, pur
@@ -76,6 +78,34 @@ enum BouclePublication {
     static func assembler(_ d: Donnees, projet: String?, detection: String,
                           git: String?, statut: String = "**nouveau**") -> Manifeste.Racine {
         let imagesParNumero = Dictionary(grouping: d.images, by: \.numero)
+
+        // La voix, traduite vers le § 9.5. Les identifiants « v-NNN » suivent
+        // l'ordre du PREMIER MOT, toutes marques confondues : c'est l'ordre
+        // dans lequel les choses ont été dites, le seul qui ait un sens pour
+        // qui relit. Un segment sans attachement — impossible depuis S64, mais
+        // le type l'autorise — part en commentaire général plutôt qu'aux
+        // oubliettes : la parole ne se jette jamais en silence.
+        let ordonnes = d.voix.sorted { $0.onset < $1.onset }
+        var voixParMarque: [Int: [Manifeste.Voice]] = [:]
+        var voixGenerale: [Manifeste.Voice] = []
+        for (i, segment) in ordonnes.enumerated() {
+            let regle: String
+            var marque: Int?
+            switch segment.attachement {
+            case .marque(let n, let r): marque = n; regle = r.rawValue
+            case .global(let r): regle = r.rawValue
+            case nil: regle = FenetreDeParole.Regle.aucuneFenetre.rawValue
+            }
+            let voix = Manifeste.Voice(
+                id: String(format: "v-%03d", i + 1),
+                attachedTo: marque,
+                attachment: .init(rule: regle, auto: true,
+                                  editedByUser: segment.texte != segment.texteBrut),
+                onset: segment.onset.seconds, end: segment.fin.seconds,
+                text: segment.texte, rawText: segment.texteBrut)
+            if let marque { voixParMarque[marque, default: []].append(voix) }
+            else { voixGenerale.append(voix) }
+        }
 
         var frames: [Manifeste.Frame] = []
         var marks: [Manifeste.Mark] = []
@@ -111,7 +141,8 @@ enum BouclePublication {
                     frameScaleFactor: m.facteurEcran),
                 frames: refCrop.map { Manifeste.MarkFrames(crop: $0, full: nil) },
                 screenWasMoving: m.ecranEnMouvement,
-                contextFramesAvailable: nil, zoneNote: nil))
+                contextFramesAvailable: nil, zoneNote: nil,
+                voice: voixParMarque[m.numero]))
         }
 
         let totalCrop = frames.filter { $0.role == "crop" }.map(\.visualTokens).reduce(0, +)
@@ -126,7 +157,9 @@ enum BouclePublication {
                 context: .init(
                     project: projet, detection: detection, git: git,
                     application: d.cible, screen: d.ecran,
-                    interruptions: d.interruptions, status: statut)),
+                    interruptions: d.interruptions, status: statut),
+                audioInputLatencyMs: d.latenceEntreeMs,
+                voice: voixGenerale.isEmpty ? nil : voixGenerale),
             marks: marks, frames: frames,
             budget: .init(
                 reportTokensEstimate: 0,

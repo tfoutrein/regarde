@@ -71,17 +71,45 @@ public enum Rendu {
             ($0 as NSString).lastPathComponent
         } ?? m.session.id
         s += "# Feedback #\(m.session.number) — \(projet) — \(date(m.session.startedAt))\n\n"
+        // Les commentaires généraux : ceux de la session, plus les segments
+        // rattachés à une marque que le filtre `marques` a écartée — sans quoi
+        // un rendu partiel perdrait de la parole sans le dire.
+        let generaux = (m.session.voice ?? []).sorted { $0.onset < $1.onset }
+        let voixDesMarques = marques.flatMap { $0.voice ?? [] }
+        let porteDeLaVoix = !generaux.isEmpty || !voixDesMarques.isEmpty
+
         s += "Session de test de \(duree(m.session.durationSeconds)). "
-        s += "**\(marques.count) marque\(marques.count > 1 ? "s" : "")**.\n"
+        s += "**\(marques.count) marque\(marques.count > 1 ? "s" : "")**"
+        if !generaux.isEmpty {
+            s += ", **\(generaux.count) commentaire\(generaux.count > 1 ? "s généraux" : " général")**"
+        }
+        s += ".\n"
         s += "\(m.session.tool.name) \(m.session.tool.version) (\(m.session.tool.os)). "
-        s += "Aucune donnée sortie de la machine.\n\n"
+        // La locale ne se dit que s'il y a eu de la parole : une session au
+        // micro refusé n'a rien à en dire (lot5-seuils § 4).
+        if porteDeLaVoix {
+            s += "Transcription locale \(m.session.locale), aucune donnée sortie de la machine.\n\n"
+        } else {
+            s += "Aucune donnée sortie de la machine.\n\n"
+        }
 
         // ── Comment lire ──
         s += "## Comment lire ce rapport\n\n"
         s += "Le développeur a testé son application en la manipulant normalement. Quand quelque chose l'a\n"
-        s += "gêné, il a maintenu ⌥⌘ et entouré la zone à l'écran : cela a créé une **marque numérotée**.\n\n"
+        s += "gêné, il a maintenu ⌥⌘ et entouré la zone à l'écran : cela a créé une **marque numérotée**.\n"
+        if porteDeLaVoix {
+            s += "Ce qu'il disait à voix haute pendant ce geste a été transcrit et rattaché à la marque.\n"
+        }
+        s += "\n"
         s += "- Les marques sont dans l'ordre chronologique, pas par importance. Les numéros peuvent\n"
         s += "  comporter des trous : une marque supprimée n'est jamais renumérotée.\n"
+        // Le lexique (S68) n'écrit ses `[terme ?]` que quand il a proposé
+        // quelque chose : annoncer une convention absente serait du bruit.
+        let avecLexique = (voixDesMarques + generaux).contains { !$0.lexiconSuggestions.isEmpty }
+        if avecLexique {
+            s += "- Les termes notés `[terme ?]` sont des corrections proposées par le lexique local sur des\n"
+            s += "  mots que la reconnaissance vocale a mal entendus. Rétablis-les depuis le code.\n"
+        }
         if web {
             s += "- **Le texte suffit dans la majorité des cas.** Les captures listées sous chaque marque\n"
             s += "  peuvent être jointes à la main si un doute reste sur l'élément visé.\n"
@@ -117,6 +145,14 @@ public enum Rendu {
         for marque in marques {
             s += "## Marque \(marque.number) — \(mmss(marque.sessionTime)) — `\(libelle(marque.intents))`\n\n"
 
+            // Ce qui a été DIT, avant la géométrie : c'est l'intention de
+            // l'utilisateur, le rectangle n'en est que la localisation.
+            let paroles = (marque.voice ?? []).sorted { $0.onset < $1.onset }
+            for segment in paroles {
+                s += citation(segment.text) + "\n"
+            }
+            if !paroles.isEmpty { s += "\n" }
+
             let g = marque.geometry.points
             s += "**Zone entourée** : rectangle \(entier(g.w))×\(entier(g.h)) pt à "
             s += "(\(entier(g.x)), \(entier(g.y)))"
@@ -135,9 +171,18 @@ public enum Rendu {
             s += "\n"
         }
 
-        // ── Commentaires généraux — la FORME est stable dès le lot 4, le
-        //    contenu attendra la voix (lot 5, report de périmètre n°2). ──
-        s += "## Commentaires généraux\n\n- aucun.\n\n"
+        // ── Commentaires généraux ── la forme est celle du lot 4, le contenu
+        //    est arrivé avec la voix (S67). Sans parole : « - aucun. », et
+        //    l'empreinte du rapport de référence du lot 4 ne bouge pas.
+        s += "## Commentaires généraux\n\n"
+        if generaux.isEmpty {
+            s += "- aucun.\n\n"
+        } else {
+            for segment in generaux {
+                s += puce(mmss(segment.onset), segment.text) + "\n"
+            }
+            s += "\n"
+        }
 
         // ── Récapitulatif ──
         s += "## Récapitulatif\n\n"
@@ -244,6 +289,40 @@ public enum Rendu {
             sortie.append(c)
         }
         return sortie
+    }
+
+    /// Une citation en blockquote, repliée à 92 colonnes — la largeur du reste
+    /// du rapport. Le repli est déterministe : le même texte rend les mêmes
+    /// octets, sur toutes les machines.
+    static func citation(_ texte: String) -> String {
+        // Les guillemets français encadrent la citation (§ 9.4) : ce qui est
+        // entre eux a été DIT, le reste du rapport est écrit par l'outil.
+        replier("« \(texte) »", largeur: 92, premier: "> ", suivants: "> ")
+    }
+
+    /// Une puce de commentaire général : `- **01:52** — « … »`.
+    static func puce(_ temps: String, _ texte: String) -> String {
+        replier("**\(temps)** — « \(texte) »", largeur: 92, premier: "- ", suivants: "  ")
+    }
+
+    /// Repli sur les espaces, sans jamais couper un mot. Un mot plus long que
+    /// la largeur tient seul sur sa ligne plutôt que d'être tronqué.
+    private static func replier(_ texte: String, largeur: Int,
+                                premier: String, suivants: String) -> String {
+        var lignes: [String] = []
+        var courante = premier
+        var vide = true
+        for mot in texte.split(separator: " ", omittingEmptySubsequences: true) {
+            if !vide, courante.count + 1 + mot.count > largeur {
+                lignes.append(courante)
+                courante = suivants + mot
+            } else {
+                courante += (vide ? "" : " ") + mot
+                vide = false
+            }
+        }
+        lignes.append(courante)
+        return lignes.joined(separator: "\n")
     }
 
     private static func entier(_ v: Double) -> String {

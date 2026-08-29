@@ -84,7 +84,7 @@ enum RenderSelfTest {
             "voice": [{
               "id": "v-001",
               "attachment": { "rule": "gesteGlobal", "auto": true, "editedByUser": false },
-              "onset": 52.10, "end": 55.80,
+              "onset": 52.0, "end": 55.80,
               "text": "Globalement la page est lente.",
               "rawText": "Globalement la page est lente.",
               "lexiconSuggestions": []
@@ -145,12 +145,37 @@ enum RenderSelfTest {
             let m = try Manifeste.decoder(Data(json.utf8))
             check(t, "un manifeste § 9.5 se décode, clé inconnue ignorée",
                   m.session.number == 42 && m.marks.count == 1)
-            // S60, critère du lot 5 : les membres optionnels voix du § 9.5
-            // (voice[], locale, audioInputLatencyMs — schéma 1.1 INCHANGÉ)
-            // traversent le décodeur du lot 4 sans le casser, et le rendu les
-            // ignore : la voix n'apparaît dans un rapport qu'à partir de S67.
-            check(t, "les membres voix de 1.1 ne cassent ni décodeur ni rendu",
-                  !Rendu.rendre(m).contains("pratique"))
+            // S60 puis S67 : les membres optionnels voix du § 9.5 (voice[],
+            // locale, audioInputLatencyMs — schéma 1.1 INCHANGÉ) traversent le
+            // décodeur du lot 4, et depuis S67 le rendu les MONTRE. Le § 9.4
+            // au mot près : citation sous la marque, puce horodatée pour le
+            // général, comptes et locale à l'en-tête.
+            let rendu = Rendu.rendre(m)
+            check(t, "la parole d'une marque se cite en blockquote, sous son titre",
+                  rendu.contains("## Marque 1 — 00:21 — `mal aligné`\n\n> « Il manque du pratique [padding ?] à droite. »\n\n**Zone entourée**"))
+            check(t, "le commentaire général devient une puce horodatée",
+                  rendu.contains("## Commentaires généraux\n\n- **00:52** — « Globalement la page est lente. »")
+                    && !rendu.contains("- aucun."))
+            check(t, "l'en-tête compte les commentaires et nomme la locale",
+                  rendu.contains("**1 marque**, **1 commentaire général**.")
+                    && rendu.contains("Transcription locale fr-FR, aucune donnée sortie de la machine."))
+            check(t, "la convention [terme ?] n'est annoncée que si le lexique a proposé",
+                  rendu.contains("Les termes notés `[terme ?]`"))
+            check(t, "le brut du manifeste reste le brut — le rendu montre le texte édité",
+                  m.marks[0].voice?.first?.rawText == "Il manque du pratique à droite."
+                    && !rendu.contains("Ce qu'il disait à voix haute") == false)
+            // La contre-épreuve : sans voix, le rapport est celui du lot 4 —
+            // « - aucun. », pas de locale, pas de mention de transcription.
+            var muet = m
+            muet.session.voice = nil
+            muet.marks[0].voice = nil
+            let renduMuet = Rendu.rendre(muet)
+            check(t, "sans voix : « - aucun. », ni locale ni convention annoncées",
+                  renduMuet.contains("## Commentaires généraux\n\n- aucun.")
+                    && renduMuet.contains("Regarde 0.4.0 (macOS 26.1). Aucune donnée sortie de la machine.")
+                    && !renduMuet.contains("Transcription locale")
+                    && !renduMuet.contains("[terme ?]")
+                    && !renduMuet.contains("voix haute"))
             check(t, "la clé réservée full_hires est nil, pas zéro",
                   m.budget.framesTokens.full_hires == nil)
             check(t, "le barème confirme les jetons inscrits du crop",

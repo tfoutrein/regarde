@@ -57,6 +57,13 @@ public enum Manifeste {
         public var tool: Tool
         public var locale: String
         public var captureSegments: [CaptureSegment]
+        /// Latence d'entrée audio compensée (§ 3.6) — diagnostic : le § 9.4 ne
+        /// la rend pas, elle vit ici pour qui relit un ancrage douteux.
+        public var audioInputLatencyMs: Int?
+        /// Les commentaires GÉNÉRAUX — ceux qui ne visent aucune marque (S67).
+        /// Même forme que `marks[].voice[]`, sans `attachedTo` : un seul
+        /// vocabulaire pour la parole, où qu'elle aille.
+        public var voice: [Voice]?
         /// Le contexte que le rendu affiche tel quel — sept lignes, chacune avec
         /// son producteur (S53). Optionnel : une session éclair n'en a pas tous.
         public var context: Context?
@@ -64,13 +71,16 @@ public enum Manifeste {
         public init(number: Int, uuid: String, id: String, startedAt: String,
                     durationSeconds: Double, wallDurationSeconds: Double,
                     tool: Tool, locale: String,
-                    captureSegments: [CaptureSegment], context: Context?) {
+                    captureSegments: [CaptureSegment], context: Context?,
+                    audioInputLatencyMs: Int? = nil, voice: [Voice]? = nil) {
             self.number = number; self.uuid = uuid; self.id = id
             self.startedAt = startedAt
             self.durationSeconds = durationSeconds
             self.wallDurationSeconds = wallDurationSeconds
             self.tool = tool; self.locale = locale
             self.captureSegments = captureSegments; self.context = context
+            self.audioInputLatencyMs = audioInputLatencyMs
+            self.voice = voice
         }
     }
 
@@ -124,6 +134,54 @@ public enum Manifeste {
 
     // MARK: - Marques
 
+    /// Un segment de parole rattaché — § 9.5, membre OPTIONNEL du schéma 1.1 :
+    /// un manifeste sans voix est identique à l'octet à ce qu'il était au lot 4.
+    public struct Voice: Codable, Sendable {
+        public struct Attachment: Codable, Sendable {
+            /// `fenetreDeParole` · `debordement` · `gesteGlobal` · `aucuneFenetre`
+            public var rule: String
+            /// `false` quand l'utilisateur a réaffecté à la main (§ 6.7).
+            public var auto: Bool
+            /// `true` quand le texte a été corrigé en revue — `rawText` dit l'avant.
+            public var editedByUser: Bool
+            public init(rule: String, auto: Bool, editedByUser: Bool) {
+                self.rule = rule; self.auto = auto; self.editedByUser = editedByUser
+            }
+        }
+        /// Une correction proposée par le lexique (S68) — les DEUX versions sont
+        /// au rapport, la relecture tranche.
+        public struct LexiconSuggestion: Codable, Sendable {
+            public var heard: String
+            public var suggested: String
+            public var confidence: Double
+            public var at: Double
+            public init(heard: String, suggested: String, confidence: Double, at: Double) {
+                self.heard = heard; self.suggested = suggested
+                self.confidence = confidence; self.at = at
+            }
+        }
+        public var id: String                   // "v-002"
+        /// Le numéro de marque, absent pour un commentaire général.
+        public var attachedTo: Int?
+        public var attachment: Attachment
+        public var onset: Double
+        public var end: Double
+        /// Le texte affiché — éditable en revue, marqué par le lexique.
+        public var text: String
+        /// Le brut, JAMAIS modifié : c'est lui que `transcript.txt` porte.
+        public var rawText: String
+        public var lexiconSuggestions: [LexiconSuggestion]
+
+        public init(id: String, attachedTo: Int?, attachment: Attachment,
+                    onset: Double, end: Double, text: String, rawText: String,
+                    lexiconSuggestions: [LexiconSuggestion] = []) {
+            self.id = id; self.attachedTo = attachedTo; self.attachment = attachment
+            self.onset = onset; self.end = end
+            self.text = text; self.rawText = rawText
+            self.lexiconSuggestions = lexiconSuggestions
+        }
+    }
+
     public struct Mark: Codable, Sendable {
         public var number: Int
         public var kind: String                 // rect · arrow · point · highlight
@@ -140,17 +198,21 @@ public enum Manifeste {
         /// vide dans le MVP — l'absence est silencieuse (P5) ; le lot 5 la
         /// remplira depuis la voix.
         public var zoneNote: String?
+        /// Ce qui a été dit pendant la fenêtre de parole de cette marque (S67).
+        public var voice: [Voice]?
 
         public init(number: Int, kind: String, sessionTime: Double,
                     captureSegment: Int?, isRetroactive: Bool, intents: [String],
                     geometry: Geometry, frames: MarkFrames?, screenWasMoving: Bool,
-                    contextFramesAvailable: Int?, zoneNote: String?) {
+                    contextFramesAvailable: Int?, zoneNote: String?,
+                    voice: [Voice]? = nil) {
             self.number = number; self.kind = kind; self.sessionTime = sessionTime
             self.captureSegment = captureSegment; self.isRetroactive = isRetroactive
             self.intents = intents; self.geometry = geometry; self.frames = frames
             self.screenWasMoving = screenWasMoving
             self.contextFramesAvailable = contextFramesAvailable
             self.zoneNote = zoneNote
+            self.voice = voice
         }
     }
 

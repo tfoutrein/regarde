@@ -368,7 +368,8 @@ final class SessionCoordinator {
                                 .components(separatedBy: " ").dropFirst().first ?? "?"),
                         build: Bundle.main.object(
                             forInfoDictionaryKey: "CFBundleVersion") as? String ?? "0",
-                        voix: segmentsVoix)
+                        voix: segmentsVoix,
+                        latenceEntreeMs: await MainActor.run { VoixCoordinator.shared.latenceEntreeMs })
                     await MainActor.run { Self.fermerLaBoucle(donnees) }
                 } catch {
                     await MainActor.run { Journal.warn(.capture, "gravure — \(error)") }

@@ -247,6 +247,25 @@ enum BoucleSelfTest {
             check(t, "la session muette n'a PAS de transcript.txt — rien à dire, pas de fichier",
                   !FileManager.default.fileExists(
                       atPath: resultat.attribution.dossier.appendingPathComponent("transcript.txt").path))
+
+            // S67 — la voix traverse jusqu'au rapport PUBLIÉ, relu du disque.
+            let rapport = try String(contentsOf:
+                resultat2.attribution.dossier.appendingPathComponent("report.md"), encoding: .utf8)
+            check(t, "le rapport publié cite la parole sous sa marque et liste le général",
+                  rapport.contains("> « Il manque du padding à droite. »\n\n**Zone entourée**")
+                    && rapport.contains("- **00:50** — « Globalement la page est lente. »"))
+            check(t, "…et l'en-tête compte les commentaires",
+                  rapport.contains("**2 marques**, **1 commentaire général**."))
+            let relu = try Manifeste.decoder(Data(contentsOf:
+                resultat2.attribution.dossier.appendingPathComponent("manifest.json")))
+            check(t, "le manifeste porte v-001 en général et v-002 sous la marque 1, dans l'ordre du premier mot",
+                  relu.session.voice?.first?.id == "v-002"
+                    && relu.marks.first(where: { $0.number == 1 })?.voice?.first?.id == "v-001")
+            check(t, "le texte ÉDITÉ est au manifeste avec son brut, et editedByUser le dit",
+                  relu.marks.first(where: { $0.number == 1 })?.voice?.first?.rawText == "Il manque du pratique à droite."
+                    && relu.marks.first(where: { $0.number == 1 })?.voice?.first?.attachment.editedByUser == true)
+            check(t, "le schéma n'a PAS bougé : les membres voix sont optionnels de 1.1",
+                  rapport.contains("Transcription locale fr-FR"))
         } catch {
             check(t, "publication dans le dépôt", false, "\(error)")
         }

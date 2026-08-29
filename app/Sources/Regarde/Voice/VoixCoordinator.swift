@@ -403,6 +403,9 @@ final class VoixCoordinator {
         appliquer(.fermetureDOffice(maintenant(), raison: "fin de session"))
     }
 
+    /// La latence d'entrée compensée de la dernière fenêtre, en ms entiers.
+    var latenceEntreeMs: Int? { micro.latence.map { Int($0.totalMs.rounded()) } }
+
     /// Attend le drain en cours et rend les segments de la session, rattachés.
     /// `--sans-drain` au lancement est la contre-épreuve : ne pas attendre
     /// perd la fin de la dernière phrase, et la recette le voit.

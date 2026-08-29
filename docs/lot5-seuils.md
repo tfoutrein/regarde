@@ -86,10 +86,11 @@ L'exemple normatif du § 9.5 montre `voice[]`, `session.locale` et
 - les segments **globaux** vont dans `session.voice[]`, même forme sans
   `attachedTo` — trou du § 9.5 tranché ici : la symétrie avec `marks[].voice[]`
   évite un second vocabulaire ;
-- `locale` et `audioInputLatencyMs` ne sont rendus dans l'en-tête du rapport
-  **que si le manifeste porte de la voix** (`marks[].voice[]` ou
-  `session.voice[]` non vides) — une session au micro refusé n'a rien à en
-  dire, et `schemaVersion` seule ne déclenche jamais l'affichage ;
+- la `locale` ne se rend dans l'en-tête **que si le manifeste porte de la
+  voix** (`marks[].voice[]` ou `session.voice[]` non vides) — une session au
+  micro refusé n'a rien à en dire, et `schemaVersion` seule ne déclenche jamais
+  l'affichage. `audioInputLatencyMs` reste au manifeste seul : le § 9.4 ne la
+  rend pas, elle est là pour qui relit un ancrage douteux (précisé en S67) ;
 - `MarkShape.text(NormPoint, String)` (§ 3.4) : au manifeste, `kind: "text"`
   et le texte dans le champ `text` de la marque — schéma posé ici pour S70.
 
@@ -238,3 +239,25 @@ inchangée, avec la mention de réaffectation au journal. Le rapport écrit
   l'extraction rapide fait souvent gagner au drain. C'est un diagnostic, pas
   une preuve ; la preuve du contrat est dans `--boucle-test` (le cinquième
   chemin, le brut jamais édité, l'absence de fichier quand il n'y a rien).
+
+## 12. S67 — la voix au rapport, ce que le rendu a demandé de trancher
+
+- **L'ordre des identifiants `v-NNN` suit le premier mot**, toutes marques
+  confondues : c'est l'ordre dans lequel les choses ont été dites, le seul qui
+  ait un sens pour qui relit. Un commentaire général prononcé après la parole
+  d'une marque porte donc un numéro plus grand, même s'il vit ailleurs dans le
+  JSON.
+- **La citation précède la géométrie** sous chaque marque : ce qui a été dit est
+  l'intention, le rectangle n'en est que la localisation.
+- **Le repli des citations est déterministe** — 92 colonnes, jamais un mot
+  coupé, aucun formateur à locale : le rendu reste reproductible à l'octet, ce
+  qui est le contrat de l'empreinte (§ 9.3).
+- **Trois annonces conditionnelles**, pour ne jamais décrire ce qui n'existe
+  pas : la phrase « Ce qu'il disait à voix haute… » n'apparaît que s'il y a de
+  la parole ; « Transcription locale fr-FR » de même ; la convention
+  `[terme ?]` seulement quand le lexique a réellement proposé quelque chose
+  (donc jamais avant S68).
+- **L'empreinte du rapport de référence du lot 4 est inchangée** : sans voix,
+  le rendu produit les mêmes octets qu'avant — « - aucun. », pas de locale, pas
+  de citation. C'est la contre-épreuve que `--render-test` exécute sur un
+  manifeste dont on a retiré la voix.
