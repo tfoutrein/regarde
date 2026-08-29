@@ -156,7 +156,12 @@ final class OverlayController {
     private var calqueRetenu = false
 
     func retenirLeCalque(_ retenir: Bool) {
+        guard calqueRetenu != retenir else { return }
         calqueRetenu = retenir
+        // Le calque est exclu de toute capture d'écran (R12) : seule cette
+        // trace permet à la recette de VOIR qu'il a été retenu.
+        Journal.event(.system, retenir ? "calque — retenu par la fenêtre de parole"
+                                       : "calque — libéré, la fenêtre de parole est close")
         if retenir {
             hideWorkItem?.cancel()
             hideWorkItem = nil
