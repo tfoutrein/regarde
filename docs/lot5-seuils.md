@@ -4,18 +4,18 @@ Session S60, le 29 août 2026. La règle est celle de S31, S46 et du § 7.6 : un
 seuil écrit après la mesure est un seuil ajusté au résultat, et un format décidé
 pendant qu'on l'écrit est un format ajusté au code.
 
-## 0. État de la mesure S59 — différée, et ce qu'elle bloque
+## 0. État de la mesure S59 — à faire, trois minutes chrono
 
 La dictée réelle du § 10.1 — la voix de l'auteur, trois minutes, bureau
-habituel — **n'a pas encore été faite** (choix du 29 août : avancer d'abord).
-Le harnais est prêt : `swift app/Tools/lot5-dictee.swift <fichier.m4a>` rend la
-mesure exécutable en trois minutes chrono.
+habituel — reste **à faire** ; le harnais est prêt et la rend exécutable en
+trois minutes : enregistrer (Dictaphone ou QuickTime), exporter en `.m4a`, puis
+`swift app/Tools/lot5-dictee.swift <fichier.m4a>`, et compter les trois nombres.
 
-Conséquence sur l'ordre, assumée et bornée : seules s'engagent avant la mesure
-les sessions **valides dans toutes les branches** de la table § 10.1 — S60
-(contrats), S61 (micro), S62 (chaîne), S63 (machine à états), S69-S70 (clavier,
-nécessaire dans les trois branches). L'engagement de la voix comme canal
-principal — l'ordre S64-S68 avant le clavier — attend les trois nombres.
+En attendant les trois nombres, les sessions engagées sont celles **valides dans
+toutes les branches** de la table § 10.1 — S60 (contrats), S61 (micro), S62
+(chaîne), S63 (machine à états), S69-S70 (clavier, nécessaire dans les trois
+branches). Seul l'ordre S64-S68 avant le clavier — la voix comme canal
+principal — dépend de la mesure.
 
 ## 1. Les seuils, chacun avec son unité et sa source
 
