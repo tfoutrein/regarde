@@ -133,3 +133,27 @@ inchangée, avec la mention de réaffectation au journal. Le rapport écrit
   intervalles disjoints, un premier mot n'en trouve qu'une ;
 - le **verrou ⌃⌥M** l'emporte sur la fenêtre pendant toute sa durée, y compris
   relu après coup ; la parole d'avant et d'après reste à sa marque.
+
+## 9. Découvertes de S61 — le micro, mesurées en vivant le 29 août 2026
+
+- **`AVAudioEngine` ne prend pas de périphérique imposé** sur macOS 26.1 :
+  `kAudioOutputUnitProperty_CurrentDevice` sur l'`inputNode` — avant la
+  préparation, entre uninit/init, après la préparation — répond « succès » et
+  tue l'entrée en silence (zéro appel du tap, moteur « en marche »). Sans
+  imposition, 15 tranches. Comme « jamais l'entrée par défaut » (§ 7.2) n'est
+  pas négociable, le micro est une **`AVCaptureSession`** avec
+  `AVCaptureDeviceInput` sur le périphérique choisi : 141 tranches en 1,5 s,
+  contiguës depuis 0, PTS sur l'horloge hôte (ADR-0007). Le terme
+  « présentation » de la latence § 3.6 n'existe plus : le PTS de chaque buffer
+  porte déjà l'instant de capture, restent les deux termes du périphérique.
+- **Le rappel audio n'est jamais une fermeture écrite dans une classe
+  `@MainActor`** : Swift 6 l'infère isolée, et la file audio plante à
+  l'assertion d'isolation (SIGTRAP, `dispatch_assert_queue_fail`) — constaté
+  au premier rappel qui a réellement tourné. Le délégué est une classe à part,
+  non isolée, nourrie d'un contexte Sendable ; le bloc d'entrée du converter
+  (`@Sendable`) reçoit une boîte à usage unique (`SourceAudioUnique`), jamais
+  une variable mutable ni un tampon — en release ce sont des erreurs.
+- La fermeture d'office (veille, verrouillage, changement de session, saisie
+  sécurisée) et la reconfiguration (périphérique débranché, erreur de session)
+  sont câblées ; leur épreuve vivante appartient à S64, quand une fenêtre
+  existe dans l'application.

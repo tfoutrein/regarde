@@ -295,10 +295,9 @@ struct AudioDevicesCheck: DoctorCheck {
     let title = "Périphériques d'entrée audio"
     let isRequired = false
 
-    private static let loopbackMarkers = [
-        "loopback", "blackhole", "soundflower", "vb-cable", "teams", "zoom",
-        "aggregate", "multi-output", "virtual",
-    ]
+    /// UNE seule liste, partagée avec la sélection du lot 5 (`Peripheriques`) :
+    /// ce que le doctor signale est exactement ce que le micro exclut.
+    private static let loopbackMarkers = Peripheriques.marqueursDeBoucle
 
     func run() async -> CheckResult {
         let session = AVCaptureDevice.DiscoverySession(

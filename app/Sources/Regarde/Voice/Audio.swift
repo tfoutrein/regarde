@@ -34,3 +34,22 @@ struct TrancheAudio: @unchecked Sendable {
 protocol PuitsAudio: AnyObject, Sendable {
     func recevoir(_ tranche: TrancheAudio)
 }
+
+/// Une source à usage unique pour `AVAudioConverter.convert(to:error:withInputFrom:)`.
+///
+/// Le bloc d'entrée du converter est `@Sendable` : il ne peut capturer ni une
+/// variable mutable (« a-t-on déjà donné ? ») ni un tampon, qui n'est pas
+/// Sendable — en release, ce ne sont plus des avertissements mais des
+/// erreurs. La boîte porte les deux, sous `@unchecked`, parce que le converter
+/// l'appelle depuis le seul thread qui l'a créée, de façon synchrone.
+final class SourceAudioUnique: @unchecked Sendable {
+    private let tampon: AVAudioPCMBuffer
+    private var donnee = false
+    init(_ tampon: AVAudioPCMBuffer) { self.tampon = tampon }
+    func servir(_ statut: UnsafeMutablePointer<AVAudioConverterInputStatus>) -> AVAudioBuffer? {
+        if donnee { statut.pointee = .noDataNow; return nil }
+        donnee = true
+        statut.pointee = .haveData
+        return tampon
+    }
+}

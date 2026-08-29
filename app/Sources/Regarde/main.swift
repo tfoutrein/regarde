@@ -45,6 +45,26 @@ if CommandLine.arguments.contains("--append-test") {
     exit(AppendSelfTest.run() ? 0 : 1)
 }
 
+if CommandLine.arguments.contains("--micro-test") {
+    exit(MainActor.assumeIsolated { MicroSelfTest.run() } ? 0 : 1)
+}
+
+if CommandLine.arguments.contains("--transcription-test") {
+    exit(TranscriptionSelfTest.run() ? 0 : 1)
+}
+
+if let i = CommandLine.arguments.firstIndex(of: "--transcription-bench"),
+   CommandLine.arguments.count > i + 1 {
+    let fichier = CommandLine.arguments[i + 1]
+    let semaphore = DispatchSemaphore(value: 0)
+    nonisolated(unsafe) var ok = false
+    // Détachée : au niveau supérieur, `Task { }` hériterait du MainActor, que
+    // le sémaphore bloque — interblocage silencieux.
+    Task.detached { ok = await TranscriptionSelfTest.banc(fichier: fichier); semaphore.signal() }
+    semaphore.wait()
+    exit(ok ? 0 : 1)
+}
+
 if CommandLine.arguments.contains("--parole-test") {
     exit(ParoleSelfTest.run() ? 0 : 1)
 }
