@@ -26,6 +26,8 @@ struct SegmentDeParole: Codable, Sendable, Equatable {
     /// `true` quand l'utilisateur a réaffecté ce segment lui-même (§ 6.7) —
     /// `attachment.auto` vaut alors `false` au manifeste.
     var aLaMain = false
+    /// Ce que le lexique a proposé (S68) — les deux versions vont au rapport.
+    var suggestions: [Lexique.Suggestion] = []
 
     var onset: SessionTime { premierMot ?? mots.first?.debut ?? plageDebut }
     var fin: SessionTime { mots.last?.fin ?? plageFin }

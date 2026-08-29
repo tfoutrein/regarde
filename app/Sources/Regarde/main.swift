@@ -65,6 +65,10 @@ if let i = CommandLine.arguments.firstIndex(of: "--transcription-bench"),
     exit(ok ? 0 : 1)
 }
 
+if CommandLine.arguments.contains("--lexique-test") {
+    exit(LexiqueSelfTest.run() ? 0 : 1)
+}
+
 if CommandLine.arguments.contains("--parole-test") {
     exit(ParoleSelfTest.run() ? 0 : 1)
 }

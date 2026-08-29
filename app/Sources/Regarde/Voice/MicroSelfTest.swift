@@ -199,4 +199,5 @@ enum MicroSelfTest {
         check(t, "premierEchantillon strictement croissant et CONTIGU — pas un trou, pas un chevauchement",
               contigu && tranches.count > 1)
     }
+
 }

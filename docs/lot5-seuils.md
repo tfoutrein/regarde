@@ -294,3 +294,38 @@ inchangée, avec la mention de réaffectation au journal. Le rapport écrit
   chiffres et fait perdre la marque attachée ; il faut forger les frappes avec
   les flags tenus. Et le code 24 est `=`, pas `7` : l'ordre Carbon piège aussi
   celui qui écrit le test.
+
+## 14. S68 — le lexique, calibré sur des fautes réelles
+
+Le calibrage ne vient pas de paires inventées : ce sont les erreurs que CE
+moteur a commises sur cette machine pendant S62 à S65, relevées au journal.
+
+- **Deux portes, et il faut passer les deux.** La CONFIANCE d'abord (< 0,6,
+  § 7.3) : c'est elle qui rend l'ensemble sûr — « bouton » et « button » ont le
+  même squelette phonétique, mais « bouton » dans une phrase française sort à
+  confiance haute et n'est jamais soumis au lexique. La RESSEMBLANCE ensuite,
+  sur un squelette phonétique français (ph→f, qu→k, ou→u, nasales, finales
+  muettes) et une distance d'édition relative à la longueur.
+- **Ce que le lexique rattrape** : « Checkou » → checkout, « chant » → champ
+  (homophones /ʃɑ̃/, squelettes identiques), « Calbac » → callback, « spinnet »
+  → spinner, « modèle » → modale, « Z index » → z-index, « use effect » →
+  useEffect, « Lapie » → API.
+- **Ce qu'il ne rattrape PAS, et c'est écrit** : les fautes phonétiquement
+  LOINTAINES — « Tou » pour timeout, « ste » pour state, « bacoint » pour
+  breakpoint. Elles restent visibles autrement : le moteur leur donne une
+  confiance basse, et un mot lu de travers saute aux yeux dans la citation. La
+  limite est un fait connu, pas une surprise de recette.
+- **Deux règles de départage, trouvées par le test.** À égalité phonétique,
+  l'ORTHOGRAPHE tranche : « modèle » sonne comme « modal » et « modale » ;
+  c'est « modale » qu'il faut proposer, parce que le moteur a entendu juste et
+  écrit de travers, pas l'inverse. Et la CASSE est une correction, pas une
+  identité : « promocode » entendu pour `promoCode` doit donner à l'agent
+  l'identifiant exact, qu'il ira chercher dans le code.
+- **Les identifiants du projet** s'extraient de ses sources — bornés à 300
+  fichiers, 300 termes, sans jamais visiter `node_modules` — et se chargent en
+  tâche de fond dès qu'un candidat est retenu à l'arming, hors du chemin
+  critique des 20 s. Un identifiant composé vaut aussi par ses parties :
+  `CheckoutForm` donne `Checkout` et `Form`, qu'on prononce séparément.
+- **Le lexique PROPOSE, il ne remplace jamais** : `*entendu* **[proposé ?]**`
+  au rapport (§ 9.4), les deux versions, et `rawText` — donc `transcript.txt` —
+  intact au caractère.

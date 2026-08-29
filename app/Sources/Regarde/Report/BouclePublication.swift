@@ -102,7 +102,11 @@ enum BouclePublication {
                 attachment: .init(rule: regle, auto: !segment.aLaMain,
                                   editedByUser: segment.texte != segment.texteBrut),
                 onset: segment.onset.seconds, end: segment.fin.seconds,
-                text: segment.texte, rawText: segment.texteBrut)
+                text: segment.texte, rawText: segment.texteBrut,
+                lexiconSuggestions: segment.suggestions.map {
+                    .init(heard: $0.entendu, suggested: $0.propose,
+                          confidence: $0.confiance, at: $0.instant)
+                })
             if let marque { voixParMarque[marque, default: []].append(voix) }
             else { voixGenerale.append(voix) }
         }

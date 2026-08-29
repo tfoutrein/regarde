@@ -186,7 +186,22 @@ final class VoixCoordinator {
     func nouvelleSession() {
         segments.removeAll()
         machine = FenetreDeParole.Machine()
+        termesDuLexique = Lexique.termesFront
         if verrou { poserLeVerrou() }
+    }
+
+    /// Charge les identifiants du projet retenu dans le lexique (S68, § 7.3).
+    /// Hors du chemin critique : appelé à l'arming, en tâche de fond.
+    func chargerLeLexique(projet: String) {
+        Task.detached(priority: .utility) {
+            let identifiants = IdentifiantsProjet.lire(
+                racine: URL(fileURLWithPath: projet, isDirectory: true))
+            await MainActor.run {
+                VoixCoordinator.shared.termesDuLexique = Lexique.termesFront + identifiants
+                Journal.event(.system, "lexique — \(Lexique.termesFront.count) termes du front "
+                              + "+ \(identifiants.count) identifiant(s) de \((projet as NSString).lastPathComponent)")
+            }
+        }
     }
 
     // MARK: - Le geste
@@ -274,6 +289,10 @@ final class VoixCoordinator {
     /// L'instant de session où le micro de la fenêtre courante a ouvert — les
     /// échantillons de l'écoute se comptent depuis lui.
     private var origineAudio: SessionTime?
+    /// Le lexique de la session : les termes figés du front, plus les
+    /// identifiants du projet retenu. Lu UNE fois par session — l'extraction
+    /// parcourt des fichiers, elle n'a rien à faire dans le chemin d'un drain.
+    private var termesDuLexique: [String] = Lexique.termesFront
 
     private func appliquer(_ evenement: FenetreDeParole.Evenement) {
         let effets = machine.appliquer(evenement)
@@ -389,6 +408,19 @@ final class VoixCoordinator {
             }
             // La main de l'utilisateur écrase la règle, et n'est jamais
             // recalculée : c'est LE point d'ADR-0011 sur `manual`.
+            // Le lexique PROPOSE, sur les seuls mots dont le moteur doute
+            // (§ 7.3) : le texte gagne ses `*entendu* **[proposé ?]**`, le brut
+            // ne bouge pas d'un caractère.
+            let lexique = Lexique.appliquer(texte: segment.texte, mots: segment.mots,
+                                            termes: termesDuLexique)
+            segment.texte = lexique.texte
+            segment.suggestions = lexique.suggestions
+            if !lexique.suggestions.isEmpty {
+                let liste = lexique.suggestions
+                    .map { "« \($0.entendu) » → « \($0.propose) » (\(String(format: "%.2f", $0.confiance)))" }
+                    .joined(separator: ", ")
+                Journal.event(.system, "lexique — \(lexique.suggestions.count) proposition(s) : \(liste)")
+            }
             let attachement = manuelle ?? machine.rattacher(premierMot: premierMot, fin: segment.fin)
             segment.attachement = attachement
             segment.aLaMain = manuelle != nil

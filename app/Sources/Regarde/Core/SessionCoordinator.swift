@@ -107,6 +107,10 @@ final class SessionCoordinator {
                     < ($1.chemin == verdict.retenu ? 0 : 1, -$1.score, $1.chemin) }
             .map { CandidatProjet(chemin: $0.chemin, motif: $0.motif, pidShell: 0) }
         SelecteurProjet.presenter(candidats: candidats, etat: verdict.etat)
+        // Le lexique du projet (S68) se charge dès qu'un candidat est retenu —
+        // même provisoire : le sélecteur peut le changer, l'extraction est
+        // idempotente et hors du chemin critique.
+        if let retenu = verdict.retenu { VoixCoordinator.shared.chargerLeLexique(projet: retenu) }
 
         // Le banc C11 s'arme avec la session, pas avant : son pont d'horloge doit
         // partager l'origine des marques qu'il mesure.
