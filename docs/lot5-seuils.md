@@ -118,3 +118,18 @@ inchangée, avec la mention de réaffectation au journal. Le rapport écrit
 - **A5** : la revue à la demande est DANS le lot (S71) ; la **purge** du
   plafond de 15 min part au lot 7 — la frontière passe entre éditer et purger ;
 - la table § 10.1 est réconciliée sur le seuil normatif du § 7.3 : **4/5**.
+
+## 8. Décisions de S63 — la machine à états, vérifiées par `--parole-test`
+
+- un **second tracé dans la même tenue** de ⌥⌘ scinde la fenêtre : une fenêtre
+  porte une marque et une seule, la suivante hérite de la tenue ;
+- une **fenêtre sans marque** (tenue sans tracé) est globale — la parole ne se
+  jette jamais en silence ; le geste global *explicite* (> 400 ms, immobile) est
+  en plus annoncé au HUD ;
+- la **prolongation** par les volatils repousse l'échéance à `dernier volatil +
+  1 s`, jamais au-delà du plafond de 20 s ; un volatil en retard ne raccourcit
+  rien (maximum, pas dernier venu) ;
+- une **nouvelle prise** ferme la fenêtre précédente : les fenêtres sont des
+  intervalles disjoints, un premier mot n'en trouve qu'une ;
+- le **verrou ⌃⌥M** l'emporte sur la fenêtre pendant toute sa durée, y compris
+  relu après coup ; la parole d'avant et d'après reste à sa marque.
