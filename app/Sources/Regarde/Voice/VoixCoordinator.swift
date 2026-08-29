@@ -363,6 +363,7 @@ final class VoixCoordinator {
             }
             let attachement = machine.rattacher(premierMot: premierMot, fin: segment.fin)
             segment.attachement = attachement
+            segment.premierMot = premierMot
             rattaches.append(segment)
             let extrait = segment.texteBrut
             let quand = "premier mot à \(Self.mmss(premierMot))"
@@ -389,6 +390,34 @@ final class VoixCoordinator {
     private func arreterLeTic() {
         tic?.invalidate()
         tic = nil
+    }
+
+    // MARK: - La fin de session (S66)
+
+    /// ⌃⌥F : la fenêtre ouverte se ferme MAINTENANT — pas huit secondes plus
+    /// tard —, et son drain part. La publication l'attendra : c'est LE critère
+    /// du lot, la fin d'une phrase coupée par le raccourci est dans le rapport.
+    func fermerPourFinDeSession() {
+        guard machine.estOuverte else { return }
+        Journal.event(.system, "parole — fin de session : la fenêtre se ferme, drain en cours")
+        appliquer(.fermetureDOffice(maintenant(), raison: "fin de session"))
+    }
+
+    /// Attend le drain en cours et rend les segments de la session, rattachés.
+    /// `--sans-drain` au lancement est la contre-épreuve : ne pas attendre
+    /// perd la fin de la dernière phrase, et la recette le voit.
+    func attendreLeDrain() async -> [SegmentDeParole] {
+        if CommandLine.arguments.contains("--sans-drain") {
+            Journal.warn(.system, "parole — drain NON attendu (--sans-drain) : la fin de la dernière phrase sera perdue")
+            return segments
+        }
+        let depart = SessionClock.hostTicksNow()
+        await drainEnCours?.value
+        let attente = SessionClock.millis(from: depart, to: SessionClock.hostTicksNow())
+        if attente > 1 {
+            Journal.event(.system, String(format: "parole — drain attendu %.0f ms, %d segment(s) pour le rapport", attente, segments.count))
+        }
+        return segments
     }
 
     // MARK: - L'éclair

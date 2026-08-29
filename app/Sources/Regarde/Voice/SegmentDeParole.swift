@@ -20,8 +20,11 @@ struct SegmentDeParole: Codable, Sendable, Equatable {
     let plageFin: SessionTime
     /// Posé par S64 depuis la machine ; nil tant que personne n'a tranché.
     var attachement: FenetreDeParole.Attachement?
+    /// Le premier mot AFFINÉ par la carte d'énergie (S64) : le moteur date le
+    /// sien au début de sa plage, silence de tête compris.
+    var premierMot: SessionTime?
 
-    var onset: SessionTime { mots.first?.debut ?? plageDebut }
+    var onset: SessionTime { premierMot ?? mots.first?.debut ?? plageDebut }
     var fin: SessionTime { mots.last?.fin ?? plageFin }
 
     init(id: UUID = UUID(), mots: [Mot], texte: String,

@@ -47,7 +47,8 @@ enum BoucleSelfTest {
 
     // MARK: - L'assembleur, pur
 
-    private static func donneesFabriquees(images: [BouclePublication.Donnees.Image])
+    private static func donneesFabriquees(images: [BouclePublication.Donnees.Image],
+                                          voix: [SegmentDeParole] = [])
         -> BouclePublication.Donnees {
         BouclePublication.Donnees(
             uuid: UUID(uuidString: "AAAAAAAA-0000-0000-0000-000000000001")!,
@@ -67,7 +68,7 @@ enum BoucleSelfTest {
                       ecranPoints: CGSize(width: 1728, height: 1117), facteurEcran: 2),
             ],
             images: images,
-            outilVersion: "0.4.0-test", os: "macOS 26.1", build: "999")
+            outilVersion: "0.4.0-test", os: "macOS 26.1", build: "999", voix: voix)
     }
 
     private static func assembleur(_ t: Tally) {
@@ -202,6 +203,50 @@ enum BoucleSelfTest {
             check(t, "le manifeste relu rend un rapport aux six sections",
                   Rendu.rendre(manifeste).contains("## Récapitulatif")
                     && manifeste.session.number == 1)
+
+            // S66 — une seconde session, PARLÉE cette fois : le transcript est
+            // le cinquième chemin, et il n'existe que s'il a quelque chose à
+            // dire — la première session, muette, n'en avait pas.
+            var rattache = SegmentDeParole(
+                mots: [], texte: "Il manque du pratique à droite.",
+                plageDebut: SessionTime(seconds: 26.9), plageFin: SessionTime(seconds: 31.5))
+            rattache.attachement = .marque(1, regle: .fenetreDeParole)
+            rattache.premierMot = SessionTime(seconds: 27.02)
+            rattache.texte = "Il manque du padding à droite."   // édité : le brut ne bouge pas
+            var global = SegmentDeParole(
+                mots: [], texte: "Globalement la page est lente.",
+                plageDebut: SessionTime(seconds: 50), plageFin: SessionTime(seconds: 53))
+            global.attachement = .global(regle: .gesteGlobal)
+            let parlee = donneesFabriquees(images: images, voix: [global, rattache])
+            let brouillon2 = BouclePublication.assembler(
+                parlee, projet: depot.path, detection: "**certaine** — test", git: nil)
+            let resultat2 = try BouclePublication.publier(
+                parlee, brouillon: brouillon2, racine: depot, slug: "parlee")
+            guard let statut2 = git(depot, ["status", "--porcelain", "-uall"]) else {
+                check(t, "git status, session parlée", false); return
+            }
+            let proposes2 = Set(statut2.split(separator: "\n").map { String($0.dropFirst(3)) })
+            let id2 = resultat2.attribution.id
+            let attendus2 = attendus.union([
+                ".regarde/sessions/\(id2)/manifest.json",
+                ".regarde/sessions/\(id2)/report.md",
+                ".regarde/sessions/\(id2)/transcript.txt",
+            ])
+            check(t, "session parlée : transcript.txt est le CINQUIÈME chemin, versionnable",
+                  proposes2 == attendus2,
+                  proposes2 == attendus2 ? "" : "écart : \(proposes2.symmetricDifference(attendus2).sorted())")
+            let transcript = try String(contentsOf:
+                resultat2.attribution.dossier.appendingPathComponent("transcript.txt"), encoding: .utf8)
+            let lignes = transcript.split(separator: "\n").map(String.init)
+            check(t, "deux lignes, dans l'ordre du premier mot — la marque avant le global",
+                  lignes.count == 2 && lignes[0].hasPrefix("[00:27.0] (marque 1)")
+                    && lignes[1].hasPrefix("[00:50.0] (global)"))
+            check(t, "le transcript porte le BRUT, pas le texte édité",
+                  lignes[0].hasSuffix("Il manque du pratique à droite.")
+                    && !transcript.contains("padding"))
+            check(t, "la session muette n'a PAS de transcript.txt — rien à dire, pas de fichier",
+                  !FileManager.default.fileExists(
+                      atPath: resultat.attribution.dossier.appendingPathComponent("transcript.txt").path))
         } catch {
             check(t, "publication dans le dépôt", false, "\(error)")
         }

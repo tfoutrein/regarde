@@ -64,6 +64,9 @@ enum BouclePublication {
         let outilVersion: String
         let os: String
         let build: String
+        /// Les segments de parole rattachés (S66) — le transcript les écrit,
+        /// S67 les rend.
+        var voix: [SegmentDeParole] = []
     }
 
     // MARK: - L'assembleur, pur
@@ -182,6 +185,11 @@ enum BouclePublication {
             .write(to: attribution.dossier.appendingPathComponent("report.md"), options: .atomic)
         try Data(Rendu.rendre(manifeste, options: .init(profil: .chatWeb)).utf8)
             .write(to: attribution.dossier.appendingPathComponent("paste-web.md"), options: .atomic)
+
+        // `transcript.txt` — VERSIONNABLE (§ 9.2) : le cinquième chemin que
+        // git propose, s'il y a eu de la parole. Lisible par tous : un dépôt
+        // se partage.
+        try Transcript.ecrire(d.voix, dans: attribution.dossier, permissions: 0o644)
 
         // `state.jsonl` — par LA porte (S47). Gitignoré, append-only, rejouable.
         let state = try AppendOnlyLog(

@@ -214,3 +214,27 @@ inchangée, avec la mention de réaffectation au journal. Le rapport écrit
 - Une leçon de méthode, payée une heure : un journal qui tronque à soixante
   caractères a fait chercher une finalisation perdue qui n'existait pas. Les
   textes s'écrivent entiers, ou avec leur longueur.
+
+## 11. S66 — le drain dans la publication, mesuré en vivant le 29 août 2026
+
+- **Le critère du lot tient** : phrase dite pendant que le micro écoute, `⌃⌥F`
+  pressé aussitôt après — dans la fenêtre de finalisation de 1,3-2,7 s —, et la
+  phrase ENTIÈRE est au rapport : « Le bouton validé est mal aligné avec le
+  chant du code promo. » Le drain la rattrape en vol parce qu'il est attendu
+  DANS le chemin ordonné de la publication, après l'extraction (avec laquelle
+  il a couru en parallèle) et avant tout ce qui écrit le rapport.
+- **`transcript.txt` est le cinquième chemin de `git status`**, en
+  `-rw-r--r--` (un dépôt se partage), constaté sur un dépôt réel. Une session
+  muette n'en a pas : rien à dire, pas de fichier — et le rendu ne mentionne
+  jamais un fichier absent (amendement S46).
+- **`⌃⌥F` ferme la fenêtre de parole immédiatement**, sans attendre les huit
+  secondes de grâce : le raccourci de fin est un ordre, pas une suggestion.
+  L'audio postérieur n'existe donc pas — couper au MILIEU d'une phrase perd
+  légitimement la suite, ce n'est pas le drain qui la perd.
+- **La durée de session s'arrête au raccourci**, plus à la fin de la
+  publication : sans quoi le drain se serait ajouté à la durée annoncée.
+- Honnêteté sur `--sans-drain` : l'interrupteur saute l'ATTENTE, mais la tâche
+  de drain court quand même — la perte dépend alors d'une course que
+  l'extraction rapide fait souvent gagner au drain. C'est un diagnostic, pas
+  une preuve ; la preuve du contrat est dans `--boucle-test` (le cinquième
+  chemin, le brut jamais édité, l'absence de fichier quand il n'y a rien).

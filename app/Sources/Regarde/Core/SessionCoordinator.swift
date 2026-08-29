@@ -210,7 +210,13 @@ final class SessionCoordinator {
         let target = sessionTarget ?? "?"
         let marked = MarkStore.shared.targets
         let seconds = sessionStart.map { Int(Date().timeIntervalSince($0).rounded()) }
+        // L'instant du raccourci : la durée de session s'arrête ICI, et le
+        // chrono de fin (critère n°4, drain compris désormais) part d'ici.
+        let finBoucle = Date()
         transition(to: .finalizing)
+        // La fenêtre de parole se ferme AVEC la session, et son drain part
+        // tout de suite — la publication l'attendra (S66).
+        VoixCoordinator.shared.fermerPourFinDeSession()
         // L'anneau se désarme AVEC la session : le laisser armé ferait copier des
         // frames pour personne jusqu'au prochain lancement.
         SnapshotRing.shared.armer(false)
@@ -306,6 +312,17 @@ final class SessionCoordinator {
                         keeping: keep, into: SessionPaths.frames(of: directory),
                         segments: segments)
 
+                    // Le drain de la parole, attendu ICI — après l'extraction,
+                    // avec laquelle il a couru en parallèle, et avant tout ce
+                    // qui écrit le rapport. Même chemin ordonné, même leçon
+                    // que l'arrêt des flux : jamais une tâche à côté.
+                    let segmentsVoix = await VoixCoordinator.shared.attendreLeDrain()
+                    if let transcript = try Transcript.ecrire(segmentsVoix, dans: directory) {
+                        await MainActor.run {
+                            Journal.event(.system, "transcript — \(segmentsVoix.count) ligne(s) → \(transcript.lastPathComponent)")
+                        }
+                    }
+
                     // Le `.mov` meurt ICI, une fois les images écrites — pas avant,
                     // il était la seule source ; pas après, c'est de la vidéo de
                     // l'écran de l'utilisateur et l'ADR-0020 en borne la vie.
@@ -336,7 +353,7 @@ final class SessionCoordinator {
                             numero: $0.number, url: $0.url,
                             taillePixels: $0.pixelSize)
                     }
-                    let duree = Date().timeIntervalSince(debutBoucle)
+                    let duree = finBoucle.timeIntervalSince(debutBoucle)
                     let donnees = BouclePublication.Donnees(
                         uuid: await CaptureEngine.shared.sessionUUID ?? UUID(),
                         debut: debutBoucle, dureeSecondes: duree,
@@ -350,7 +367,8 @@ final class SessionCoordinator {
                             + (ProcessInfo.processInfo.operatingSystemVersionString
                                 .components(separatedBy: " ").dropFirst().first ?? "?"),
                         build: Bundle.main.object(
-                            forInfoDictionaryKey: "CFBundleVersion") as? String ?? "0")
+                            forInfoDictionaryKey: "CFBundleVersion") as? String ?? "0",
+                        voix: segmentsVoix)
                     await MainActor.run { Self.fermerLaBoucle(donnees) }
                 } catch {
                     await MainActor.run { Journal.warn(.capture, "gravure — \(error)") }
@@ -517,6 +535,16 @@ final class SessionCoordinator {
                 HUDWindow.shared.announce(
                     "\(count) marque\(count > 1 ? "s" : "") publiée\(count > 1 ? "s" : "")",
                     detail: directory?.lastPathComponent ?? "aucun artefact", duration: 3)
+                // L'éclair parle (S66) : ses segments, rattachés au drain qui a
+                // retenu la publication, vont dans son dossier — puis la voix
+                // repart à zéro pour l'éclair suivant.
+                if let directory {
+                    let voix = VoixCoordinator.shared.segments
+                    if let url = (try? Transcript.ecrire(voix, dans: directory, contexte: .eclair)) ?? nil {
+                        Journal.event(.system, "transcript — \(voix.count) ligne(s) → \(url.lastPathComponent) (éclair)")
+                    }
+                }
+                VoixCoordinator.shared.nouvelEclair()
             }
         }
     }

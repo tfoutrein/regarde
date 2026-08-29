@@ -28,6 +28,7 @@ enum TranscriptionSelfTest {
         tampons(t)
         mots(t)
         timeline(t)
+        transcript(t)
         print("\n── \(t.passed) vérifications passées, \(t.failed) échouées ──")
         return t.failed == 0
     }
@@ -209,5 +210,34 @@ enum TranscriptionSelfTest {
             print("✗ \(error)")
             return false
         }
+    }
+
+    // MARK: - La ligne du transcript (S66), pure
+
+    private static func transcript(_ t: Tally) {
+        print("\n· La ligne de transcript.txt — lot5-seuils § 3")
+        var s = SegmentDeParole(mots: [], texte: "Il manque du pratique à droite.",
+                                plageDebut: SessionTime(seconds: 26.9),
+                                plageFin: SessionTime(seconds: 31.5))
+        s.attachement = .marque(2, regle: .fenetreDeParole)
+        check(t, "sans premier mot affiné : le temps est le début de plage",
+              Transcript.ligne(s) == "[00:26.9] (marque 2) Il manque du pratique à droite.")
+        s.premierMot = SessionTime(seconds: 87.02)
+        check(t, "le premier mot affiné l'emporte, en MM:SS.d",
+              Transcript.ligne(s) == "[01:27.0] (marque 2) Il manque du pratique à droite.")
+        s.texte = "Il manque du padding à droite."
+        check(t, "le texte édité ne change PAS la ligne — le brut seul",
+              Transcript.ligne(s).hasSuffix("Il manque du pratique à droite."))
+        s.attachement = .global(regle: .gesteGlobal)
+        check(t, "global en session → (global) ; en éclair → (éclair)",
+              Transcript.ligne(s).contains("(global)")
+                && Transcript.ligne(s, contexte: .eclair).contains("(éclair)"))
+        let dossier = FileManager.default.temporaryDirectory
+            .appendingPathComponent("transcript-test-\(getpid())", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dossier, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dossier) }
+        check(t, "rien à dire → aucun fichier, et nil pour le dire",
+              (try? Transcript.ecrire([], dans: dossier)) == nil
+                && !FileManager.default.fileExists(atPath: dossier.appendingPathComponent("transcript.txt").path))
     }
 }
