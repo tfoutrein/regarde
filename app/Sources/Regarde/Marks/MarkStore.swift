@@ -191,6 +191,35 @@ final class MarkStore {
         nextNumber -= 1
     }
 
+    // MARK: - La marque rétroactive (S65, § 5.1)
+
+    /// Pose une marque datée de `secondes` avant maintenant, au point donné.
+    ///
+    /// Un POINT, pas un cadre : la rétroactive désigne un INSTANT — le toast
+    /// qui vient de disparaître — et l'utilisateur n'a rien pu entourer, la
+    /// chose n'est plus à l'écran. Sa forme est celle de l'outil point, à la
+    /// position du curseur ; son image sera extraite du fichier encodé à T−N
+    /// (§ 5.1), pas de l'anneau, qui ne couvre que 0,27 s.
+    @discardableResult
+    func poserRetroactive(secondes: Int, at eventPoint: CGPoint,
+                          geometry: ScreenGeometry) -> Mark? {
+        guard let screen = geometry.screen(containingEvent: eventPoint),
+              screen.capturable else { return nil }
+        let size = screen.cocoaFrame.size
+        let local = geometry.windowLocal(fromEvent: eventPoint, on: screen)
+        let norm = NormPoint(local: local, in: size)
+        let maintenant = SessionClock.shared.now()
+        let quand = SessionTime(seconds: max(0, maintenant.seconds - Double(secondes)))
+        let mark = Mark(number: nextNumber, displayID: screen.displayID,
+                        shape: .point(norm), tool: .point,
+                        target: TargetWindow.shared.target?.name,
+                        t: quand, timeOrigin: .hardware,
+                        isRetroactive: true, snapshot: 0)
+        nextNumber += 1
+        marks.append(mark)
+        return mark
+    }
+
     // MARK: - Intentions (S23)
 
     /// Résultat d'une frappe de chiffre, pour que le HUD dise ce qui s'est passé.

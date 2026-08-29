@@ -261,3 +261,36 @@ inchangée, avec la mention de réaffectation au journal. Le rapport écrit
   le rendu produit les mêmes octets qu'avant — « - aucun. », pas de locale, pas
   de citation. C'est la contre-épreuve que `--render-test` exécute sur un
   manifeste dont on a retiré la voix.
+
+## 13. S65 — les chiffres, et ce que le vivant a corrigé
+
+- **La table du § 6.7 est une fonction pure**, `DecisionChiffre.sens(rang:
+  shift:marqueAttachee:)`, consultée par le tap qui ne décide de rien. Son
+  autotest couvre les trois lignes, l'enchaînement `⌥⌘ 3 2` et l'ordre Carbon
+  non contigu (`5` vaut 23, `6` vaut 22).
+- **Le tracé qui suit une rétroactive crée une marque DISTINCTE**, il ne la
+  complète pas. Le § 5.1 laissait la question ouverte ; ce choix suit la table
+  du § 6.7, qui dit que poser la rétroactive ATTACHE une marque à la fenêtre —
+  une fenêtre porte une marque et une seule (S63 § 8), un second tracé la
+  scinde. Le geste du § 2.1 (« presse 3 … puis trace une flèche ») donne donc
+  deux marques, pas une : c'est écrit ici plutôt que découvert en recette.
+- **`⇧`+`N` et `0` écrasent la règle et ne sont jamais recalculés** — c'est le
+  `manual` d'ADR-0011. La réaffectation vaut pour la fenêtre où elle a été
+  faite, s'y consomme, et sort au manifeste avec `attachment.auto = false` ;
+  le journal dit « à la main ».
+- **Sans marque attachée, `⇧`+`N` pose la même rétroactive que `N` seul** : il
+  n'y a rien à réaffecter, et ne rien faire serait moins utile que faire ce que
+  le chiffre veut dire dans cet état.
+- **Le bruit se filtre par l'énergie.** Constat en vivant : sans
+  `SpeechDetector` (retiré en S64), le moteur transcrit aussi le bruit — « you »,
+  « Mowli. », des bribes nées d'un ventilateur. Un segment dont la plage ne
+  recouvre aucune plage où l'énergie a dépassé le seuil de parole est ÉCARTÉ,
+  avec sa trace : un rapport qui cite des mots que personne n'a prononcés est
+  pire qu'un rapport qui en manque. C'est la contrepartie que le retrait du
+  détecteur exigeait, et elle réutilise la carte d'énergie de S64.
+- **Deux artefacts de harnais, pas des défauts produit**, notés pour la
+  recette : `macpilot key --mods opt,cmd` presse et RELÂCHE les vraies touches
+  modificatrices à chaque frappe — ce qui ferme la fenêtre de parole entre deux
+  chiffres et fait perdre la marque attachée ; il faut forger les frappes avec
+  les flags tenus. Et le code 24 est `=`, pas `7` : l'ordre Carbon piège aussi
+  celui qui écrit le test.

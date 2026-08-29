@@ -33,6 +33,7 @@ enum ParoleSelfTest {
         scission(t)
         office(t)
         purete(t)
+        chiffres(t)
         print("\n── \(t.passed) vérifications passées, \(t.failed) échouées ──")
         return t.failed == 0
     }
@@ -230,5 +231,52 @@ enum ParoleSelfTest {
                 == m.rattacher(premierMot: s(13), fin: s(15)))
         check(t, "un événement hors fenêtre (volatil sans fenêtre) ne crée rien",
               { var v = FenetreDeParole.Machine(); return v.appliquer(.volatil(s(1))).isEmpty && !v.estOuverte }())
+    }
+
+    // MARK: - La table du § 6.7, ligne par ligne (S65)
+
+    private static func chiffres(_ t: Tally) {
+        print("\n· `⌥⌘ + chiffre` — la table de désambiguïsation d'ADR-0021")
+        typealias D = DecisionChiffre
+
+        // Ligne 1 : fenêtre ouverte, AUCUNE marque attachée.
+        check(t, "sans marque : 3 pose une rétroactive à T−3 s",
+              D.sens(rang: 3, shift: false, marqueAttachee: nil) == .retroactive(secondes: 3))
+        check(t, "sans marque : 9 aussi — la plage entière désigne un instant",
+              D.sens(rang: 9, shift: false, marqueAttachee: nil) == .retroactive(secondes: 9))
+        check(t, "sans marque : ⇧+3 pose la même rétroactive — rien à réaffecter",
+              D.sens(rang: 3, shift: true, marqueAttachee: nil) == .retroactive(secondes: 3))
+
+        // Ligne 2 : fenêtre ouverte, UNE marque attachée.
+        check(t, "avec marque : 2 applique l'intention « erreur »",
+              D.sens(rang: 2, shift: false, marqueAttachee: 1) == .intention(.error))
+        check(t, "avec marque : 6 applique « ne marche pas » — la palette va jusqu'à 6",
+              D.sens(rang: 6, shift: false, marqueAttachee: 1) == .intention(.broken))
+        check(t, "avec marque : 7 est hors palette, avalé, jamais une rétroactive",
+              D.sens(rang: 7, shift: false, marqueAttachee: 1) == .horsPalette(rang: 7))
+        check(t, "avec marque : ⇧+4 réaffecte le segment à la marque 4",
+              D.sens(rang: 4, shift: true, marqueAttachee: 1) == .reaffecter(marque: 4))
+
+        // `0`, dans les deux états.
+        check(t, "0 bascule en général, avec ou sans marque attachée",
+              D.sens(rang: 0, shift: false, marqueAttachee: nil) == .enGlobal
+                && D.sens(rang: 0, shift: false, marqueAttachee: 3) == .enGlobal)
+
+        // L'ENCHAÎNEMENT du § 6.7 : ⌥⌘ 3 2 = rétroactive puis « erreur ».
+        let premier = D.sens(rang: 3, shift: false, marqueAttachee: nil)
+        check(t, "⌥⌘ 3 2 : le 3 pose la rétroactive…",
+              premier == .retroactive(secondes: 3))
+        check(t, "…et le 2 qui suit vaut « erreur », parce qu'une marque est désormais attachée",
+              D.sens(rang: 2, shift: false, marqueAttachee: 4) == .intention(.error))
+
+        // Les codes PHYSIQUES : l'ordre Carbon n'est pas celui des chiffres.
+        check(t, "le rang vient du code physique — 5 vaut 23 et 6 vaut 22, pas l'inverse",
+              D.rang(deCode: 23) == 5 && D.rang(deCode: 22) == 6)
+        check(t, "0 vaut 29, et une touche qui n'est pas un chiffre ne rend rien",
+              D.rang(deCode: 29) == 0 && D.rang(deCode: 36) == nil)
+        check(t, "la palette et la décision partagent les mêmes codes — pas deux tables",
+              (1...6).allSatisfy { rang in
+                  Intention.forKeyCode(Intention.codePour(rang: rang))?.rawValue == rang
+              })
     }
 }

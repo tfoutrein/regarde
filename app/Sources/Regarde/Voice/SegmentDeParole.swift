@@ -23,6 +23,9 @@ struct SegmentDeParole: Codable, Sendable, Equatable {
     /// Le premier mot AFFINÉ par la carte d'énergie (S64) : le moteur date le
     /// sien au début de sa plage, silence de tête compris.
     var premierMot: SessionTime?
+    /// `true` quand l'utilisateur a réaffecté ce segment lui-même (§ 6.7) —
+    /// `attachment.auto` vaut alors `false` au manifeste.
+    var aLaMain = false
 
     var onset: SessionTime { premierMot ?? mots.first?.debut ?? plageDebut }
     var fin: SessionTime { mots.last?.fin ?? plageFin }

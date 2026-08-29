@@ -76,6 +76,9 @@ final class EventTap: @unchecked Sendable {
         case selectTool(MarkTool)
         case intention(Intention)
         case mutedDigit(Int)
+        /// Un chiffre sous ⌥⌘ — son SENS se décide au dernier moment, quand la
+        /// marque attachée à la fenêtre de parole est connue (§ 6.7).
+        case chiffre(rang: Int, shift: Bool)
     }
 
     // Les codes de touches ne sont plus ecrits en dur : voir `KeyboardLayout`.
@@ -337,25 +340,27 @@ final class EventTap: @unchecked Sendable {
             return nil
         }
 
-        // Palette d'intentions, ⌥⌘ + 1..6 — codes PHYSIQUES (ADR-0021). Resoudre le
-        // caractere « 1 » renverrait le pave numerique sur un clavier AZERTY, absent de
-        // tout MacBook.
+        // Les chiffres sous ⌥⌘ — codes PHYSIQUES (ADR-0021). Résoudre le
+        // caractère « 1 » renverrait le pavé numérique sur un clavier AZERTY,
+        // absent de tout MacBook.
         //
-        // Comme le changement d'outil, la regle suit l'application ACTIVE et non le
-        // curseur : une fleche tracee vers le bord laisse le pointeur dehors, et exiger
-        // qu'il soit dedans perdait l'intention frappee juste apres.
-        if OptionGate.shared.acceptsControlKeys(flags: flags) {
-            if let intention = Intention.forKeyCode(code) {
-                onControlKey?(.intention(intention))
-                return nil
-            }
-            // 7 a 9 sont AVALES sans effet, et non laisses passer : envoyer ⌥⌘7 a
-            // l'application testee en plein trace serait pire que de ne rien faire. Le
-            // HUD dit pourquoi, sans quoi l'absence d'effet passerait pour une panne.
-            if let rank = MuteDigit.rank(of: code) {
-                onControlKey?(.mutedDigit(rank))
-                return nil
-            }
+        // Le tap ne DÉCIDE pas : il transmet le rang et l'état de ⇧, et la
+        // décision se prend là où la marque attachée à la fenêtre de parole est
+        // connue (§ 6.7). Ici, un `switch` sur des entiers, aucune allocation —
+        // le budget du callback interdit le reste (R9).
+        //
+        // Comme le changement d'outil, la règle suit l'application ACTIVE et non
+        // le curseur : une flèche tracée vers le bord laisse le pointeur dehors,
+        // et exiger qu'il soit dedans perdait l'intention frappée juste après.
+        //
+        // Tous les chiffres sont AVALÉS, y compris ceux sans effet : envoyer
+        // ⌥⌘7 à l'application testée en plein tracé serait pire que de ne rien
+        // faire. Le HUD dit pourquoi, sans quoi l'absence d'effet passerait
+        // pour une panne.
+        if OptionGate.shared.acceptsControlKeys(flags: flags),
+           let rang = DecisionChiffre.rang(deCode: code) {
+            onControlKey?(.chiffre(rang: rang, shift: flags.contains(.maskShift)))
+            return nil
         }
 
         return Unmanaged.passUnretained(event)

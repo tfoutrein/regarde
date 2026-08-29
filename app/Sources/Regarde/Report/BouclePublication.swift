@@ -99,7 +99,7 @@ enum BouclePublication {
             let voix = Manifeste.Voice(
                 id: String(format: "v-%03d", i + 1),
                 attachedTo: marque,
-                attachment: .init(rule: regle, auto: true,
+                attachment: .init(rule: regle, auto: !segment.aLaMain,
                                   editedByUser: segment.texte != segment.texteBrut),
                 onset: segment.onset.seconds, end: segment.fin.seconds,
                 text: segment.texte, rawText: segment.texteBrut)

@@ -122,6 +122,11 @@ final class VoixCoordinator {
     var apresDrain: (() -> Void)?
     private var demandeEnCours = false
     private var annonceGlobaleMuette = false
+    /// La réaffectation MANUELLE du segment en cours (§ 6.7) : `⇧`+`N` vers la
+    /// marque N, `0` vers le général. Elle ÉCRASE tout et n'est jamais
+    /// recalculée (ADR-0011) — l'utilisateur qui se corrige a toujours raison
+    /// contre la règle du premier mot.
+    private var reaffectationManuelle: FenetreDeParole.Attachement?
 
     private init() {
         micro.surFermetureDOffice = { [weak self] raison in
@@ -346,6 +351,10 @@ final class VoixCoordinator {
     /// qui dit la réponse — c'est ce que la recette relit.
     private func rattacher(_ arrives: [SegmentDeParole], fenetre: FenetreDeParole.Fenetre) {
         var rattaches: [SegmentDeParole] = []
+        // Une réaffectation vaut pour la fenêtre où elle a été faite, et pour
+        // elle seule : elle se consomme ici.
+        let manuelle = reaffectationManuelle
+        reaffectationManuelle = nil
         // Le moteur date le premier mot d'une énonciation au DÉBUT de sa plage —
         // silence de tête compris, jusqu'à l'origine de l'audio. Pour la règle
         // du premier mot (ADR-0011), c'est trop tôt de plusieurs secondes : la
@@ -354,6 +363,23 @@ final class VoixCoordinator {
         let plages = ecoute.plagesParlees(cadence: cadence)
         let origine = origineAudio?.seconds ?? 0
         for var segment in arrives {
+            // LE FILTRE DU BRUIT. Sans SpeechDetector (retiré en S64 parce
+            // qu'il avalait des phrases entières), le moteur transcrit aussi
+            // le bruit : « you », « Mowli. », des bribes prononcées par un
+            // ventilateur. Un segment dont la plage ne recouvre AUCUNE plage
+            // où l'énergie a dépassé le seuil de parole n'a pas été dit — il a
+            // été rêvé. On le jette, et le journal le dit : un rapport qui
+            // cite des mots que personne n'a prononcés est pire qu'un rapport
+            // qui en manque.
+            let recouvre = plages.contains {
+                origine + $0.fin >= segment.plageDebut.seconds
+                    && origine + $0.debut <= segment.plageFin.seconds
+            }
+            if !plages.isEmpty, !recouvre {
+                Journal.event(.system, "parole — segment écarté, aucune énergie de parole sur sa plage "
+                              + "[\(segment.plageDebut) → \(segment.plageFin)] : « \(segment.texteBrut) »")
+                continue
+            }
             var premierMot = segment.onset
             if let plage = plages.first(where: {
                 origine + $0.fin >= segment.plageDebut.seconds && origine + $0.debut <= segment.plageFin.seconds
@@ -361,12 +387,15 @@ final class VoixCoordinator {
                 let parle = SessionTime(seconds: origine + plage.debut)
                 if parle > premierMot { premierMot = parle }
             }
-            let attachement = machine.rattacher(premierMot: premierMot, fin: segment.fin)
+            // La main de l'utilisateur écrase la règle, et n'est jamais
+            // recalculée : c'est LE point d'ADR-0011 sur `manual`.
+            let attachement = manuelle ?? machine.rattacher(premierMot: premierMot, fin: segment.fin)
             segment.attachement = attachement
+            segment.aLaMain = manuelle != nil
             segment.premierMot = premierMot
             rattaches.append(segment)
             let extrait = segment.texteBrut
-            let quand = "premier mot à \(Self.mmss(premierMot))"
+            let quand = (manuelle != nil ? "à la main, " : "") + "premier mot à \(Self.mmss(premierMot))"
             switch attachement {
             case .marque(let n, let regle):
                 Journal.event(.system, "parole — segment → marque \(n) (\(Self.libelle(regle)), \(quand)) : « \(extrait) »")
@@ -390,6 +419,28 @@ final class VoixCoordinator {
     private func arreterLeTic() {
         tic?.invalidate()
         tic = nil
+    }
+
+    // MARK: - La réaffectation à la main (S65, § 6.7)
+
+    /// `⇧`+`N` : le segment de parole en cours part à la marque N.
+    func reaffecter(marque: Int) {
+        guard machine.estOuverte else { return }
+        reaffectationManuelle = .marque(marque, regle: .fenetreDeParole)
+        OverlayController.shared.pulser(marque: marque)
+        Journal.event(.system, "parole — segment en cours réaffecté à la marque \(marque)")
+        HUDWindow.shared.announce("Segment → marque \(marque)",
+                                  detail: "réaffectation manuelle", duration: 2)
+    }
+
+    /// `0` : le segment de parole en cours devient un commentaire général.
+    func basculerEnGlobal() {
+        guard machine.estOuverte else { return }
+        reaffectationManuelle = .global(regle: .gesteGlobal)
+        OverlayController.shared.pulser(marque: nil)
+        Journal.event(.system, "parole — segment en cours basculé en commentaire général")
+        HUDWindow.shared.announce("Commentaire général",
+                                  detail: "ce segment ne vise aucune marque", duration: 2)
     }
 
     // MARK: - La fin de session (S66)

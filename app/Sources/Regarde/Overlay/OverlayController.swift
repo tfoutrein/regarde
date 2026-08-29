@@ -127,6 +127,8 @@ final class OverlayController {
                                                   detail: "Trace d'abord, qualifie ensuite",
                                                   duration: 2)
                     }
+                case .chiffre(let rang, let shift):
+                    self.chiffre(rang: rang, shift: shift)
                 case .mutedDigit(let rank):
                     // Le chiffre a été avalé : la palette s'arrête à 6 (ADR-0021).
                     Journal.event(.key, "chiffre \(rank) sans effet — la palette s'arrête à 6")
@@ -185,6 +187,83 @@ final class OverlayController {
         }
         // Le mode éclair publie au relâchement du modificateur, et lui seul le sait.
         SessionCoordinator.shared.modifierChanged(armed: armed || stroking)
+    }
+
+    /// `⌥⌘ + chiffre` : le sens se décide ICI, où la marque attachée à la
+    /// fenêtre de parole est connue (§ 6.7).
+    private func chiffre(rang: Int, shift: Bool) {
+        let voix = VoixCoordinator.shared
+        // La marque attachée : celle de la fenêtre de parole si elle en a une,
+        // sinon — voix indisponible, micro refusé — la dernière posée, qui en
+        // est l'approximation exacte tant qu'aucune fenêtre ne peut contenir
+        // autre chose (le commentaire de MarkStore.apply le disait déjà).
+        let attachee = voix.machine.marqueCourante
+            ?? (voix.disponible ? nil : MarkStore.shared.marks.last?.number)
+        // Le sens choisi est journalisé AVEC son discriminant : sans lui, un
+        // chiffre qui ne fait pas ce qu'on attendait est indébogable — c'est
+        // ce qui a fait chercher une heure pendant S65.
+        let sens = DecisionChiffre.sens(rang: rang, shift: shift, marqueAttachee: attachee)
+        Journal.event(.key, "⌥⌘\(shift ? "⇧" : "")\(rang) · marque attachée "
+                      + (attachee.map { "\($0)" } ?? "aucune") + " → " + Self.libelle(sens))
+        switch sens {
+        case .retroactive(let secondes):
+            let point = CGEvent(source: nil)?.location ?? .zero
+            if let mark = MarkStore.shared.poserRetroactive(
+                secondes: secondes, at: point, geometry: geometry) {
+                Journal.event(.mark, "\(mark.number) · rétroactive à T−\(secondes) s · display \(mark.displayID)")
+                voix.trace(marque: mark.number, t: mark.t)
+                pulser(marque: voix.machine.marqueCourante)
+                redraw(mark.displayID)
+                HUDWindow.shared.announce("Marque \(mark.number) — T−\(secondes) s",
+                                          detail: "l'image vient de l'instant désigné", duration: 2)
+                Task.detached(priority: .userInitiated) {
+                    do { try await MarkCapture.shared.capture(mark: mark) } catch {
+                        await MainActor.run { Journal.warn(.capture, "marque \(mark.number) — \(error)") }
+                    }
+                }
+            } else {
+                Journal.warn(.mark, "rétroactive T−\(secondes) s refusée — le curseur n'est sur aucun écran annotable")
+            }
+        case .intention(let intention):
+            switch MarkStore.shared.apply(intention) {
+            case .applied(let number, let intention):
+                Journal.event(.mark, "\(number) · \(intention.label)")
+                HUDWindow.shared.announce("Marque \(number) — \(intention.label)",
+                                          detail: "⌥⌘ + 1..6", duration: 2)
+            case .noMark, .muted:
+                Journal.warn(.mark, "intention \(intention.rawValue) sans marque à qualifier")
+                HUDWindow.shared.announce("Aucune marque à qualifier",
+                                          detail: "Trace d'abord, qualifie ensuite", duration: 2)
+            }
+        case .horsPalette(let rang):
+            Journal.event(.key, "chiffre \(rang) sans effet — la palette s'arrête à 6")
+            HUDWindow.shared.announce("\(rang) — hors palette",
+                                      detail: "Les intentions vont de 1 à 6", duration: 2)
+        case .reaffecter(let marque):
+            guard MarkStore.shared.marks.contains(where: { $0.number == marque }) else {
+                Journal.warn(.mark, "réaffectation vers la marque \(marque) — elle n'existe pas")
+                HUDWindow.shared.announce("Aucune marque \(marque)",
+                                          detail: "la réaffectation vise une marque posée", duration: 2)
+                return
+            }
+            voix.reaffecter(marque: marque)
+        case .enGlobal:
+            voix.basculerEnGlobal()
+        case .aucun:
+            break
+        }
+    }
+
+    /// Le sens d'un chiffre, en français — le journal se lit sans le code.
+    private static func libelle(_ sens: DecisionChiffre.Sens) -> String {
+        switch sens {
+        case .retroactive(let n): "marque rétroactive à T−\(n) s"
+        case .intention(let i): "intention « \(i.label) »"
+        case .horsPalette(let n): "\(n) hors palette"
+        case .reaffecter(let m): "réaffectation à la marque \(m)"
+        case .enGlobal: "bascule en commentaire général"
+        case .aucun: "aucun effet"
+        }
     }
 
     private func scheduleHide() {
