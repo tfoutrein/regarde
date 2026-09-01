@@ -353,3 +353,28 @@ moteur a commises sur cette machine pendant S62 à S65, relevées au journal.
   la cible s'est figée sur l'écran externe entier, la confirmation n'a pas
   pris. Les briques restent vérifiées par leurs autotests purs et par les
   observations partielles ; le reste appartient à la recette (S74), à la main.
+
+## 16. S69 — la sonde du clavier : le § 7.4 tient, à une ligne près
+
+Le § 7.4 affirmait trois choses que personne n'avait vérifiées sur cette
+machine. Les trois sont vraies, et la troisième tenait à une seule ligne.
+
+- **Aucune fenêtre ne devient clé.** La fenêtre du champ répond `false` à
+  `canBecomeKey`, n'est jamais ordonnée à l'écran, et `NSApp.keyWindow` ne
+  bouge pas pendant toute la saisie. C'est le critère : une fenêtre qui prend
+  le focus envoie `resignKey` à l'application testée — popovers fermés,
+  curseur figé, `blur` qui suspend les `requestAnimationFrame` — et cette
+  régression serait pire que l'absence de la fonction.
+- **`NSEvent(cgEvent:)` reconstruit fidèlement** : le code ANSI `a` rend le
+  caractère « q », donc la DISPOSITION est respectée sans qu'on s'en occupe.
+- **Les touches mortes composent** : `^` puis `e` donnent « ê », et la
+  suppression arrière fonctionne — la machine à états de Cocoa travaille pour
+  nous, exactement comme le § 7.4 le promettait.
+
+**La ligne qui manquait** : `champ.inputContext?.activate()`. Sans elle, tout
+est correct — l'événement porte le bon caractère, le champ est premier
+répondant, le contexte de saisie existe — et RIEN ne s'écrit : le contexte
+n'est pas *courant*, parce qu'aucune fenêtre n'est clé. `activate()` le rend
+courant sans rien voler à personne. Le contexte est désactivé à la fin de
+chaque saisie : le laisser actif serait garder une main sur le clavier du
+système alors qu'on n'écrit plus.

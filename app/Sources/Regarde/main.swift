@@ -69,6 +69,10 @@ if CommandLine.arguments.contains("--lexique-test") {
     exit(LexiqueSelfTest.run() ? 0 : 1)
 }
 
+if CommandLine.arguments.contains("--saisie-test") {
+    exit(MainActor.assumeIsolated { SaisieSelfTest.run() } ? 0 : 1)
+}
+
 if CommandLine.arguments.contains("--parole-test") {
     exit(ParoleSelfTest.run() ? 0 : 1)
 }
