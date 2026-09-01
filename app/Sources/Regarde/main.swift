@@ -73,6 +73,10 @@ if CommandLine.arguments.contains("--saisie-test") {
     exit(MainActor.assumeIsolated { SaisieSelfTest.run() } ? 0 : 1)
 }
 
+if CommandLine.arguments.contains("--revue-test") {
+    exit(RevueSelfTest.run() ? 0 : 1)
+}
+
 if CommandLine.arguments.contains("--parole-test") {
     exit(ParoleSelfTest.run() ? 0 : 1)
 }

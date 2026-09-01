@@ -342,9 +342,9 @@ final class EventTap: @unchecked Sendable {
         // ne bouge pas. Et la règle du lot 2 (défaut n°11, le ⌘Z volé) tient :
         // aucun ⏎ n'est avalé hors de la fenêtre, aucun ⏎ modifié ne l'est
         // jamais — la décision est pure et l'autotest la tient cas par cas.
-        if PorteurRetour.decision(graceActive: PorteurRetour.graceActive,
-                                  keyCode: code, flags: flags) {
-            PorteurRetour.porter()
+        if let action = PorteurRetour.decision(graceActive: PorteurRetour.graceActive,
+                                               keyCode: code, flags: flags) {
+            PorteurRetour.executer(action)
             return nil
         }
 

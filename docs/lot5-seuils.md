@@ -419,3 +419,38 @@ commentaire mais une vérification : `--marks-test` exige désormais que TOUS le
 `MarkTool.allCases` aient une touche résolue, distincte, qui rend bien leur
 outil — et les comparaisons se font contre `allCases.count`, jamais contre un
 nombre écrit à la main.
+
+## 18. S71 — le bandeau et la revue, et pourquoi ils réécrivent
+
+- **Le bandeau du § 2.2 est complet** : `feedback #N · M marques · K
+  commentaires généraux · J jetons · copié`, puis quatre actions et quatre
+  seulement — `⏎ Envoyer · R Revoir · ⌫ Annuler · V Voir les images`. Ce qui
+  n'y est pas ne se fait pas dans les huit secondes.
+- **Le critère du lot 2 s'étend aux quatre touches** : hors de la fenêtre de
+  grâce, RIEN n'est avalé ; sous ⌘, ⇧ ou ⌥, la touche appartient à
+  l'application. `R` et `V` se résolvent par CARACTÈRE (§ 6.6bis) — ce sont des
+  lettres — et restent inertes si la disposition ne les rend pas, plutôt que
+  d'atterrir ailleurs.
+- **La revue RÉÉCRIT, elle ne prépare pas.** La publication a déjà eu lieu
+  quand `R` s'ouvre : une correction réécrit les quatre fichiers du dossier
+  publié, au même numéro, au même identifiant, au même endroit. Le numéro ne
+  bouge JAMAIS — il a pu être prononcé à voix haute, et un feedback #42 qui
+  deviendrait #43 en revue trahirait tout ce qu'ADR-0013 protège.
+- **Supprimer laisse un TROU** : les numéros restants ne glissent pas — 1 et 3,
+  jamais 1 et 2.
+- **Le brut survit à l'édition** : `text` change, `rawText` non, et
+  `editedByUser` passe à vrai pour que le rapport puisse le dire. Remettre le
+  texte d'origine le remet à faux. `transcript.txt` suit le brut — donc une
+  édition ne le touche pas —, mais une SUPPRESSION s'y voit, sans quoi il
+  citerait un segment que le rapport ne connaît plus.
+- **Vider un champ supprime** : un geste plutôt qu'un bouton de plus. Vider la
+  note d'une marque retire la marque ; vider un segment retire le segment.
+- **`⎋` referme sans rien changer** : une revue qu'on ouvre par curiosité ne
+  doit jamais modifier un rapport.
+- **`⌫` annule la publication** : le dossier part, l'index NON — il est
+  append-only (S47), et réécrire un journal pour effacer une ligne est
+  exactement ce qu'un journal append-only interdit. `state.jsonl` reçoit
+  `cancelled` : qui relit sait que le numéro a existé et qu'il a été retiré.
+- **Le panneau a sa fenêtre CLÉ**, et c'est ici légitime : la session est
+  terminée, la cible relâchée, le calque retiré — prendre le focus ne vole plus
+  rien à personne. C'est le seul moment du produit où une fenêtre peut l'être.

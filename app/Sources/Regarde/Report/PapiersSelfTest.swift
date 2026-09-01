@@ -99,17 +99,32 @@ enum PapiersSelfTest {
     // MARK: - Le porteur du ⏎, cas par cas
 
     private static func porteur(_ t: Tally) {
-        print("\n· Le porteur du ⏎ — la décision, pure")
-        check(t, "⏎ nu dans la grâce → porté",
-              PorteurRetour.decision(graceActive: true, keyCode: 36, flags: []))
-        check(t, "⏎ HORS de la grâce → passe intact — le critère du plan",
-              !PorteurRetour.decision(graceActive: false, keyCode: 36, flags: []))
-        check(t, "⌘⏎ dans la grâce → passe — un ⏎ modifié appartient à l'application",
-              !PorteurRetour.decision(graceActive: true, keyCode: 36, flags: .maskCommand))
-        check(t, "⇧⏎ dans la grâce → passe",
-              !PorteurRetour.decision(graceActive: true, keyCode: 36, flags: .maskShift))
-        check(t, "une autre touche dans la grâce → passe",
-              !PorteurRetour.decision(graceActive: true, keyCode: 1, flags: []))
+        print("\n· Le bandeau de fin — la décision, pure (S54 puis S71)")
+        // Des codes EXPLICITES : la règle se juge sans dépendre de la
+        // disposition de la machine qui exécute le test.
+        let r: Int64 = 15, v: Int64 = 9
+        func sens(_ grace: Bool, _ code: Int64, _ flags: CGEventFlags = []) -> PorteurRetour.Action? {
+            PorteurRetour.decision(graceActive: grace, keyCode: code, flags: flags,
+                                   codeR: r, codeV: v)
+        }
+        check(t, "⏎ nu dans la grâce → porter", sens(true, 36) == .porter)
+        check(t, "R nu dans la grâce → revoir", sens(true, r) == .revoir)
+        check(t, "⌫ nu dans la grâce → annuler", sens(true, 51) == .annuler)
+        check(t, "V nu dans la grâce → voir les images", sens(true, v) == .voirImages)
+
+        // LE CRITÈRE DU PLAN, étendu aux quatre touches : hors de la grâce,
+        // RIEN n'est avalé. Le lot 2 a payé pour l'apprendre avec ⌘Z.
+        check(t, "hors de la grâce, AUCUNE des quatre n'est avalée",
+              [36, r, 51, v].allSatisfy { sens(false, $0) == nil })
+        check(t, "⌘, ⇧ ou ⌥ rendent la touche à l'application, pour les quatre",
+              [CGEventFlags.maskCommand, .maskShift, .maskAlternate].allSatisfy { f in
+                  [36, r, 51, v].allSatisfy { sens(true, $0, f) == nil }
+              })
+        check(t, "une touche qui n'est pas du bandeau passe intacte",
+              sens(true, 1) == nil && sens(true, 0) == nil)
+        check(t, "sans disposition résolue, R et V sont inertes plutôt que faux",
+              PorteurRetour.decision(graceActive: true, keyCode: r, flags: [],
+                                     codeR: nil, codeV: nil) == nil)
 
         // La grâce elle-même : armée, active ; échue, inactive ; désarmée, morte.
         MainActor.assumeIsolated { PorteurRetour.armer(phrase: "x", duree: 0.2) }

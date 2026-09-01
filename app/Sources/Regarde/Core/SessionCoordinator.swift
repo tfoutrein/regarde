@@ -759,7 +759,17 @@ final class SessionCoordinator {
             HistoriqueFeedbacks.shared.ajouter(
                 numero: resultat.attribution.numero,
                 projet: choix.chemin, phrase: resultat.phrase)
-            PorteurRetour.armer(phrase: resultat.phrase, projet: choix.chemin)
+            // Le bandeau du § 2.2 : ce qui vient d'être écrit, chiffré.
+            let generaux = (brouillon.session.voice?.count ?? 0)
+            let jetons = brouillon.budget.framesTokens.crop
+            var bandeau = "feedback #\(resultat.attribution.numero) · "
+                + "\(donnees.marques.count) marque\(donnees.marques.count > 1 ? "s" : "")"
+            if generaux > 0 {
+                bandeau += " · \(generaux) commentaire\(generaux > 1 ? "s généraux" : " général")"
+            }
+            bandeau += " · \(jetons) jetons · copié"
+            PorteurRetour.armer(phrase: resultat.phrase, projet: choix.chemin,
+                                bandeau: bandeau, dossier: resultat.attribution.dossier)
             // Et la métrique de session (S55) : spontanée sauf banc, avec la
             // durée du raccourci de fin au presse-papiers — le critère n°4.
             Metriques.enregistrer([

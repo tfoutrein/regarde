@@ -41,31 +41,103 @@ enum PorteurRetour {
         Date().timeIntervalSince1970 < echeance.withLock { $0 }
     }
 
+    /// Ce que la publication vient d'écrire — la revue et l'annulation en ont
+    /// besoin, et seule la fenêtre de grâce peut y toucher.
+    @MainActor static private(set) var dossierPublie: URL?
+    @MainActor static private(set) var racineProjet: URL?
+
     @MainActor
-    static func armer(phrase: String, duree: TimeInterval = 8, projet: String? = nil) {
+    static func armer(phrase: String, duree: TimeInterval = 8, projet: String? = nil,
+                      bandeau: String? = nil, dossier: URL? = nil) {
         phrasePortee.withLock { $0 = phrase }
         projetPorte.withLock { $0 = projet }
         echeance.withLock { $0 = Date().timeIntervalSince1970 + duree }
-        HUDWindow.shared.announce("⏎ Envoyer à l'agent",
-                                  detail: "pendant \(Int(duree)) s — sinon la phrase reste au presse-papiers",
+        dossierPublie = dossier
+        racineProjet = projet.map { URL(fileURLWithPath: $0, isDirectory: true) }
+        // Le bandeau du § 2.2 : ce qui a été écrit, puis les quatre actions.
+        HUDWindow.shared.announce(bandeau ?? "feedback copié",
+                                  detail: "⏎ Envoyer · R Revoir · ⌫ Annuler · V Voir les images",
                                   duration: duree)
     }
 
     static func desarmer() { echeance.withLock { $0 = 0 } }
 
-    /// LA décision, pure. `true` = le tap avale ce ⏎ et le porteur s'en charge.
+    /// Ce que le bandeau propose (§ 2.2, § 6.6) — quatre actions, et rien
+    /// d'autre : ce qui n'y est pas ne se fait pas dans les huit secondes.
+    enum Action: Equatable, Sendable {
+        case porter        // ⏎ — envoyer à l'agent
+        case revoir        // R — ouvrir la revue
+        case annuler       // ⌫ — retirer le feedback publié
+        case voirImages    // V — ouvrir le dossier des images
+    }
+
+    /// LA décision, pure. `nil` = le tap laisse passer la touche.
     ///
-    /// Le ⏎ doit être NU : un ⌘⏎ ou un ⇧⏎ appartient à l'application qui le
-    /// reçoit — l'avaler recréerait le défaut du ⌘Z.
-    static func decision(graceActive: Bool, keyCode: Int64, flags: CGEventFlags) -> Bool {
-        guard graceActive, keyCode == 36 else { return false }
+    /// La touche doit être NUE : un ⌘R ou un ⇧⏎ appartient à l'application qui
+    /// le reçoit — l'avaler recréerait le défaut du ⌘Z (lot 2, défaut n°11).
+    /// Et hors de la fenêtre de grâce, RIEN n'est avalé : c'est le critère du
+    /// plan, et il vaut pour les quatre touches, pas seulement pour ⏎.
+    static func decision(graceActive: Bool, keyCode: Int64,
+                         flags: CGEventFlags) -> Action? {
+        guard graceActive else { return nil }
         let modificateurs: CGEventFlags = [.maskCommand, .maskShift, .maskAlternate,
                                            .maskControl, .maskSecondaryFn]
-        return flags.intersection(modificateurs).isEmpty
+        guard flags.intersection(modificateurs).isEmpty else { return nil }
+        switch keyCode {
+        case 36: return .porter                              // ⏎
+        case KeyboardLayout.shared.code(for: "r"): return .revoir
+        case 51: return .annuler                             // ⌫
+        case KeyboardLayout.shared.code(for: "v"): return .voirImages
+        default: return nil
+        }
+    }
+
+    /// La même décision, sur des codes EXPLICITES — pour que l'autotest juge la
+    /// règle sans dépendre de la disposition de la machine qui l'exécute.
+    static func decision(graceActive: Bool, keyCode: Int64, flags: CGEventFlags,
+                         codeR: Int64?, codeV: Int64?) -> Action? {
+        guard graceActive else { return nil }
+        let modificateurs: CGEventFlags = [.maskCommand, .maskShift, .maskAlternate,
+                                           .maskControl, .maskSecondaryFn]
+        guard flags.intersection(modificateurs).isEmpty else { return nil }
+        if keyCode == 36 { return .porter }
+        if keyCode == 51 { return .annuler }
+        if let codeR, keyCode == codeR { return .revoir }
+        if let codeV, keyCode == codeV { return .voirImages }
+        return nil
     }
 
     /// Appelé du thread du tap quand la décision a dit oui : désarme (un seul
     /// port par grâce) et passe la main au MainActor pour le geste.
+    /// Exécute l'action choisie au bandeau. Le désarmement est immédiat : une
+    /// grâce ne sert qu'une fois.
+    static func executer(_ action: Action) {
+        desarmer()
+        switch action {
+        case .porter:
+            let phrase = phrasePortee.withLock { $0 }
+            let projet = projetPorte.withLock { $0 }
+            Task { @MainActor in injecter(phrase, projet: projet) }
+        case .revoir:
+            Task { @MainActor in
+                Journal.event(.system, "bandeau — R : ouverture de la revue")
+                PanneauRevue.presenter()
+            }
+        case .annuler:
+            Task { @MainActor in Revue.annulerLaPublication() }
+        case .voirImages:
+            Task { @MainActor in
+                guard let dossier = dossierPublie else {
+                    Journal.warn(.system, "bandeau — V : aucun dossier publié à ouvrir")
+                    return
+                }
+                let frames = dossier.appendingPathComponent("frames", isDirectory: true)
+                Journal.event(.system, "bandeau — V : \(frames.path)")
+                NSWorkspace.shared.open(frames)
+            }
+        }
+    }
+
     static func porter() {
         desarmer()
         let phrase = phrasePortee.withLock { $0 }
