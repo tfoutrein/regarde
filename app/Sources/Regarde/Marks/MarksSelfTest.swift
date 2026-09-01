@@ -25,6 +25,7 @@ enum MarksSelfTest {
     static func run() -> Bool {
         let t = Tally()
         print("── Autotest des marques (S20 à S23) ──\n")
+        noteTexte(t)
 
         codes(t)
         numbering(t)
@@ -89,8 +90,8 @@ enum MarksSelfTest {
                 resolved += 1
             }
         }
-        check(t, "les quatre outils sont résolus sur la disposition courante",
-              resolved == 4, "→ \(resolved)/4")
+        check(t, "TOUS les outils sont résolus sur la disposition courante",
+              resolved == MarkTool.allCases.count, "→ \(resolved)/\(MarkTool.allCases.count)")
 
         // Le cache ne doit dépendre d'AUCUNE déclaration préalable : cet autotest ne
         // lance pas `KeyboardLayout.start(resolving:)`, et c'est précisément le cas qui
@@ -99,8 +100,8 @@ enum MarksSelfTest {
         for tool in MarkTool.allCases {
             if let code = KeyboardLayout.keyCode(for: tool.key) { distinct.insert(code) }
         }
-        check(t, "les quatre touches d'outil sont distinctes",
-              distinct.count == 4, "→ \(distinct.sorted())")
+        check(t, "toutes les touches d'outil sont distinctes",
+              distinct.count == MarkTool.allCases.count, "→ \(distinct.sorted())")
     }
 
     // MARK: - Numérotation
@@ -228,7 +229,9 @@ enum MarksSelfTest {
               MarkShape.highlight(NormRect(bounding: [])).rendering
               != MarkShape.rect(NormRect(bounding: [])).rendering)
 
-        // Les quatre outils produisent bien quatre formes distinctes.
+        // Chaque outil produit une forme distincte — comparé à `allCases`,
+        // jamais à un nombre écrit en dur : le cinquième outil (S70) a fait
+        // rougir trois tests qui comptaient jusqu'à quatre.
         let a = NormPoint(x: 0.2, y: 0.2), b = NormPoint(x: 0.6, y: 0.5)
         var produced = Set<String>()
         for tool in MarkTool.allCases {
@@ -238,8 +241,8 @@ enum MarksSelfTest {
             }
             produced.insert("\(shape)".prefix(while: { $0 != "(" }).description)
         }
-        check(t, "les quatre outils produisent quatre formes distinctes",
-              produced.count == 4, "→ \(produced.sorted())")
+        check(t, "chaque outil produit une forme distincte",
+              produced.count == MarkTool.allCases.count, "→ \(produced.sorted())")
 
         // Le point est le seul à ne rien exiger du geste : c'est sa raison d'être.
         check(t, "le point se pose sans amplitude",
@@ -610,5 +613,96 @@ enum MarksSelfTest {
         check(t, "et ne fait pas bouger fallbackCount",
               clock.fallbackCount == replisAvantEclair,
               "\(clock.fallbackCount)")
+    }
+
+    // MARK: - La note texte (S70)
+
+    private static func noteTexte(_ t: Tally) {
+        print("· La note texte — l'outil, la forme, le chemin")
+
+        // LE TEST QUI MANQUAIT : chaque outil doit avoir sa touche résolue.
+        // Sans lui, ajouter `.text` laissait ⌥⌘T muet, sans erreur ni trace —
+        // et c'est arrivé.
+        ToolKeyCache.shared.refresh()
+        let muets = MarkTool.allCases.filter { ToolKeyCache.shared.code(pour: $0) < 0 }
+        check(t, "TOUS les outils ont leur touche résolue — aucun n'est muet",
+              muets.isEmpty, muets.isEmpty ? "" : "muets : \(muets.map(\.label))")
+        let codes = MarkTool.allCases.map { ToolKeyCache.shared.code(pour: $0) }
+        check(t, "…et deux outils ne partagent jamais la même touche",
+              Set(codes).count == codes.count)
+        check(t, "le code résolu rend bien son outil",
+              MarkTool.allCases.allSatisfy {
+                  ToolKeyCache.shared.tool(forCode: ToolKeyCache.shared.code(pour: $0)) == $0
+              })
+
+        // La forme naît VIDE : le texte arrive à la frappe.
+        let ancre = NormPoint(x: 0.4, y: 0.6)
+        let forme = MarkGeometry.shape(for: .text, from: ancre, to: ancre,
+                                       in: CGSize(width: 1000, height: 800))
+        if case .text(let p, let texte)? = forme {
+            check(t, "l'outil texte pose une ancre et un texte VIDE", p == ancre && texte.isEmpty)
+        } else {
+            check(t, "l'outil texte pose une ancre et un texte vide", false, "\(String(describing: forme))")
+        }
+
+        // Le chemin : cartouche + glyphes, une seule fonction pour le calque
+        // ET la gravure.
+        let taille = CGSize(width: 1000, height: 800)
+        let vide = MarkGeometry.path(for: .text(ancre, ""), in: taille, lineWidth: 3)
+        let court = MarkGeometry.path(for: .text(ancre, "ok"), in: taille, lineWidth: 3)
+        let long = MarkGeometry.path(for: .text(ancre, "une note beaucoup plus longue"), in: taille, lineWidth: 3)
+        check(t, "une note vide a quand même sa cartouche", !vide.isEmpty)
+        check(t, "le texte ÉLARGIT la cartouche — les glyphes sont dans le chemin",
+              long.boundingBox.width > court.boundingBox.width
+                && court.boundingBox.width >= vide.boundingBox.width)
+        check(t, "la cartouche part de l'ancre et s'étend vers le haut-droite",
+              long.boundingBox.minX >= ancre.local(in: taille).x - 0.5
+                && long.boundingBox.minY >= ancre.local(in: taille).y - 0.5)
+        let multi = MarkGeometry.path(for: .text(ancre, "deux\nlignes"), in: taille, lineWidth: 3)
+        check(t, "deux lignes donnent une cartouche plus HAUTE",
+              multi.boundingBox.height > court.boundingBox.height)
+        check(t, "la taille suit lineWidth — lisible sur un recadrage comme en pleine résolution",
+              MarkGeometry.path(for: .text(ancre, "ok"), in: taille, lineWidth: 12)
+                .boundingBox.width > court.boundingBox.width)
+
+        // Le cycle : compléter, vider, abandonner.
+        let store = MarkStore.shared
+        store.reset()
+        store.tool = .text
+        store.beginStroke(at: CGPoint(x: 100, y: 100), geometry: geometrieDEssai())
+        store.extendStroke(to: CGPoint(x: 100, y: 100), geometry: geometrieDEssai())
+        let posee = store.endStroke()
+        check(t, "le relâchement pose l'ancre, la marque existe déjà", posee != nil)
+        let complete = store.completerTexte("  il manque un état vide  ")
+        check(t, "compléter donne son texte à la marque, espaces rognés",
+              { if case .text(_, let x)? = complete?.shape { return x == "il manque un état vide" }
+                return false }())
+        store.beginStroke(at: CGPoint(x: 200, y: 200), geometry: geometrieDEssai())
+        store.extendStroke(to: CGPoint(x: 200, y: 200), geometry: geometrieDEssai())
+        _ = store.endStroke()
+        let numeroAvant = store.marks.count
+        check(t, "une note VIDE n'est pas posée, et son numéro repart au pot",
+              store.completerTexte("   ") == nil && store.marks.count == numeroAvant - 1)
+        store.beginStroke(at: CGPoint(x: 300, y: 300), geometry: geometrieDEssai())
+        store.extendStroke(to: CGPoint(x: 300, y: 300), geometry: geometrieDEssai())
+        _ = store.endStroke()
+        check(t, "Échap abandonne la note et rend son numéro",
+              store.abandonnerNote() && store.marks.count == 1)
+        // Une flèche par-dessus : abandonner ne doit alors RIEN retirer.
+        store.tool = .arrow
+        store.beginStroke(at: CGPoint(x: 400, y: 400), geometry: geometrieDEssai())
+        store.extendStroke(to: CGPoint(x: 500, y: 500), geometry: geometrieDEssai())
+        _ = store.endStroke()
+        check(t, "abandonner quand la dernière marque n'est PAS une note ne fait rien",
+              !store.abandonnerNote() && store.marks.count == 2)
+        store.reset()
+        store.tool = .arrow
+    }
+
+    /// Un écran d'essai, pour poser des marques sans dépendre de la machine.
+    private static func geometrieDEssai() -> ScreenGeometry {
+        ScreenGeometry(screens: [ScreenInfo(displayID: 1,
+                                            cocoaFrame: CGRect(x: 0, y: 0, width: 1000, height: 800),
+                                            scale: 2)])
     }
 }

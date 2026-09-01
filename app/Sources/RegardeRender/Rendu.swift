@@ -147,6 +147,12 @@ public enum Rendu {
 
             // Ce qui a été DIT, avant la géométrie : c'est l'intention de
             // l'utilisateur, le rectangle n'en est que la localisation.
+            // La NOTE écrite précède la parole comme la parole précède la
+            // géométrie : c'est ce que l'utilisateur a voulu DIRE, quel que
+            // soit le canal qu'il avait sous la main (§ 7.4).
+            if let note = marque.text, !note.isEmpty {
+                s += citation(note) + "\n\n"
+            }
             let paroles = (marque.voice ?? []).sorted { $0.onset < $1.onset }
             for segment in paroles {
                 s += citation(segment.text) + "\n"

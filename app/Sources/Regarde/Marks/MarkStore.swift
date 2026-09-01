@@ -220,6 +220,45 @@ final class MarkStore {
         return mark
     }
 
+    // MARK: - La note texte (S70)
+
+    /// Achève la dernière marque en lui donnant son texte. `nil` si la
+    /// dernière marque n'est pas une note — l'appelant s'est trompé de mode.
+    @discardableResult
+    func completerTexte(_ texte: String) -> Mark? {
+        guard let index = marks.indices.last,
+              case .text(let ancre, _) = marks[index].shape else { return nil }
+        // Une note vide n'est pas une note : elle laisserait une cartouche
+        // muette dans le rapport. On la retire, et son numéro repart au pot —
+        // même règle qu'un tracé abandonné (ADR-0013).
+        let propre = texte.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !propre.isEmpty else {
+            marks.removeLast()
+            nextNumber -= 1
+            return nil
+        }
+        marks[index].shape = .text(ancre, propre)
+        return marks[index]
+    }
+
+    /// Met à jour le texte de la note en cours, pour que le calque le montre
+    /// pendant la frappe.
+    func mettreAJourLaNote(_ texte: String) {
+        guard let index = marks.indices.last,
+              case .text(let ancre, _) = marks[index].shape else { return }
+        marks[index].shape = .text(ancre, texte)
+    }
+
+    /// Retire la note en cours de saisie — Échap.
+    @discardableResult
+    func abandonnerNote() -> Bool {
+        guard let index = marks.indices.last,
+              case .text = marks[index].shape else { return false }
+        marks.remove(at: index)
+        nextNumber -= 1
+        return true
+    }
+
     // MARK: - Intentions (S23)
 
     /// Résultat d'une frappe de chiffre, pour que le HUD dise ce qui s'est passé.

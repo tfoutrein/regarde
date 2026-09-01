@@ -1,4 +1,6 @@
+import AppKit
 import CoreGraphics
+import CoreText
 import Foundation
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -25,7 +27,85 @@ enum MarkGeometry {
             pointPath(at: p.local(in: size), lineWidth: lineWidth)
         case .highlight(let r):
             CGPath(rect: r.local(in: size), transform: nil)
+        case .text(let p, let texte):
+            textePath(texte, ancre: p.local(in: size), lineWidth: lineWidth)
         }
+    }
+
+    // MARK: - La note texte (S70)
+
+    /// Le texte devient un CHEMIN — glyphes vectorisés par CoreText, plus la
+    /// cartouche qui les porte.
+    ///
+    /// Une note rendue en calque de texte d'un côté et en `CTLineDraw` de
+    /// l'autre finirait par diverger : deux moteurs, deux mesures, deux
+    /// résultats — et l'agent verrait une note différente de celle que
+    /// l'utilisateur a lue à l'écran. En chemin, le calque et la gravure
+    /// partagent la MÊME fonction, comme pour la flèche.
+    ///
+    /// La taille suit `lineWidth`, qui porte déjà l'échelle du support : la
+    /// note reste lisible sur un recadrage serré comme sur une capture pleine
+    /// résolution.
+    static func textePath(_ texte: String, ancre: CGPoint, lineWidth: CGFloat) -> CGPath {
+        let corps = max(9, lineWidth * 4.5)
+        let marge = corps * 0.42
+        let chemin = CGMutablePath()
+        let lignes = texte.isEmpty ? [""] : texte.components(separatedBy: "\n")
+        // La fonte système en demi-gras : lisible sur un aplat, et présente
+        // partout — une fonte nommée absente ferait tomber CoreText sur un
+        // remplacement dont les métriques diffèrent.
+        let fonte = CTFontCreateWithFontDescriptor(
+            NSFont.systemFont(ofSize: corps, weight: .semibold).fontDescriptor as CTFontDescriptor,
+            corps, nil)
+        let hauteurLigne = corps * 1.28
+
+        // Mesurer d'abord, dessiner ensuite : la cartouche doit envelopper le
+        // texte, pas l'inverse.
+        var largeurMax: CGFloat = corps * 1.2
+        var lignesCT: [CTLine] = []
+        for ligne in lignes {
+            let attr = NSAttributedString(string: ligne, attributes: [.font: fonte])
+            let ct = CTLineCreateWithAttributedString(attr)
+            lignesCT.append(ct)
+            largeurMax = max(largeurMax, CGFloat(CTLineGetTypographicBounds(ct, nil, nil, nil)))
+        }
+        let hauteur = hauteurLigne * CGFloat(lignes.count)
+
+        // La cartouche part de l'ancre et s'étend vers le HAUT-DROITE : jamais
+        // vers la gauche ni vers le bas, où elle recouvrirait ce que la note
+        // désigne.
+        let boite = CGRect(x: ancre.x, y: ancre.y,
+                           width: largeurMax + marge * 2, height: hauteur + marge * 2)
+        chemin.addPath(CGPath(roundedRect: boite, cornerWidth: marge, cornerHeight: marge,
+                              transform: nil))
+
+        // Les glyphes, évidés dans la cartouche : la règle du pair-impair fait
+        // apparaître le texte en creux, lisible sur l'aplat vermillon sans
+        // avoir à peindre deux couches.
+        for (i, ct) in lignesCT.enumerated() {
+            let base = CGPoint(x: boite.minX + marge,
+                               y: boite.maxY - marge - hauteurLigne * CGFloat(i + 1) + corps * 0.25)
+            guard let runs = CTLineGetGlyphRuns(ct) as? [CTRun] else { continue }
+            for run in runs {
+                let n = CTRunGetGlyphCount(run)
+                guard n > 0 else { continue }
+                var glyphes = [CGGlyph](repeating: 0, count: n)
+                var positions = [CGPoint](repeating: .zero, count: n)
+                CTRunGetGlyphs(run, CFRangeMake(0, n), &glyphes)
+                CTRunGetPositions(run, CFRangeMake(0, n), &positions)
+                let fonteRun = unsafeBitCast(
+                    CFDictionaryGetValue(CTRunGetAttributes(run),
+                                         unsafeBitCast(kCTFontAttributeName, to: UnsafeRawPointer.self)),
+                    to: CTFont.self)
+                for j in 0..<n {
+                    guard let g = CTFontCreatePathForGlyph(fonteRun, glyphes[j], nil) else { continue }
+                    var t = CGAffineTransform(translationX: base.x + positions[j].x,
+                                              y: base.y + positions[j].y)
+                    chemin.addPath(g, transform: t)
+                }
+            }
+        }
+        return chemin
     }
 
     // MARK: - Flèche
@@ -130,6 +210,11 @@ enum MarkGeometry {
         case .point(let p):
             let local = project(p)
             return (CGPoint(x: local.x + pointBadgeOffset, y: local.y + pointBadgeOffset), 0)
+        case .text(let p, _):
+            // À GAUCHE de l'ancre : la cartouche s'étend vers la droite, le
+            // badge ne doit pas la recouvrir.
+            let local = project(p)
+            return (CGPoint(x: local.x - offset, y: local.y + offset), 1)
         }
     }
 
@@ -155,6 +240,11 @@ enum MarkGeometry {
         switch tool {
         case .point:
             return .point(b)
+        case .text:
+            // L'ancre seule : le texte arrive après, à la frappe (§ 7.4). Une
+            // note vide n'est pas encore une marque — c'est la validation qui
+            // la fait exister.
+            return .text(b, "")
         case .arrow:
             // Un seuil bas : 4 pt suffisent à donner une direction, et exiger davantage
             // rendrait l'outil frustrant pour désigner un détail proche.

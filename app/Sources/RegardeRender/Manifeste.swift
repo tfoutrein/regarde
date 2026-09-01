@@ -200,12 +200,15 @@ public enum Manifeste {
         public var zoneNote: String?
         /// Ce qui a été dit pendant la fenêtre de parole de cette marque (S67).
         public var voice: [Voice]?
+        /// Le texte d'une note écrite au clavier — `kind` vaut alors « text »
+        /// (S70, § 7.4, mode silencieux).
+        public var text: String?
 
         public init(number: Int, kind: String, sessionTime: Double,
                     captureSegment: Int?, isRetroactive: Bool, intents: [String],
                     geometry: Geometry, frames: MarkFrames?, screenWasMoving: Bool,
                     contextFramesAvailable: Int?, zoneNote: String?,
-                    voice: [Voice]? = nil) {
+                    voice: [Voice]? = nil, text: String? = nil) {
             self.number = number; self.kind = kind; self.sessionTime = sessionTime
             self.captureSegment = captureSegment; self.isRetroactive = isRetroactive
             self.intents = intents; self.geometry = geometry; self.frames = frames
@@ -213,6 +216,7 @@ public enum Manifeste {
             self.contextFramesAvailable = contextFramesAvailable
             self.zoneNote = zoneNote
             self.voice = voice
+            self.text = text
         }
     }
 

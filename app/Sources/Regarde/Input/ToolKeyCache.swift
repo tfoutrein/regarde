@@ -25,13 +25,14 @@ final class ToolKeyCache: Sendable {
     // `-1` signifie « non résolu » : aucun code réel ne vaut −1, donc l'outil est
     // simplement inerte au clavier plutôt que d'atterrir sur la mauvaise touche.
     //
-    // Quatre champs nommés et non un tableau : `Atomic` est non copiable, ce qu'un
+    // Des champs NOMMÉS et non un tableau : `Atomic` est non copiable, ce qu'un
     // `Array` exige. La contrainte du langage rejoint ici celle du callback — pas
-    // d'indirection, pas de vérification de borne, quatre chargements directs.
+    // d'indirection, pas de vérification de borne, des chargements directs.
     private let arrow = Atomic<Int64>(-1)
     private let rect = Atomic<Int64>(-1)
     private let point = Atomic<Int64>(-1)
     private let highlight = Atomic<Int64>(-1)
+    private let text = Atomic<Int64>(-1)
 
     /// Résout une première fois et se réabonne aux changements de disposition.
     ///
@@ -57,9 +58,16 @@ final class ToolKeyCache: Sendable {
         // `UCKeyTranslate` — et non par la table partagée.
         //
         // La table ne contient que les caractères qu'on a pensé à lui déclarer au
-        // démarrage. Ajouter un cinquième outil sans toucher cette liste laisserait sa
-        // touche muette, sans erreur et sans trace : le genre de dépendance qui ne se
-        // voit qu'à l'usage. Ici, ajouter un cas à `MarkTool` suffit.
+        // démarrage. Ajouter un outil sans toucher cette liste laisserait sa touche
+        // muette, sans erreur et sans trace : le genre de dépendance qui ne se voit
+        // qu'à l'usage.
+        //
+        // Cette classe a EXACTEMENT le même défaut, et il s'est réalisé : le
+        // commentaire promettait qu'« ajouter un cas à MarkTool suffit », alors que
+        // chaque outil demande son atomique et sa comparaison. Le texte de S70 est
+        // arrivé muet. La parade n'est pas une promesse en commentaire mais une
+        // vérification : `--marks-test` exige que TOUS les `MarkTool.allCases` se
+        // résolvent, et rougit au prochain oubli.
         func code(_ tool: MarkTool) -> Int64 {
             KeyboardLayout.keyCode(for: tool.key) ?? -1
         }
@@ -67,9 +75,10 @@ final class ToolKeyCache: Sendable {
         rect.store(code(.rect), ordering: .relaxed)
         point.store(code(.point), ordering: .relaxed)
         highlight.store(code(.highlight), ordering: .relaxed)
+        text.store(code(.text), ordering: .relaxed)
     }
 
-    /// Outil associé à un code physique. Quatre comparaisons, aucune allocation.
+    /// Outil associé à un code physique. Cinq comparaisons, aucune allocation.
     @inline(__always)
     func tool(forCode code: Int64) -> MarkTool? {
         guard code >= 0 else { return nil }
@@ -77,6 +86,18 @@ final class ToolKeyCache: Sendable {
         if rect.load(ordering: .relaxed) == code { return .rect }
         if point.load(ordering: .relaxed) == code { return .point }
         if highlight.load(ordering: .relaxed) == code { return .highlight }
+        if text.load(ordering: .relaxed) == code { return .text }
         return nil
+    }
+
+    /// Le code retenu pour un outil — diagnostic et autotest seulement.
+    func code(pour tool: MarkTool) -> Int64 {
+        switch tool {
+        case .arrow: arrow.load(ordering: .relaxed)
+        case .rect: rect.load(ordering: .relaxed)
+        case .point: point.load(ordering: .relaxed)
+        case .highlight: highlight.load(ordering: .relaxed)
+        case .text: text.load(ordering: .relaxed)
+        }
     }
 }

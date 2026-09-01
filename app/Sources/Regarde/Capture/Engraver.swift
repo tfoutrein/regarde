@@ -333,6 +333,8 @@ enum Engraver {
             return CGPath(rect: frame.rect(r), transform: nil)
         case .point(let p):
             return MarkGeometry.pointPath(at: frame.point(p), lineWidth: width)
+        case .text(let p, let texte):
+            return MarkGeometry.textePath(texte, ancre: frame.point(p), lineWidth: width)
         }
     }
 
@@ -350,6 +352,7 @@ enum Engraver {
         switch shape {
         case .arrow(_, let to): frame.point(to)
         case .point(let p): frame.point(p)
+        case .text(let p, _): frame.point(p)
         case .rect, .highlight: nil
         }
     }

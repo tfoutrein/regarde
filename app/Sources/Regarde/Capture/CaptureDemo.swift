@@ -33,6 +33,10 @@ enum CaptureDemo {
         // Un cadre LARGE autour d'un bloc de texte : le cas qui sortait illisible, parce
         // que le plafond du côté long écrasait une zone plate sans rien économiser.
         (.rect, NormRect(bounding: [NormPoint(x: 0.12, y: 0.20), NormPoint(x: 0.72, y: 0.27)]), .textToFix),
+        // La NOTE écrite (S70) : le mode silencieux, gravé comme les autres
+        // formes. Sans elle, la gravure du texte ne serait vérifiée que par
+        // ses chemins, jamais par un pixel.
+        (.text, NormRect(bounding: [NormPoint(x: 0.30, y: 0.78), NormPoint(x: 0.30, y: 0.78)]), .missingState),
     ]
 
     static func run() {
@@ -53,6 +57,8 @@ enum CaptureDemo {
             case .rect: .rect(box)
             case .point: .point(NormPoint(x: box.x, y: box.y))
             case .highlight: .highlight(box)
+            case .text: .text(NormPoint(x: box.x, y: box.y),
+                              "il manque un état vide\nquand la liste est filtrée")
             }
             marks.append(Mark(number: index + 1, displayID: displayID,
                               shape: shape, tool: tool, intention: intention))

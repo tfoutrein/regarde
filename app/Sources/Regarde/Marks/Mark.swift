@@ -76,11 +76,16 @@ enum MarkShape: Codable, Hashable, Sendable {
     case rect(NormRect)
     case point(NormPoint)
     case highlight(NormRect)
+    /// Une note ancrée à un point (S70, § 3.4) : le mode silencieux du § 7.4.
+    /// Le texte est saisi APRÈS la pose de l'ancre, et la marque n'existe
+    /// vraiment qu'une fois validée — c'est pourquoi il est mutable ici.
+    case text(NormPoint, String)
 
     var points: [NormPoint] {
         switch self {
         case .arrow(let a, let b): [a, b]
         case .point(let p): [p]
+        case .text(let p, _): [p]
         case .rect(let r), .highlight(let r):
             [NormPoint(x: r.x, y: r.y), NormPoint(x: r.x + r.w, y: r.y + r.h)]
         }
@@ -113,6 +118,11 @@ enum MarkShape: Codable, Hashable, Sendable {
             return NormRect(x: to.x - half, y: to.y - half, w: half * 2, h: half * 2)
         case .point, .rect, .highlight:
             return boundingBox
+        case .text(let p, _):
+            // Une note désigne ce qu'elle touche, pas la note elle-même : la
+            // zone d'intérêt est un carré autour de l'ancre, comme pour la
+            // pointe d'une flèche.
+            return NormRect(x: p.x - 0.03, y: p.y - 0.03, w: 0.06, h: 0.06)
         }
     }
 
@@ -124,7 +134,7 @@ enum MarkShape: Codable, Hashable, Sendable {
     var rendering: MarkRendering {
         switch self {
         case .arrow, .rect: .stroke
-        case .point: .fill
+        case .point, .text: .fill
         case .highlight: .wash
         }
     }
@@ -142,7 +152,7 @@ enum MarkRendering: Sendable {
 
 /// Outil actif. Le changement se fait au clavier, ⌥⌘ tenu.
 enum MarkTool: String, CaseIterable, Sendable {
-    case arrow, rect, point, highlight
+    case arrow, rect, point, highlight, text
 
     var label: String {
         switch self {
@@ -150,6 +160,7 @@ enum MarkTool: String, CaseIterable, Sendable {
         case .rect: "cadre"
         case .point: "point"
         case .highlight: "surlignage"
+        case .text: "texte"
         }
     }
 
@@ -164,6 +175,7 @@ enum MarkTool: String, CaseIterable, Sendable {
         case .rect: "c"
         case .point: "p"
         case .highlight: "s"
+        case .text: "t"
         }
     }
 
@@ -174,6 +186,7 @@ enum MarkTool: String, CaseIterable, Sendable {
         case .rect: 1
         case .point: 2
         case .highlight: 3
+        case .text: 4
         }
     }
 
@@ -183,6 +196,7 @@ enum MarkTool: String, CaseIterable, Sendable {
         case 1: .rect
         case 2: .point
         case 3: .highlight
+        case 4: .text
         default: nil
         }
     }
@@ -200,7 +214,9 @@ struct Mark: Identifiable, Sendable {
     /// Écran porteur : sans lui, une marque n'est plus interprétable après un
     /// changement de disposition.
     let displayID: CGDirectDisplayID
-    let shape: MarkShape
+    /// Mutable pour la seule note texte (S70) : l'ancre est posée au geste, le
+    /// texte à la frappe. Toutes les autres formes naissent complètes.
+    var shape: MarkShape
     let tool: MarkTool
     /// Application annotée au moment du tracé.
     ///

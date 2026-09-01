@@ -276,8 +276,10 @@ final class SessionCoordinator {
             // ICI, au seul endroit qui voit encore l'écran porteur de la marque.
             let b = m.shape.boundingBox
             let ecran = ecransParID[m.displayID]
+            var note: String?
+            if case .text(_, let t) = m.shape { note = t }
             return BouclePublication.Donnees.Marque(
-                numero: m.number, genre: m.tool.rawValue,
+                numero: m.number, genre: m.tool.rawValue, note: note,
                 tempsSession: m.t.seconds,
                 intention: m.intention?.label, ecranEnMouvement: false,
                 boite: NormRect(x: b.x, y: 1 - b.y - b.h, w: b.w, h: b.h),

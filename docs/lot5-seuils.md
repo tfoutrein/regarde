@@ -378,3 +378,44 @@ n'est pas *courant*, parce qu'aucune fenêtre n'est clé. `activate()` le rend
 courant sans rien voler à personne. Le contexte est désactivé à la fin de
 chaque saisie : le laisser actif serait garder une main sur le clavier du
 système alors qu'on n'écrit plus.
+
+## 17. S70 — la note texte, et le déclencheur que la spec ne donnait pas
+
+Le § 7.4 décrit le MÉCANISME (tap → `NSEvent(cgEvent:)` → `NSTextView` hors
+écran) mais jamais le GESTE qui l'ouvre. Tranché ici :
+
+- **`⌥⌘T` sélectionne l'outil texte**, comme `⌥⌘ F C P S` sélectionnent les
+  autres — la cinquième lettre d'une famille qui existait déjà, plutôt qu'un
+  accord nouveau à apprendre.
+- **Le relâchement pose l'ANCRE**, pas la note : la marque existe, son texte
+  s'écrit ensuite. C'est la seule forme du produit dont `shape` est mutable, et
+  la seule qui naisse incomplète.
+- **La saisie détourne TOUT le clavier**, et c'est délibéré : en mode
+  silencieux chaque frappe appartient à la note. Deux sorties, et deux
+  seulement — `⏎` valide, `⎋` abandonne —, plus `⌘` + quoi que ce soit qui
+  reste à l'application : couper `⌘Tab` ou `⌘Q` enfermerait l'utilisateur dans
+  sa propre machine. Le HUD reste affiché pendant toute la saisie : un mode
+  invisible qui mange le clavier serait indéfendable.
+- **Une note vide n'est pas une note** : son numéro repart au pot, comme un
+  tracé abandonné (ADR-0013). Une cartouche muette dans le rapport ne
+  vaudrait rien.
+- **Le texte devient un CHEMIN** (CoreText → glyphes vectorisés + cartouche),
+  et c'est ce qui garde le calque et la gravure d'accord : deux moteurs de
+  rendu — un calque de texte à l'écran, un `CTLineDraw` dans l'image —
+  finiraient par diverger, et l'agent verrait une note différente de celle que
+  l'utilisateur a lue. En chemin, la même fonction sert les deux, comme pour la
+  flèche depuis le lot 2. Les glyphes sont ÉVIDÉS dans la cartouche par la
+  règle du pair-impair : lisible sur l'aplat vermillon sans peindre deux
+  couches.
+- **La cartouche s'étend vers le haut-droite** depuis l'ancre, et le badge se
+  range à GAUCHE : ni l'une ni l'autre ne recouvre ce que la note désigne.
+
+**Le défaut que S70 a créé, et le test qui l'attrapera la prochaine fois** :
+`ToolKeyCache` promettait en commentaire qu'« ajouter un cas à `MarkTool`
+suffit ». C'est faux — chaque outil demande son atomique et sa comparaison — et
+`⌥⌘T` est arrivé muet, sans erreur ni trace. Trois autres tests comptaient
+« quatre outils » en dur et ont rougi. La parade n'est pas une promesse en
+commentaire mais une vérification : `--marks-test` exige désormais que TOUS les
+`MarkTool.allCases` aient une touche résolue, distincte, qui rend bien leur
+outil — et les comparaisons se font contre `allCases.count`, jamais contre un
+nombre écrit à la main.

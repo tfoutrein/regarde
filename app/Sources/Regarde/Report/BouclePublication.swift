@@ -36,7 +36,9 @@ enum BouclePublication {
     struct Donnees {
         struct Marque {
             let numero: Int
-            let genre: String            // arrow · rect · point · highlight
+            let genre: String            // arrow · rect · point · highlight · text
+            /// Le texte d'une note (S70) — nil pour toute autre forme.
+            var note: String?
             let tempsSession: Double
             let intention: String?
             let ecranEnMouvement: Bool
@@ -146,7 +148,7 @@ enum BouclePublication {
                 frames: refCrop.map { Manifeste.MarkFrames(crop: $0, full: nil) },
                 screenWasMoving: m.ecranEnMouvement,
                 contextFramesAvailable: nil, zoneNote: nil,
-                voice: voixParMarque[m.numero]))
+                voice: voixParMarque[m.numero], text: m.note))
         }
 
         let totalCrop = frames.filter { $0.role == "crop" }.map(\.visualTokens).reduce(0, +)

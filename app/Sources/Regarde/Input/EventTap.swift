@@ -70,6 +70,13 @@ final class EventTap: @unchecked Sendable {
     /// pour Échap et ⌘Z (§ 6.3).
     var onControlKey: (@Sendable (ControlKey) -> Void)?
 
+    /// Une frappe, réduite à ce qui la définit.
+    struct Frappe: Sendable {
+        let code: Int64
+        let flags: UInt64
+        var cgFlags: CGEventFlags { CGEventFlags(rawValue: flags) }
+    }
+
     enum ControlKey: Sendable {
         case escape
         case undo
@@ -79,6 +86,15 @@ final class EventTap: @unchecked Sendable {
         /// Un chiffre sous ⌥⌘ — son SENS se décide au dernier moment, quand la
         /// marque attachée à la fenêtre de parole est connue (§ 6.7).
         case chiffre(rang: Int, shift: Bool)
+        /// Une frappe destinée à la note en cours de saisie (S70). On transporte
+        /// la FRAPPE, pas l'événement : `CGEvent` n'est pas `Sendable`, et la
+        /// sonde de S69 a montré qu'un événement reconstruit depuis le code et
+        /// les modificateurs rend exactement les mêmes caractères — disposition
+        /// et touches mortes comprises.
+        case saisie(Frappe)
+        /// La note est validée (⏎) ou abandonnée (Échap).
+        case saisieValidee
+        case saisieAbandonnee
     }
 
     // Les codes de touches ne sont plus ecrits en dur : voir `KeyboardLayout`.
@@ -296,6 +312,30 @@ final class EventTap: @unchecked Sendable {
     @inline(__always)
     private func handleKeyDown(event: CGEvent, flags: CGEventFlags) -> Unmanaged<CGEvent>? {
         let code = event.getIntegerValueField(.keyboardEventKeycode)
+
+        // S70 — LA SAISIE D'UNE NOTE DÉTOURNE TOUT LE CLAVIER, et c'est
+        // délibéré : en mode silencieux, chaque frappe appartient à la note.
+        // Deux sorties, et deux seulement — ⏎ valide, Échap abandonne — pour
+        // qu'on ne puisse jamais s'y trouver enfermé. Le HUD reste affiché
+        // pendant toute la saisie : un mode invisible qui mange le clavier
+        // serait indéfendable.
+        if SaisieEnCours.actif.load(ordering: .relaxed) {
+            if code == KeyboardLayout.Physical.escape {
+                onControlKey?(.saisieAbandonnee)
+                return nil
+            }
+            // ⏎ nu valide ; ⌥⏎ ou ⇧⏎ passent à la note comme un retour à la
+            // ligne, ce que `interpretKeyEvents` sait faire tout seul.
+            if code == 36, !flags.contains(.maskShift), !flags.contains(.maskAlternate) {
+                onControlKey?(.saisieValidee)
+                return nil
+            }
+            // ⌘ quoi que ce soit reste à l'application : couper ⌘Tab ou ⌘Q
+            // enfermerait l'utilisateur dans sa propre machine.
+            if flags.contains(.maskCommand) { return Unmanaged.passUnretained(event) }
+            onControlKey?(.saisie(Frappe(code: code, flags: flags.rawValue)))
+            return nil
+        }
 
         // S54 — le porteur du ⏎, DERRIÈRE sa fenêtre de grâce. Le coût hors
         // grâce est une charge atomique et une comparaison : le budget du tap

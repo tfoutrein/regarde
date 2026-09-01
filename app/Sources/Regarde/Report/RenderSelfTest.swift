@@ -170,6 +170,19 @@ enum RenderSelfTest {
             muet.session.voice = nil
             muet.marks[0].voice = nil
             let renduMuet = Rendu.rendre(muet)
+            // S70 — la NOTE écrite se cite comme la parole, et précède la
+            // géométrie : c'est ce que l'utilisateur a voulu dire, quel que
+            // soit le canal qu'il avait sous la main.
+            var avecNote = m
+            avecNote.marks[0].text = "il manque un état vide quand la liste est filtrée"
+            let renduNote = Rendu.rendre(avecNote)
+            check(t, "la note écrite se cite en blockquote, avant la zone",
+                  renduNote.contains("> « il manque un état vide quand la liste est filtrée »\n\n")
+                    && renduNote.range(of: "> « il manque un état")!.lowerBound
+                        < renduNote.range(of: "**Zone entourée**")!.lowerBound)
+            check(t, "une note vide ne rend RIEN — pas de citation fantôme",
+                  { var v = m; v.marks[0].text = ""; return !Rendu.rendre(v).contains("> « »") }())
+
             check(t, "sans voix : « - aucun. », ni locale ni convention annoncées",
                   renduMuet.contains("## Commentaires généraux\n\n- aucun.")
                     && renduMuet.contains("Regarde 0.4.0 (macOS 26.1). Aucune donnée sortie de la machine.")

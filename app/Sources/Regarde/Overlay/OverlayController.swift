@@ -127,6 +127,12 @@ final class OverlayController {
                                                   detail: "Trace d'abord, qualifie ensuite",
                                                   duration: 2)
                     }
+                case .saisie(let frappe):
+                    self.frapper(frappe)
+                case .saisieValidee:
+                    self.validerLaNote()
+                case .saisieAbandonnee:
+                    self.abandonnerLaNote()
                 case .chiffre(let rang, let shift):
                     self.chiffre(rang: rang, shift: shift)
                 case .mutedDigit(let rank):
@@ -187,6 +193,70 @@ final class OverlayController {
         }
         // Le mode éclair publie au relâchement du modificateur, et lui seul le sait.
         SessionCoordinator.shared.modifierChanged(armed: armed || stroking)
+    }
+
+    // MARK: - La note texte (S70)
+
+    /// Entre en saisie : l'ancre est posée, le clavier est détourné.
+    func commencerLaNote(_ mark: Mark) {
+        SaisieTexte.shared.commencer()
+        SaisieEnCours.actif.store(true, ordering: .relaxed)
+        Journal.event(.mark, "\(mark.number) · note — saisie ouverte, ⏎ valide, ⎋ abandonne")
+        rafraichirLeHUDDeSaisie()
+    }
+
+    private func frapper(_ frappe: EventTap.Frappe) {
+        // L'événement est RECONSTRUIT ici, sur le MainActor : la frappe a
+        // traversé la frontière, pas l'objet (S69).
+        guard let e = CGEvent(keyboardEventSource: CGEventSource(stateID: .hidSystemState),
+                              virtualKey: CGKeyCode(frappe.code), keyDown: true) else { return }
+        e.flags = frappe.cgFlags
+        SaisieTexte.shared.nourrir(e)
+        // La note se dessine PENDANT la frappe : le mode silencieux doit se
+        // voir, sans quoi rien ne distingue « je tape ma note » de « mon
+        // clavier ne répond plus ».
+        if let id = MarkStore.shared.marks.last?.displayID {
+            MarkStore.shared.mettreAJourLaNote(SaisieTexte.shared.texte)
+            redraw(id)
+        }
+        rafraichirLeHUDDeSaisie()
+    }
+
+    private func validerLaNote() {
+        SaisieEnCours.actif.store(false, ordering: .relaxed)
+        let texte = SaisieTexte.shared.terminer()
+        guard let mark = MarkStore.shared.completerTexte(texte) else {
+            Journal.event(.mark, "note vide — rien n'est posé, le numéro repart au pot")
+            HUDWindow.shared.announce("Note vide", detail: "rien n'a été posé", duration: 2)
+            redrawAll()
+            return
+        }
+        Journal.event(.mark, "\(mark.number) · note · \(texte.count) caractère(s) · display \(mark.displayID)")
+        HUDWindow.shared.announce("Marque \(mark.number) — note",
+                                  detail: texte.prefix(40) + (texte.count > 40 ? "…" : ""), duration: 2)
+        redraw(mark.displayID)
+        VoixCoordinator.shared.trace(marque: mark.number, t: mark.t)
+        Task.detached(priority: .userInitiated) {
+            do { try await MarkCapture.shared.capture(mark: mark) } catch {
+                await MainActor.run { Journal.warn(.capture, "marque \(mark.number) — \(error)") }
+            }
+        }
+    }
+
+    private func abandonnerLaNote() {
+        SaisieEnCours.actif.store(false, ordering: .relaxed)
+        SaisieTexte.shared.abandonner()
+        if MarkStore.shared.abandonnerNote() {
+            Journal.event(.mark, "note abandonnée — le numéro repart au pot")
+        }
+        redrawAll()
+        HUDWindow.shared.announce("Note abandonnée", detail: "⎋", duration: 2)
+    }
+
+    private func rafraichirLeHUDDeSaisie() {
+        let texte = SaisieTexte.shared.texte
+        HUDWindow.shared.announce("Note : \(texte.isEmpty ? "…" : texte)",
+                                  detail: "⏎ valide · ⎋ abandonne", duration: 3600)
     }
 
     /// `⌥⌘ + chiffre` : le sens se décide ICI, où la marque attachée à la
@@ -369,6 +439,13 @@ final class OverlayController {
             guard store.hasLiveStroke else { return }
             store.extendStroke(to: event.point, geometry: geometry)
             if let mark = store.endStroke() {
+                // Une NOTE n'est pas finie au relâchement : l'ancre est posée,
+                // le texte s'écrit maintenant (S70, § 7.4).
+                if case .text = mark.shape {
+                    commencerLaNote(mark)
+                    if let id = store.marks.last?.displayID { touched.insert(id) }
+                    return
+                }
                 Journal.event(.mark, "\(mark.number) · \(mark.tool.label) · display \(mark.displayID)")
                 // La fenêtre de parole apprend sa marque — le premier mot
                 // prononcé avant ce tracé lui appartient déjà (§ 3.5).
