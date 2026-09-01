@@ -121,6 +121,9 @@ final class VoixCoordinator {
     /// Posé par le mode éclair quand il attend la fin d'une fenêtre parlée.
     var apresDrain: (() -> Void)?
     private var demandeEnCours = false
+    /// L'indisponibilité se dit UNE fois par lancement, pas à chaque session :
+    /// répéter « micro refusé » à chaque ⌃⌥S noierait le journal.
+    private var indisponibiliteDite = false
     private var annonceGlobaleMuette = false
     /// La réaffectation MANUELLE du segment en cours (§ 6.7) : `⇧`+`N` vers la
     /// marque N, `0` vers le général. Elle ÉCRASE tout et n'est jamais
@@ -141,15 +144,32 @@ final class VoixCoordinator {
     /// journal le dit une fois.
     func preparer() async {
         guard !disponible else { return }
+        // `--sans-voix` : la voix se comporte comme si le micro était REFUSÉ,
+        // sans avoir à refuser une invite. C'est ce qui rend le critère de S72
+        // — « refuser laisse la session entièrement utilisable » — vérifiable
+        // à volonté, plutôt que dépendant d'un clic qu'on ne peut pas rejouer.
+        if CommandLine.arguments.contains("--sans-voix") {
+            if !indisponibiliteDite {
+                indisponibiliteDite = true
+                Journal.event(.system, "voix — désactivée (--sans-voix) : les marques, la palette d'intentions et la note au clavier (⌥⌘T) restent")
+            }
+            return
+        }
         switch AVCaptureDevice.authorizationStatus(for: .audio) {
         case .authorized: break
         case .notDetermined:
             // Pas d'invite au lancement : elle viendra au PREMIER usage réel —
             // la première fenêtre de parole — quand l'utilisateur sait pourquoi.
-            Journal.event(.system, "voix — micro jamais demandé : l'invite viendra à la première fenêtre de parole")
+            if !indisponibiliteDite {
+                indisponibiliteDite = true
+                Journal.event(.system, "voix — micro jamais demandé : l'invite viendra à la première fenêtre de parole")
+            }
             return
         default:
-            Journal.event(.system, "voix — micro refusé : la palette d'intentions et le clavier restent (Réglages > Confidentialité > Microphone)")
+            if !indisponibiliteDite {
+                indisponibiliteDite = true
+                Journal.event(.system, "voix — micro refusé : les marques, la palette d'intentions et la note au clavier (⌥⌘T) restent — Réglages Système > Confidentialité et sécurité > Microphone")
+            }
             return
         }
         do {
@@ -168,6 +188,7 @@ final class VoixCoordinator {
     /// jamais été demandé. L'invite part MAINTENANT — une seule fois —, la
     /// fenêtre en cours vit sans audio, la suivante aura le micro.
     private func demanderLaPermissionSiJamaisPosee() {
+        guard !CommandLine.arguments.contains("--sans-voix") else { return }
         guard !demandeEnCours,
               AVCaptureDevice.authorizationStatus(for: .audio) == .notDetermined else { return }
         demandeEnCours = true
@@ -176,7 +197,20 @@ final class VoixCoordinator {
             let accorde = await AVCaptureDevice.requestAccess(for: .audio)
             Journal.event(.system, "voix — permission micro \(accorde ? "accordée" : "refusée")")
             self.demandeEnCours = false
-            if accorde { await self.preparer() }
+            if accorde {
+                self.indisponibiliteDite = false
+                await self.preparer()
+                // La fenêtre en cours vit SANS audio — le moteur n'était pas
+                // prêt quand elle s'est ouverte. La suivante l'aura, et le
+                // dire évite de croire à une panne.
+                HUDWindow.shared.announce("Micro autorisé",
+                                          detail: "la prochaine fenêtre de parole sera transcrite",
+                                          duration: 3)
+            } else {
+                HUDWindow.shared.announce("Micro refusé",
+                                          detail: "les marques, les intentions et ⌥⌘T fonctionnent sans lui",
+                                          duration: 4)
+            }
         }
     }
 
@@ -311,7 +345,11 @@ final class VoixCoordinator {
         switch effet {
         case .ouverture(let t):
             OverlayController.shared.retenirLeCalque(true)
-            OverlayController.shared.pulser(marque: machine.marqueCourante)
+            // Le badge ne pulse QUE si le micro enregistre. Sans lui — refusé,
+            // indisponible — une pastille qui bat dirait « je t'écoute » alors
+            // que rien n'est capté : le pire mensonge qu'une interface puisse
+            // faire sur un micro (S72).
+            if disponible { OverlayController.shared.pulser(marque: machine.marqueCourante) }
             demarrerLeTic()
             if continuite {
                 Journal.event(.system, "parole — fenêtre enchaînée à \(Self.mmss(t)), l'audio continue")

@@ -454,3 +454,28 @@ nombre écrit à la main.
 - **Le panneau a sa fenêtre CLÉ**, et c'est ici légitime : la session est
   terminée, la cible relâchée, le calque retiré — prendre le focus ne vole plus
   rien à personne. C'est le seul moment du produit où une fenêtre peut l'être.
+
+## 19. S72 — la permission au premier usage, et le refus qui ne casse rien
+
+- **L'invite n'arrive JAMAIS au lancement.** Vérifié sur un état TCC
+  réinitialisé (`tccutil reset Microphone dev.tfoutrein.regarde`) : le doctor
+  affiche « Microphone — jamais demandé · L'invite arrive à la première fenêtre
+  de parole (⌥⌘ tenu), jamais au lancement », et aucune boîte ne s'ouvre. Elle
+  part à la première tenue de ⌥⌘ — au moment où l'utilisateur sait POURQUOI on
+  la lui demande.
+- **Le doctor donne le périphérique et la latence** quand le micro est accordé :
+  « périphérique retenu : Micro MacBook Pro ← interne » et « latence d'entrée
+  compensée : 1.0 ms (présentation 0.0 + périphérique 0.0 + sécurité 1.0) ».
+  C'est le seul endroit de l'interface où quelqu'un qui doute d'un ancrage vient
+  chercher un nombre (§ 3.6).
+- **Le refus ne casse rien, et c'est REPRODUCTIBLE** : `--sans-voix` fait
+  exactement ce que fait un micro refusé, sans dépendre d'un clic qu'on ne peut
+  pas rejouer. Session ouverte, projet confirmé, outil texte sélectionné,
+  fenêtre de parole ouverte et fermée avec sa trace, session terminée — aucune
+  erreur, aucun blocage. Les marques, la palette d'intentions et la note au
+  clavier (⌥⌘T) restent, exactement comme le doctor le promet depuis le lot 1.
+- **Le badge ne pulse que si le micro enregistre.** Sans lui, une pastille qui
+  bat dirait « je t'écoute » alors que rien n'est capté — le pire mensonge
+  qu'une interface puisse faire sur un micro.
+- **L'indisponibilité se dit une fois par lancement**, pas à chaque ⌃⌥S :
+  répéter « micro refusé » à chaque session noierait le journal.

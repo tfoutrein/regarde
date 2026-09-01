@@ -226,12 +226,31 @@ struct MicrophoneCheck: DoctorCheck {
     func run() async -> CheckResult {
         switch AVCaptureDevice.authorizationStatus(for: .audio) {
         case .authorized:
-            return .ok("accordé", detail: ["Utilisé à partir du lot 5."])
+            // La latence d'entrée compensée (§ 3.6) se lit ICI et nulle part
+            // ailleurs dans l'interface : c'est le seul endroit où quelqu'un
+            // qui doute d'un ancrage vient chercher un nombre.
+            var detail = ["La parole se transcrit localement, fenêtre par fenêtre."]
+            if let choix = Peripheriques.choisir(parmi: Peripheriques.candidatsVivants()) {
+                detail.append("périphérique retenu : \(choix.nom)"
+                              + (choix.interne ? "  ← interne" : ""))
+                if let id = Peripheriques.identifiantCoreAudio(uid: choix.uid) {
+                    let latence = LatenceEntree.mesurer(peripherique: id, presentationSecondes: 0)
+                    detail.append("latence d'entrée compensée : \(latence.description)")
+                }
+            } else {
+                detail.append("aucun périphérique sain — que des pilotes de boucle ?")
+            }
+            return .ok("accordé", detail: detail)
         case .notDetermined:
-            return .warning("jamais demandé", detail: ["Sera demandé au lot 5, pas avant."])
+            // Jamais au lancement (S72) : l'invite arrive quand l'utilisateur
+            // ouvre sa première fenêtre de parole, c'est-à-dire au moment où
+            // il sait POURQUOI on la lui demande.
+            return .warning("jamais demandé",
+                            detail: ["L'invite arrive à la première fenêtre de parole (⌥⌘ tenu), jamais au lancement."])
         case .denied, .restricted:
             return .warning("refusé",
-                            remedy: "Sans micro, seuls la palette d'intentions et le clavier resteront (lot 5).")
+                            detail: ["Les marques, la palette d'intentions et la note au clavier (⌥⌘T) fonctionnent sans lui."],
+                            remedy: "Réglages Système > Confidentialité et sécurité > Microphone, puis relancer Regarde.")
         @unknown default:
             return .warning("état inconnu")
         }
